@@ -1,36 +1,33 @@
 'use server';
 /**
- * @fileOverview An AI agent that intelligently identifies and maps varying financial keys from different JSON invoice and purchase data formats
- * to a standardized internal schema, enabling seamless data import from diverse suppliers and customers.
+ * @fileOverview Agente de IA para el mapeo de JSON financieros, optimizado para DTE (Documentos Tributarios Electrónicos) de El Salvador.
  *
- * - aiJsonKeyMapper - A function that handles the key mapping process.
- * - AiJsonKeyMapperInput - The input type for the aiJsonKeyMapper function.
- * - AiJsonKeyMapperOutput - The return type for the aiJsonKeyMapper function.
+ * - aiJsonKeyMapper - Función para el mapeo de llaves.
  */
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 
 const AiJsonKeyMapperInputSchema = z.object({
-  invoiceJsonString: z.string().describe('The raw JSON string of the invoice or purchase data with varying keys from different sources. This JSON needs to be mapped to a standardized schema.'),
+  invoiceJsonString: z.string().describe('El JSON crudo del DTE o factura comercial. Puede seguir el formato oficial de El Salvador (emisor, receptor, cuerpoDocumento, resumen).'),
 });
 export type AiJsonKeyMapperInput = z.infer<typeof AiJsonKeyMapperInputSchema>;
 
 const AiJsonKeyMapperOutputSchema = z.object({
-  invoiceNumber: z.string().optional().describe('The unique identifier for the invoice (e.g., invoiceId, billNumber, ref).'),
-  issueDate: z.string().optional().describe('The date the invoice was issued (YYYY-MM-DD format preferred) (e.g., date, billingDate, transactionDate).'),
-  supplierName: z.string().optional().describe('The name of the supplier or vendor (e.g., vendor, seller, company).'),
-  customerName: z.string().optional().describe('The name of the customer or client (e.g., buyer, client, recipient).'),
+  invoiceNumber: z.string().optional().describe('Número de control o serie del DTE.'),
+  issueDate: z.string().optional().describe('Fecha de emisión (YYYY-MM-DD).'),
+  supplierName: z.string().optional().describe('Nombre o razón social del emisor/proveedor.'),
+  customerName: z.string().optional().describe('Nombre o razón social del receptor/cliente.'),
   items: z.array(z.object({
-    description: z.string().optional().describe('Description of the item (e.g., name, itemDescription).'),
-    quantity: z.number().optional().describe('Quantity of the item (e.g., qty, count).'),
-    unitPrice: z.number().optional().describe('Unit price of the item (e.g., price, costPerUnit).'),
-    lineTotal: z.number().optional().describe('Total for this specific line item (quantity * unitPrice) (e.g., itemTotal, amount).'),
-  })).optional().describe('A list of items on the invoice (e.g., products, lineItems).'),
-  subtotal: z.number().optional().describe('The subtotal amount before tax (e.g., subTotal, netAmount).'),
-  taxAmount: z.number().optional().describe('The total tax amount (e.g., tax, vat).'),
-  totalAmount: z.number().optional().describe('The grand total amount due for the invoice (e.g., grandTotal, amountDue, total).'),
-}).describe('The standardized invoice data after key mapping.');
+    description: z.string().optional().describe('Descripción del bien o servicio.'),
+    quantity: z.number().optional().describe('Cantidad.'),
+    unitPrice: z.number().optional().describe('Precio unitario sin impuestos.'),
+    lineTotal: z.number().optional().describe('Monto total de la línea (cantidad * precio).'),
+  })).optional().describe('Lista de ítems del cuerpo del documento.'),
+  subtotal: z.number().optional().describe('Subtotal o total de operaciones gravadas.'),
+  taxAmount: z.number().optional().describe('Monto total de impuestos (IVA, etc.).'),
+  totalAmount: z.number().optional().describe('Monto total a pagar.'),
+}).describe('Estructura estandarizada de la factura procesada.');
 export type AiJsonKeyMapperOutput = z.infer<typeof AiJsonKeyMapperOutputSchema>;
 
 export async function aiJsonKeyMapper(input: AiJsonKeyMapperInput): Promise<AiJsonKeyMapperOutput> {
@@ -41,13 +38,17 @@ const aiJsonKeyMapperPrompt = ai.definePrompt({
   name: 'aiJsonKeyMapperPrompt',
   input: { schema: AiJsonKeyMapperInputSchema },
   output: { schema: AiJsonKeyMapperOutputSchema },
-  prompt: `You are an expert financial data mapper. Your task is to take raw JSON data representing an invoice or purchase and map its keys to a standardized schema.
+  prompt: `Eres un experto en documentos fiscales de El Salvador (DTE). Tu tarea es mapear un JSON de factura (que puede venir con llaves como "cuerpoDocumento", "resumen", "identificacion") a nuestro esquema estandarizado.
   
-  The standardized schema is described by the output JSON schema below. Your goal is to identify corresponding values in the input JSON and map them to the standardized keys. Pay close attention to common variations for key names (e.g., 'totalAmount', 'grandTotal', 'amountDue' all map to 'totalAmount'). If a field is not present or cannot be confidently mapped, omit it from the output.
+  Especial atención a los formatos DTE:
+  - "identificacion.numeroControl" o "identificacion.codigoGeneracion" mapean a "invoiceNumber".
+  - "emisor.nombre" mapea a "supplierName".
+  - "cuerpoDocumento" contiene los "items".
+  - "resumen.totalPagar" mapea a "totalAmount".
   
-  Ensure the output is a valid JSON object strictly adhering to the standardized schema. Do not include any additional text or formatting outside of the JSON object.
+  Si el JSON no es un DTE oficial, usa tu lógica para identificar los campos financieros estándar.
   
-  Input JSON to map:
+  Documento JSON:
   {{{invoiceJsonString}}}`,
 });
 
@@ -60,7 +61,7 @@ const aiJsonKeyMapperFlow = ai.defineFlow(
   async (input) => {
     const { output } = await aiJsonKeyMapperPrompt(input);
     if (!output) {
-      throw new Error('AI failed to generate a valid output for JSON key mapping.');
+      throw new Error('No se pudo procesar el formato del JSON suministrado.');
     }
     return output;
   }

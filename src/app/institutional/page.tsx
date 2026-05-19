@@ -9,11 +9,12 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useLedgerStore, type Project } from "@/lib/store"
+import { useLedgerStore } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput } from "@/ai/flows/ai-json-key-mapper"
-import { Zap, Loader2, CheckCircle2, AlertCircle, FileJson, ArrowRight, DollarSign, Plus, Briefcase, Calculator, ReceiptText, Trash2 } from "lucide-react"
+import { Loader2, FileJson, ArrowUpTrayIcon, DollarSign, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, FileCode } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 
 export default function InstitutionalModule() {
   const { entities, projects, transactions, addProject, deleteProject, addTransaction } = useLedgerStore()
@@ -31,11 +32,13 @@ export default function InstitutionalModule() {
     customerId: ''
   })
 
-  // AI Processor State
+  // Data Processor State
   const [jsonInput, setJsonInput] = React.useState('')
   const [isProcessing, setIsProcessing] = React.useState(false)
   const [mappedData, setMappedData] = React.useState<AiJsonKeyMapperOutput | null>(null)
   const [selectedSupplierId, setSelectedSupplierId] = React.useState('')
+  const [isDragging, setIsDragging] = React.useState(false)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   React.useEffect(() => {
     setMounted(true)
@@ -66,17 +69,48 @@ export default function InstitutionalModule() {
     toast({ title: "Proyecto Creado", description: "El proyecto se ha registrado exitosamente." })
   }
 
-  const handleProcessAI = async () => {
-    if (!jsonInput.trim()) return
+  const handleProcessData = async (content?: string) => {
+    const rawData = content || jsonInput
+    if (!rawData.trim()) return
     try {
       setIsProcessing(true)
-      const result = await aiJsonKeyMapper({ invoiceJsonString: jsonInput })
+      const result = await aiJsonKeyMapper({ invoiceJsonString: rawData })
       setMappedData(result)
-      toast({ title: "Mapeo IA Exitoso", description: "Datos extraídos correctamente." })
+      toast({ title: "Datos Cargados", description: "Documento analizado correctamente." })
     } catch (error) {
-      toast({ title: "Error", description: "No se pudo procesar el JSON.", variant: "destructive" })
+      toast({ title: "Error de Formato", description: "No se pudo leer el archivo JSON.", variant: "destructive" })
     } finally {
       setIsProcessing(false)
+    }
+  }
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const content = event.target?.result as string
+        setJsonInput(content)
+        handleProcessData(content)
+      }
+      reader.readAsText(file)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    const file = e.dataTransfer.files?.[0]
+    if (file && file.type === "application/json") {
+      const reader = new FileReader()
+      reader.onload = (event) => {
+        const content = event.target?.result as string
+        setJsonInput(content)
+        handleProcessData(content)
+      }
+      reader.readAsText(file)
+    } else {
+      toast({ title: "Archivo no válido", description: "Por favor arrastre un archivo .json", variant: "destructive" })
     }
   }
 
@@ -87,7 +121,7 @@ export default function InstitutionalModule() {
     }
     const supplier = suppliers.find(s => s.id === selectedSupplierId)
     addTransaction({
-      invoiceNumber: mappedData.invoiceNumber || `PUR-${Date.now()}`,
+      invoiceNumber: mappedData.invoiceNumber || `DTE-${Date.now()}`,
       issueDate: mappedData.issueDate || new Date().toISOString(),
       entityId: selectedSupplierId,
       entityName: supplier?.name || '',
@@ -143,16 +177,16 @@ export default function InstitutionalModule() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="bg-secondary p-1">
           <TabsTrigger value="projects" className="gap-2"><Briefcase className="h-4 w-4" /> Proyectos</TabsTrigger>
-          <TabsTrigger value="purchases" className="gap-2"><Plus className="h-4 w-4" /> Registrar Compras</TabsTrigger>
-          <TabsTrigger value="comparison" className="gap-2"><Calculator className="h-4 w-4" /> Comparación y Factura</TabsTrigger>
+          <TabsTrigger value="purchases" className="gap-2"><Plus className="h-4 w-4" /> Importar DTE Proveedor</TabsTrigger>
+          <TabsTrigger value="comparison" className="gap-2"><Calculator className="h-4 w-4" /> Conciliación Final</TabsTrigger>
         </TabsList>
 
         <TabsContent value="projects">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="md:col-span-1">
+            <Card className="md:col-span-1 border-primary/20 bg-primary/5">
               <CardHeader>
-                <CardTitle>Nuevo Proyecto</CardTitle>
-                <CardDescription>Defina el presupuesto y la orden de compra.</CardDescription>
+                <CardTitle>Configurar Proyecto</CardTitle>
+                <CardDescription>Defina el presupuesto y la orden de compra maestra.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -161,7 +195,7 @@ export default function InstitutionalModule() {
                 </div>
                 <div className="space-y-2">
                   <Label>Orden de Compra (OC)</Label>
-                  <Input placeholder="Ej. OC-2024-001" value={newProject.purchaseOrder} onChange={e => setNewProject({...newProject, purchaseOrder: e.target.value})} />
+                  <Input placeholder="Ej. OC-2024-SV-001" value={newProject.purchaseOrder} onChange={e => setNewProject({...newProject, purchaseOrder: e.target.value})} />
                 </div>
                 <div className="space-y-2">
                   <Label>Cliente</Label>
@@ -174,36 +208,43 @@ export default function InstitutionalModule() {
                   <Label>Monto de Venta Objetivo ($)</Label>
                   <Input type="number" value={newProject.targetSaleAmount} onChange={e => setNewProject({...newProject, targetSaleAmount: Number(e.target.value)})} />
                 </div>
-                <Button className="w-full bg-accent hover:bg-accent/90" onClick={handleCreateProject}>Crear Proyecto</Button>
+                <Button className="w-full bg-accent hover:bg-accent/90 shadow-lg shadow-accent/20" onClick={handleCreateProject}>Crear Proyecto</Button>
               </CardContent>
             </Card>
 
             <Card className="md:col-span-2">
               <CardHeader>
-                <CardTitle>Listado de Proyectos</CardTitle>
-                <CardDescription>Gestión de presupuestos institucionales activos.</CardDescription>
+                <CardTitle>Proyectos SV Activos</CardTitle>
+                <CardDescription>Gestión de presupuestos institucionales en ejecución.</CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
                   {projects.length > 0 ? projects.map(p => (
-                    <div key={p.id} className={`p-4 rounded-lg border flex items-center justify-between transition-all ${selectedProjectId === p.id ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/50'}`}>
+                    <div key={p.id} className={`p-4 rounded-lg border flex items-center justify-between transition-all ${selectedProjectId === p.id ? 'border-primary bg-primary/10 ring-1 ring-primary' : 'hover:bg-muted/50'}`}>
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
-                          <h4 className="font-bold">{p.name}</h4>
-                          <Badge variant="outline" className="text-[10px]">{p.purchaseOrder}</Badge>
+                          <h4 className="font-bold text-lg">{p.name}</h4>
+                          <Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary">{p.purchaseOrder}</Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">{p.customerName}</p>
-                        <div className="text-xs font-medium">Objetivo: <span className="text-primary">${p.targetSaleAmount.toLocaleString()}</span></div>
+                        <div className="text-xs font-semibold flex gap-3 mt-2">
+                           <span>Objetivo: <span className="text-primary">${p.targetSaleAmount.toLocaleString()}</span></span>
+                           <span className="text-muted-foreground">|</span>
+                           <span>Estado: <span className="text-green-500 uppercase">{p.status}</span></span>
+                        </div>
                       </div>
                       <div className="flex gap-2">
                         <Button variant={selectedProjectId === p.id ? "default" : "outline"} size="sm" onClick={() => setSelectedProjectId(p.id)}>
-                          {selectedProjectId === p.id ? "Seleccionado" : "Seleccionar"}
+                          {selectedProjectId === p.id ? "Activo" : "Seleccionar"}
                         </Button>
                         <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteProject(p.id)}><Trash2 className="h-4 w-4" /></Button>
                       </div>
                     </div>
                   )) : (
-                    <div className="py-12 text-center text-muted-foreground">No hay proyectos registrados.</div>
+                    <div className="py-20 text-center text-muted-foreground flex flex-col items-center gap-2">
+                      <Briefcase className="h-12 w-12 opacity-10" />
+                      <p>No hay proyectos SV registrados.</p>
+                    </div>
                   )}
                 </div>
               </CardContent>
@@ -215,55 +256,114 @@ export default function InstitutionalModule() {
           {!selectedProjectId ? (
              <div className="flex flex-col items-center justify-center py-20 bg-secondary/20 rounded-lg border border-dashed">
                 <Briefcase className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
-                <p>Seleccione un proyecto en la pestaña "Proyectos" para añadir compras.</p>
+                <p className="text-muted-foreground">Seleccione un proyecto para comenzar la importación de compras.</p>
+                <Button variant="link" onClick={() => setActiveTab('projects')}>Ir a Proyectos</Button>
              </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2"><FileJson className="h-5 w-5 text-accent" /> Importar Factura de Proveedor</CardTitle>
-                  <CardDescription>Pegue el JSON del proveedor para mapear costos al proyecto <strong>{currentProject?.name}</strong>.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label>Proveedor</Label>
-                    <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
-                      <SelectTrigger><SelectValue placeholder="Seleccionar proveedor" /></SelectTrigger>
-                      <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Payload JSON</Label>
-                    <Textarea placeholder="Pegue el JSON aquí..." className="min-h-[200px] font-code text-sm bg-black/30" value={jsonInput} onChange={e => setJsonInput(e.target.value)} />
-                  </div>
-                  <Button className="w-full h-12 gap-2" onClick={handleProcessAI} disabled={isProcessing}>
-                    {isProcessing ? <Loader2 className="animate-spin h-5 w-5" /> : <><Zap className="h-5 w-5 fill-current" /> Procesar con IA</>}
-                  </Button>
-                </CardContent>
-              </Card>
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><FileCode className="h-5 w-5 text-accent" /> Importación DTE El Salvador</CardTitle>
+                    <CardDescription>Suba o arrastre el JSON del proveedor para vincular al proyecto <strong>{currentProject?.name}</strong>.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div className="space-y-2">
+                      <Label>Proveedor emisor</Label>
+                      <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
+                        <SelectTrigger><SelectValue placeholder="Seleccionar emisor" /></SelectTrigger>
+                        <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
 
-              <Card>
+                    {/* Drag and Drop Zone */}
+                    <div 
+                      className={cn(
+                        "relative border-2 border-dashed rounded-xl p-8 transition-all flex flex-col items-center justify-center gap-4 cursor-pointer",
+                        isDragging ? "border-primary bg-primary/5 scale-[1.01]" : "border-muted hover:border-primary/50"
+                      )}
+                      onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                      onDragLeave={() => setIsDragging(false)}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <input 
+                        type="file" 
+                        ref={fileInputRef} 
+                        className="hidden" 
+                        accept=".json" 
+                        onChange={handleFileUpload} 
+                      />
+                      <div className="h-16 w-16 rounded-full bg-secondary flex items-center justify-center">
+                        <Upload className={cn("h-8 w-8 text-muted-foreground", isDragging && "text-primary animate-bounce")} />
+                      </div>
+                      <div className="text-center">
+                        <p className="font-bold">Buscar o arrastrar archivo JSON</p>
+                        <p className="text-xs text-muted-foreground mt-1">Formato DTE SV aceptado</p>
+                      </div>
+                    </div>
+
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                      <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-2 text-muted-foreground">O pegar contenido manual</span></div>
+                    </div>
+
+                    <Textarea 
+                      placeholder="Pegue el contenido JSON aquí..." 
+                      className="min-h-[120px] font-code text-xs bg-black/20" 
+                      value={jsonInput} 
+                      onChange={e => setJsonInput(e.target.value)} 
+                    />
+
+                    <Button className="w-full h-12 gap-2" onClick={() => handleProcessData()} disabled={isProcessing || !jsonInput}>
+                      {isProcessing ? <Loader2 className="animate-spin h-5 w-5" /> : "Importar y Analizar Datos"}
+                    </Button>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card className="h-fit sticky top-24">
                 <CardHeader>
-                  <CardTitle>Previsualización de Costos</CardTitle>
+                  <CardTitle>Vista Previa del Gasto</CardTitle>
                 </CardHeader>
                 <CardContent>
                   {mappedData ? (
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4 text-sm">
-                        <div className="p-3 bg-secondary rounded-md">Ref: {mappedData.invoiceNumber || 'N/D'}</div>
-                        <div className="p-3 bg-secondary rounded-md">Fecha: {mappedData.issueDate || 'N/D'}</div>
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="p-3 bg-secondary rounded-lg border">
+                           <Label className="text-[10px] text-muted-foreground uppercase">Ref. Control</Label>
+                           <p className="text-sm font-bold truncate">{mappedData.invoiceNumber || 'Sin Ref'}</p>
+                        </div>
+                        <div className="p-3 bg-secondary rounded-lg border">
+                           <Label className="text-[10px] text-muted-foreground uppercase">Fecha Emisión</Label>
+                           <p className="text-sm font-bold">{mappedData.issueDate || 'N/D'}</p>
+                        </div>
                       </div>
-                      <div className="border rounded-md max-h-[200px] overflow-auto">
-                        <table className="w-full text-xs">
-                          <thead className="bg-muted sticky top-0"><tr><th className="p-2 text-left">Item</th><th className="p-2 text-right">Total</th></tr></thead>
-                          <tbody>{mappedData.items?.map((it, idx) => (<tr key={idx} className="border-t"><td className="p-2">{it.description}</td><td className="p-2 text-right">${it.lineTotal?.toFixed(2)}</td></tr>))}</tbody>
+                      
+                      <div className="border rounded-lg overflow-hidden">
+                        <table className="w-full text-[11px]">
+                          <thead className="bg-muted"><tr><th className="p-2 text-left">Concepto</th><th className="p-2 text-right">Monto ($)</th></tr></thead>
+                          <tbody className="divide-y">
+                            {mappedData.items?.map((it, idx) => (
+                              <tr key={idx}><td className="p-2 opacity-80">{it.description}</td><td className="p-2 text-right font-mono">${it.lineTotal?.toFixed(2)}</td></tr>
+                            ))}
+                          </tbody>
                         </table>
                       </div>
-                      <div className="text-xl font-bold text-right text-primary">Total Compra: ${mappedData.totalAmount?.toFixed(2)}</div>
-                      <Button className="w-full bg-primary" onClick={handleSavePurchase}>Confirmar Gasto en Proyecto</Button>
+
+                      <div className="space-y-1 p-4 bg-primary/5 rounded-lg border border-primary/20">
+                         <div className="flex justify-between text-xs"><span>Subtotal SV:</span><span>${mappedData.subtotal?.toFixed(2)}</span></div>
+                         <div className="flex justify-between text-xs"><span>Impuestos:</span><span>${mappedData.taxAmount?.toFixed(2)}</span></div>
+                         <div className="flex justify-between text-lg font-bold text-primary mt-2"><span>Total a Pagar:</span><span>${mappedData.totalAmount?.toFixed(2)}</span></div>
+                      </div>
+
+                      <Button className="w-full bg-primary" onClick={handleSavePurchase}>Confirmar e Inyectar al Proyecto</Button>
                     </div>
                   ) : (
-                    <div className="h-64 flex items-center justify-center text-muted-foreground text-center px-8">Mapee un JSON para ver los costos antes de cargarlos.</div>
+                    <div className="py-24 flex flex-col items-center justify-center text-muted-foreground text-center px-8 border-2 border-dashed rounded-lg opacity-40">
+                      <FileJson className="h-10 w-10 mb-2" />
+                      <p className="text-sm italic">Cargue un archivo DTE para visualizar el desglose de costos.</p>
+                    </div>
                   )}
                 </CardContent>
               </Card>
@@ -273,64 +373,87 @@ export default function InstitutionalModule() {
 
         <TabsContent value="comparison">
           {!selectedProjectId ? (
-             <div className="py-20 text-center">Seleccione un proyecto para ver la comparación.</div>
+             <div className="py-20 text-center">Seleccione un proyecto para la conciliación de factura final.</div>
           ) : (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <Card className="bg-destructive/5 border-destructive/20">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Costos Acumulados</CardTitle></CardHeader>
-                  <CardContent><div className="text-2xl font-bold">${projectCosts.toLocaleString()}</div></CardContent>
+                <Card className="bg-destructive/5 border-destructive/20 shadow-sm">
+                  <CardHeader className="pb-2"><CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Gastos Reales Acumulados</CardTitle></CardHeader>
+                  <CardContent><div className="text-3xl font-bold">${projectCosts.toLocaleString()}</div></CardContent>
                 </Card>
-                <Card className="bg-primary/5 border-primary/20">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Objetivo de Venta</CardTitle></CardHeader>
-                  <CardContent><div className="text-2xl font-bold">${currentProject?.targetSaleAmount.toLocaleString()}</div></CardContent>
+                <Card className="bg-primary/5 border-primary/20 shadow-sm">
+                  <CardHeader className="pb-2"><CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Venta Objetivo SV</CardTitle></CardHeader>
+                  <CardContent><div className="text-3xl font-bold">${currentProject?.targetSaleAmount.toLocaleString()}</div></CardContent>
                 </Card>
-                <Card className="bg-accent/5 border-accent/20">
-                  <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Facturado Real</CardTitle></CardHeader>
-                  <CardContent><div className="text-2xl font-bold">${projectInvoices.toLocaleString()}</div></CardContent>
+                <Card className={cn("shadow-sm", projectInvoices > 0 ? "bg-accent/10 border-accent/20" : "bg-muted/50")}>
+                  <CardHeader className="pb-2"><CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Facturado Realmente</CardTitle></CardHeader>
+                  <CardContent><div className="text-3xl font-bold">${projectInvoices.toLocaleString()}</div></CardContent>
                 </Card>
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><ReceiptText className="h-5 w-5 text-primary" /> Cargar Factura Emitida</CardTitle>
-                    <CardDescription>Valide que lo facturado coincida con el objetivo para evitar desvíos.</CardDescription>
+                    <CardTitle className="flex items-center gap-2"><ReceiptText className="h-5 w-5 text-primary" /> Registrar Factura de Venta SV</CardTitle>
+                    <CardDescription>Cargue el JSON de la factura que emitió para conciliar contra el presupuesto.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <Textarea placeholder="Pegue el JSON de la factura que emitió..." className="min-h-[150px] font-code" value={jsonInput} onChange={e => setJsonInput(e.target.value)} />
-                    <Button className="w-full gap-2" onClick={handleProcessAI} disabled={isProcessing}>Procesar Factura Emitida</Button>
+                     <div 
+                      className={cn(
+                        "relative border-2 border-dashed rounded-xl p-6 transition-all flex flex-col items-center justify-center gap-2 cursor-pointer",
+                        isDragging ? "border-primary bg-primary/5" : "border-muted"
+                      )}
+                      onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                      onDragLeave={() => setIsDragging(false)}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Upload className="h-6 w-6 text-muted-foreground" />
+                      <p className="text-sm font-medium">Arrastre la factura emitida</p>
+                    </div>
+                    <Textarea placeholder="Contenido del DTE emitido..." className="min-h-[120px] font-code" value={jsonInput} onChange={e => setJsonInput(e.target.value)} />
+                    <Button className="w-full h-12 gap-2" onClick={() => handleProcessData()} disabled={isProcessing || !jsonInput}>Validar y Analizar</Button>
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="border-accent/20">
                   <CardHeader>
-                    <CardTitle>Análisis de Desviación</CardTitle>
+                    <CardTitle>Analítica de Desviación</CardTitle>
                   </CardHeader>
                   <CardContent>
                     {mappedData ? (
                       <div className="space-y-6">
-                        <div className="space-y-2">
-                           <div className="flex justify-between text-sm"><span>Monto Factura IA:</span><span className="font-bold">${mappedData.totalAmount?.toFixed(2)}</span></div>
-                           <div className="flex justify-between text-sm"><span>Objetivo Proyecto:</span><span>${currentProject?.targetSaleAmount.toFixed(2)}</span></div>
-                           <hr />
-                           <div className="flex justify-between text-lg font-headline">
-                              <span>Diferencia:</span>
-                              <span className={Math.abs((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)) < 1 ? 'text-green-500' : 'text-orange-500'}>
-                                 ${((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)).toFixed(2)}
-                              </span>
+                        <div className="space-y-4 p-4 bg-accent/5 rounded-xl border border-accent/10">
+                           <div className="flex justify-between items-center"><span className="text-sm text-muted-foreground">Monto Factura Emitida:</span><span className="text-xl font-bold">${mappedData.totalAmount?.toFixed(2)}</span></div>
+                           <div className="flex justify-between items-center"><span className="text-sm text-muted-foreground">Objetivo del Proyecto:</span><span className="text-sm font-medium">${currentProject?.targetSaleAmount.toFixed(2)}</span></div>
+                           <div className="border-t pt-3 flex justify-between items-end">
+                              <span className="text-sm font-bold">Diferencia Final:</span>
+                              <div className="text-right">
+                                <span className={cn(
+                                  "text-2xl font-black",
+                                  Math.abs((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)) < 1 ? 'text-green-500' : 'text-orange-500'
+                                )}>
+                                   ${((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)).toFixed(2)}
+                                </span>
+                                <p className="text-[10px] text-muted-foreground font-mono">DESVIACIÓN PRESUPUESTARIA</p>
+                              </div>
                            </div>
                         </div>
+
                         {Math.abs((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)) > 1 && (
-                          <div className="p-3 bg-orange-500/10 border border-orange-500/20 rounded text-xs text-orange-500 flex gap-2">
-                            <AlertCircle className="h-4 w-4 shrink-0" />
-                            Atención: La factura no coincide exactamente con el monto de venta objetivo.
+                          <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-lg text-xs text-orange-600 flex gap-3">
+                            <Upload className="h-5 w-5 shrink-0" />
+                            <p><strong>Atención Fiscal:</strong> La factura cargada no coincide con el monto objetivo definido para este proyecto SV. Revise el DTE antes de finalizar.</p>
                           </div>
                         )}
-                        <Button className="w-full bg-accent" onClick={handleSaveFinalInvoice}>Finalizar y Registrar Venta</Button>
+                        
+                        <Button className="w-full h-12 bg-accent hover:bg-accent/90" onClick={handleSaveFinalInvoice}>Finalizar Conciliación y Registrar Venta</Button>
                       </div>
                     ) : (
-                      <div className="h-48 flex items-center justify-center text-muted-foreground italic">Procese su factura final para comparar contra el presupuesto.</div>
+                      <div className="h-64 flex flex-col items-center justify-center text-muted-foreground italic opacity-50">
+                        <Calculator className="h-10 w-10 mb-2" />
+                        <p>Analice la factura emitida para ver la comparativa de ganancias.</p>
+                      </div>
                     )}
                   </CardContent>
                 </Card>
