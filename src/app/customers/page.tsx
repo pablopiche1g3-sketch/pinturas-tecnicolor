@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -70,41 +69,41 @@ export default function CustomersPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-medium">Customer Directory</h3>
-            <p className="text-sm text-muted-foreground">Manage institutional clients and individual buyers.</p>
+            <h3 className="text-lg font-medium">Directorio de Clientes</h3>
+            <p className="text-sm text-muted-foreground">Gestione clientes institucionales y compradores individuales.</p>
           </div>
           <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2 bg-accent hover:bg-accent/90">
-                <Plus className="h-4 w-4" /> Add Customer
+                <Plus className="h-4 w-4" /> Añadir Cliente
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>
-                <DialogTitle className="font-headline">Register Customer</DialogTitle>
+                <DialogTitle className="font-headline">Registrar Cliente</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Client Name</Label>
+                  <Label htmlFor="name">Nombre del Cliente</Label>
                   <Input 
                     id="name" 
                     value={formData.name} 
                     onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="e.g. Global Tech Solutions" 
+                    placeholder="ej. Global Tech Solutions" 
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email Contact</Label>
+                  <Label htmlFor="email">Correo de Contacto</Label>
                   <Input 
                     id="email" 
                     type="email"
                     value={formData.email} 
                     onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                    placeholder="billing@globaltech.com" 
+                    placeholder="facturacion@globaltech.com" 
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="phone">Phone Number</Label>
+                  <Label htmlFor="phone">Número de Teléfono</Label>
                   <Input 
                     id="phone" 
                     value={formData.phone} 
@@ -113,7 +112,7 @@ export default function CustomersPage() {
                   />
                 </div>
                 <DialogFooter>
-                  <Button type="submit" className="w-full bg-accent hover:bg-accent/90">Confirm Client</Button>
+                  <Button type="submit" className="w-full bg-accent hover:bg-accent/90">Confirmar Cliente</Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -125,10 +124,10 @@ export default function CustomersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Contact Info</TableHead>
-                  <TableHead>Registration Date</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Información de Contacto</TableHead>
+                  <TableHead>Fecha de Registro</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -165,7 +164,7 @@ export default function CustomersPage() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
-                      No customers registered in the directory.
+                      No hay clientes registrados en el directorio.
                     </TableCell>
                   </TableRow>
                 )}

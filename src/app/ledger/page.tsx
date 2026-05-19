@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -40,12 +39,12 @@ export default function LedgerPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-medium">Transaction History</h3>
-            <p className="text-sm text-muted-foreground">Comprehensive record of all institutional flows and sales activity.</p>
+            <h3 className="text-lg font-medium">Historial de Transacciones</h3>
+            <p className="text-sm text-muted-foreground">Registro completo de todos los flujos institucionales y actividad de ventas.</p>
           </div>
           <div className="flex gap-2">
             <Button variant="outline" size="sm" className="gap-2">
-              <FileText className="h-4 w-4" /> Export CSV
+              <FileText className="h-4 w-4" /> Exportar CSV
             </Button>
           </div>
         </div>
@@ -55,13 +54,13 @@ export default function LedgerPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[100px]">Type</TableHead>
-                  <TableHead>Invoice #</TableHead>
-                  <TableHead>Entity</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="text-right">Amount</TableHead>
-                  <TableHead className="text-right">Gain/Cost</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="w-[100px]">Tipo</TableHead>
+                  <TableHead>Factura #</TableHead>
+                  <TableHead>Entidad</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead className="text-right">Cantidad</TableHead>
+                  <TableHead className="text-right">Ganancia/Costo</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -71,11 +70,11 @@ export default function LedgerPage() {
                       <TableCell>
                         {t.type === 'purchase' ? (
                           <Badge variant="outline" className="text-destructive border-destructive/30 bg-destructive/5 gap-1">
-                            <TrendingDown className="h-3 w-3" /> Purchase
+                            <TrendingDown className="h-3 w-3" /> Compra
                           </Badge>
                         ) : (
                           <Badge variant="outline" className="text-primary border-primary/30 bg-primary/5 gap-1">
-                            <TrendingUp className="h-3 w-3" /> Sale
+                            <TrendingUp className="h-3 w-3" /> Venta
                           </Badge>
                         )}
                       </TableCell>
@@ -90,11 +89,11 @@ export default function LedgerPage() {
                       <TableCell className="text-right">
                          <div className="flex flex-col items-end gap-1">
                             <span className={t.type === 'sale' ? 'text-primary font-bold' : 'text-muted-foreground text-xs'}>
-                              {t.type === 'sale' ? `+$${t.gain.toFixed(2)}` : `Cost: $${t.costBasis.toFixed(2)}`}
+                              {t.type === 'sale' ? `+$${t.gain.toFixed(2)}` : `Costo: $${t.costBasis.toFixed(2)}`}
                             </span>
                             {t.type === 'sale' && (
                               <span className="text-[10px] text-muted-foreground">
-                                ({((t.gain / t.totalAmount) * 100).toFixed(1)}% Margin)
+                                ({((t.gain / t.totalAmount) * 100).toFixed(1)}% Margen)
                               </span>
                             )}
                          </div>
@@ -116,7 +115,7 @@ export default function LedgerPage() {
                     <TableCell colSpan={7} className="h-32 text-center">
                       <div className="flex flex-col items-center gap-2 text-muted-foreground">
                         <ArrowRightLeft className="h-8 w-8 opacity-20" />
-                        <span>No transactions recorded in the ledger yet.</span>
+                        <span>No se han registrado transacciones en el libro todavía.</span>
                       </div>
                     </TableCell>
                   </TableRow>

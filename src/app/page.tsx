@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -78,7 +77,7 @@ export default function Dashboard() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <Card className="relative overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+              <CardTitle className="text-sm font-medium">Ingresos Totales</CardTitle>
               <DollarSign className="w-4 h-4 text-accent" />
             </CardHeader>
             <CardContent>
@@ -86,7 +85,7 @@ export default function Dashboard() {
               <p className="text-xs text-muted-foreground mt-1">
                 <span className="text-accent inline-flex items-center">
                   <ArrowUpRight className="w-3 h-3 mr-1" /> +12.5%
-                </span> from last period
+                </span> desde el último periodo
               </p>
             </CardContent>
             <div className="absolute bottom-0 left-0 h-1 bg-accent/30 w-full" />
@@ -94,13 +93,13 @@ export default function Dashboard() {
 
           <Card className="relative overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium">Total Costs</CardTitle>
+              <CardTitle className="text-sm font-medium">Costos Totales</CardTitle>
               <TrendingDown className="w-4 h-4 text-destructive" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold font-headline">${totalCosts.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                Processed across {transactions.length} records
+                Procesado en {transactions.length} registros
               </p>
             </CardContent>
             <div className="absolute bottom-0 left-0 h-1 bg-destructive/30 w-full" />
@@ -108,13 +107,13 @@ export default function Dashboard() {
 
           <Card className="relative overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium">Net Profit</CardTitle>
+              <CardTitle className="text-sm font-medium">Beneficio Neto</CardTitle>
               <TrendingUp className="w-4 h-4 text-primary" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold font-headline">${totalProfit.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                Institutional efficiency at 84%
+                Eficiencia institucional al 84%
               </p>
             </CardContent>
             <div className="absolute bottom-0 left-0 h-1 bg-primary/30 w-full" />
@@ -122,7 +121,7 @@ export default function Dashboard() {
 
           <Card className="relative overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
-              <CardTitle className="text-sm font-medium">Profit Margin</CardTitle>
+              <CardTitle className="text-sm font-medium">Margen de Beneficio</CardTitle>
               <Target className="w-4 h-4 text-accent" />
             </CardHeader>
             <CardContent>
@@ -141,8 +140,8 @@ export default function Dashboard() {
         <div className="grid gap-4 md:grid-cols-7">
           <Card className="col-span-4">
             <CardHeader>
-              <CardTitle>Financial Activity</CardTitle>
-              <CardDescription>Visualizing recent institutional purchase and sales flows.</CardDescription>
+              <CardTitle>Actividad Financiera</CardTitle>
+              <CardDescription>Visualización de los flujos recientes de compras y ventas institucionales.</CardDescription>
             </CardHeader>
             <CardContent className="pl-2">
               <div className="h-[300px] w-full">
@@ -166,6 +165,7 @@ export default function Dashboard() {
                       <Tooltip 
                         contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
                         itemStyle={{ color: 'hsl(var(--primary))' }}
+                        labelFormatter={(label) => `Factura: ${label}`}
                       />
                       <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                         {chartData.map((entry, index) => (
@@ -176,7 +176,7 @@ export default function Dashboard() {
                   </ResponsiveContainer>
                 ) : (
                   <div className="flex h-full items-center justify-center text-muted-foreground">
-                    No transactions available for visualization.
+                    No hay transacciones disponibles para visualización.
                   </div>
                 )}
               </div>
@@ -185,35 +185,35 @@ export default function Dashboard() {
 
           <Card className="col-span-3">
             <CardHeader>
-              <CardTitle>Recent Insights</CardTitle>
-              <CardDescription>Key findings from mapped data.</CardDescription>
+              <CardTitle>Análisis Reciente</CardTitle>
+              <CardDescription>Hallazgos clave de los datos procesados.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-8">
                 <div className="flex items-center">
                   <Activity className="h-9 w-9 text-accent mr-3" />
                   <div className="ml-4 space-y-1">
-                    <p className="text-sm font-medium leading-none">Automated Mapping</p>
+                    <p className="text-sm font-medium leading-none">Mapeo Automatizado</p>
                     <p className="text-xs text-muted-foreground">
-                      AI successfully mapped 100% of last invoice.
+                      La IA mapeó con éxito el 100% de la última factura.
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center">
                   <Truck className="h-9 w-9 text-primary mr-3" />
                   <div className="ml-4 space-y-1">
-                    <p className="text-sm font-medium leading-none">Supplier Growth</p>
+                    <p className="text-sm font-medium leading-none">Crecimiento de Proveedores</p>
                     <p className="text-xs text-muted-foreground">
-                      Added 3 new institutional partners this week.
+                      3 nuevos socios institucionales añadidos esta semana.
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center">
                   <Users className="h-9 w-9 text-accent mr-3" />
                   <div className="ml-4 space-y-1">
-                    <p className="text-sm font-medium leading-none">Client Retention</p>
+                    <p className="text-sm font-medium leading-none">Retención de Clientes</p>
                     <p className="text-xs text-muted-foreground">
-                      Top 5 clients contributing 45% of total gains.
+                      Los 5 principales clientes aportan el 45% de las ganancias.
                     </p>
                   </div>
                 </div>

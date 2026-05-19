@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -70,41 +69,41 @@ export default function SuppliersPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-medium">Institutional Providers</h3>
-            <p className="text-sm text-muted-foreground">Manage and register entities providing goods or services.</p>
+            <h3 className="text-lg font-medium">Proveedores Institucionales</h3>
+            <p className="text-sm text-muted-foreground">Administre y registre las entidades que proporcionan bienes o servicios.</p>
           </div>
           <Dialog open={isOpen} onOpenChange={setIsOpen}>
             <DialogTrigger asChild>
               <Button className="gap-2">
-                <Plus className="h-4 w-4" /> Add Supplier
+                <Plus className="h-4 w-4" /> Añadir Proveedor
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[425px]">
               <DialogHeader>
-                <DialogTitle className="font-headline">Register Supplier</DialogTitle>
+                <DialogTitle className="font-headline">Registrar Proveedor</DialogTitle>
               </DialogHeader>
               <form onSubmit={handleSubmit} className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="name">Supplier Name</Label>
+                  <Label htmlFor="name">Nombre del Proveedor</Label>
                   <Input 
                     id="name" 
                     value={formData.name} 
                     onChange={e => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                    placeholder="e.g. Acme Corp" 
+                    placeholder="ej. Acme Corp" 
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="email">Email Contact</Label>
+                  <Label htmlFor="email">Correo de Contacto</Label>
                   <Input 
                     id="email" 
                     type="email"
                     value={formData.email} 
                     onChange={e => setFormData(prev => ({ ...prev, email: e.target.value }))}
-                    placeholder="contact@acme.com" 
+                    placeholder="contacto@acme.com" 
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="phone">Phone Number</Label>
+                  <Label htmlFor="phone">Número de Teléfono</Label>
                   <Input 
                     id="phone" 
                     value={formData.phone} 
@@ -113,7 +112,7 @@ export default function SuppliersPage() {
                   />
                 </div>
                 <DialogFooter>
-                  <Button type="submit" className="w-full">Save Entity</Button>
+                  <Button type="submit" className="w-full">Guardar Entidad</Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -125,10 +124,10 @@ export default function SuppliersPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Provider</TableHead>
-                  <TableHead>Contact Info</TableHead>
-                  <TableHead>Registration Date</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead>Proveedor</TableHead>
+                  <TableHead>Información de Contacto</TableHead>
+                  <TableHead>Fecha de Registro</TableHead>
+                  <TableHead className="text-right">Acciones</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -165,7 +164,7 @@ export default function SuppliersPage() {
                 ) : (
                   <TableRow>
                     <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
-                      No suppliers registered yet.
+                      No hay proveedores registrados todavía.
                     </TableCell>
                   </TableRow>
                 )}

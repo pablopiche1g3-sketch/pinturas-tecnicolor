@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -25,7 +24,7 @@ export default function InstitutionalModule() {
   const [mappedData, setMappedData] = React.useState<AiJsonKeyMapperOutput | null>(null)
   const [selectedEntityId, setSelectedEntityId] = React.useState('')
   const [transactionType, setTransactionType] = React.useState<'purchase' | 'sale'>('purchase')
-  const [costBasis, setCostBasis] = React.useState<number>(0) // Only for sales
+  const [costBasis, setCostBasis] = React.useState<number>(0)
 
   React.useEffect(() => {
     setMounted(true)
@@ -38,34 +37,32 @@ export default function InstitutionalModule() {
   const handleProcess = async () => {
     if (!jsonInput.trim()) {
       toast({
-        title: "Input Required",
-        description: "Please paste a JSON payload to process.",
+        title: "Entrada requerida",
+        description: "Por favor, pegue un payload JSON para procesar.",
         variant: "destructive"
       })
       return
     }
 
     try {
-      // Basic JSON validation
       JSON.parse(jsonInput)
       
       setIsProcessing(true)
       const result = await aiJsonKeyMapper({ invoiceJsonString: jsonInput })
       setMappedData(result)
       
-      // Auto-suggest cost basis if it's a sale (just for UI demo purposes)
       if (transactionType === 'sale' && result.totalAmount) {
         setCostBasis(result.totalAmount * 0.7)
       }
 
       toast({
-        title: "AI Mapping Successful",
-        description: "Review the extracted data fields below.",
+        title: "Mapeo IA Exitoso",
+        description: "Revise los campos de datos extraídos a continuación.",
       })
     } catch (error) {
       toast({
-        title: "Processing Failed",
-        description: error instanceof Error ? error.message : "Invalid JSON or AI failure.",
+        title: "Fallo en el Procesamiento",
+        description: error instanceof Error ? error.message : "JSON inválido o fallo de la IA.",
         variant: "destructive"
       })
     } finally {
@@ -76,8 +73,8 @@ export default function InstitutionalModule() {
   const handleSave = () => {
     if (!mappedData || !selectedEntityId) {
       toast({
-        title: "Missing Information",
-        description: "Please select an entity and verify mapped data.",
+        title: "Información Faltante",
+        description: "Por favor, seleccione una entidad y verifique los datos mapeados.",
         variant: "destructive"
       })
       return
@@ -93,7 +90,7 @@ export default function InstitutionalModule() {
       entityName: selectedEntity.name,
       type: transactionType,
       items: (mappedData.items || []).map(i => ({
-        description: i.description || 'Generic Item',
+        description: i.description || 'Artículo genérico',
         quantity: i.quantity || 1,
         unitPrice: i.unitPrice || 0,
         lineTotal: i.lineTotal || 0,
@@ -106,11 +103,10 @@ export default function InstitutionalModule() {
     })
 
     toast({
-      title: "Transaction Ledger Updated",
-      description: "Data has been persisted successfully.",
+      title: "Libro Mayor Actualizado",
+      description: "Los datos se han persistido correctamente.",
     })
 
-    // Reset
     setMappedData(null)
     setJsonInput('')
     setSelectedEntityId('')
@@ -129,21 +125,20 @@ export default function InstitutionalModule() {
   return (
     <AppLayout>
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* Left Side: Input & Settings */}
         <div className="lg:col-span-5 space-y-6">
           <Card className="border-accent/20">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileJson className="h-5 w-5 text-accent" />
-                Input Module
+                Módulo de Entrada
               </CardTitle>
-              <CardDescription>Paste the raw JSON payload from your supplier or customer.</CardDescription>
+              <CardDescription>Pegue el payload JSON original de su proveedor o cliente.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
                <div className="space-y-4">
                 <div className="flex gap-4">
                   <div className="flex-1 space-y-2">
-                    <Label>Flow Type</Label>
+                    <Label>Tipo de Flujo</Label>
                     <Select 
                       value={transactionType} 
                       onValueChange={(val: any) => {
@@ -152,19 +147,19 @@ export default function InstitutionalModule() {
                       }}
                     >
                       <SelectTrigger>
-                        <SelectValue placeholder="Select type" />
+                        <SelectValue placeholder="Seleccionar tipo" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="purchase">Institutional Purchase</SelectItem>
-                        <SelectItem value="sale">Invoice Sale</SelectItem>
+                        <SelectItem value="purchase">Compra Institucional</SelectItem>
+                        <SelectItem value="sale">Venta de Factura</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="flex-1 space-y-2">
-                    <Label>{transactionType === 'purchase' ? 'Supplier' : 'Customer'}</Label>
+                    <Label>{transactionType === 'purchase' ? 'Proveedor' : 'Cliente'}</Label>
                     <Select value={selectedEntityId} onValueChange={setSelectedEntityId}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select entity" />
+                        <SelectValue placeholder="Seleccionar entidad" />
                       </SelectTrigger>
                       <SelectContent>
                         {currentEntityList.map(e => (
@@ -176,9 +171,9 @@ export default function InstitutionalModule() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>JSON Payload</Label>
+                  <Label>Payload JSON</Label>
                   <Textarea 
-                    placeholder="Paste JSON here..." 
+                    placeholder="Pegue el JSON aquí..." 
                     className="min-h-[300px] font-code text-sm bg-black/30 resize-none border-primary/20 focus-visible:ring-primary"
                     value={jsonInput}
                     onChange={(e) => setJsonInput(e.target.value)}
@@ -191,9 +186,9 @@ export default function InstitutionalModule() {
                   disabled={isProcessing}
                 >
                   {isProcessing ? (
-                    <><Loader2 className="h-5 w-5 animate-spin" /> Processing AI Mapping...</>
+                    <><Loader2 className="h-5 w-5 animate-spin" /> Procesando Mapeo IA...</>
                   ) : (
-                    <><Zap className="h-5 w-5 fill-current" /> Execute Smart Parse</>
+                    <><Zap className="h-5 w-5 fill-current" /> Ejecutar Análisis Inteligente</>
                   )}
                 </Button>
               </div>
@@ -201,39 +196,38 @@ export default function InstitutionalModule() {
           </Card>
         </div>
 
-        {/* Right Side: Verification & Results */}
         <div className="lg:col-span-7 space-y-6">
           <Card className="min-h-[600px] border-primary/20">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <CheckCircle2 className="h-5 w-5 text-primary" />
-                Validation Workspace
+                Espacio de Validación
               </CardTitle>
-              <CardDescription>Review and finalize mapped financial fields before ledger commitment.</CardDescription>
+              <CardDescription>Revise y finalice los campos financieros mapeados antes de confirmar en el libro mayor.</CardDescription>
             </CardHeader>
             <CardContent>
               {mappedData ? (
                 <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground uppercase tracking-widest">Invoice Ref</Label>
-                      <div className="p-3 bg-secondary rounded-md font-mono text-sm border">{mappedData.invoiceNumber || 'N/A'}</div>
+                      <Label className="text-xs text-muted-foreground uppercase tracking-widest">Ref. Factura</Label>
+                      <div className="p-3 bg-secondary rounded-md font-mono text-sm border">{mappedData.invoiceNumber || 'N/D'}</div>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground uppercase tracking-widest">Issue Date</Label>
-                      <div className="p-3 bg-secondary rounded-md text-sm border">{mappedData.issueDate || 'N/A'}</div>
+                      <Label className="text-xs text-muted-foreground uppercase tracking-widest">Fecha de Emisión</Label>
+                      <div className="p-3 bg-secondary rounded-md text-sm border">{mappedData.issueDate || 'N/D'}</div>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground uppercase tracking-widest">Line Items</Label>
+                    <Label className="text-xs text-muted-foreground uppercase tracking-widest">Líneas de Detalle</Label>
                     <div className="border rounded-md overflow-hidden">
                       <table className="w-full text-sm">
                         <thead className="bg-muted/50 border-b">
                           <tr>
-                            <th className="px-4 py-2 text-left font-medium">Description</th>
-                            <th className="px-4 py-2 text-right font-medium">Qty</th>
-                            <th className="px-4 py-2 text-right font-medium">Unit</th>
+                            <th className="px-4 py-2 text-left font-medium">Descripción</th>
+                            <th className="px-4 py-2 text-right font-medium">Cant.</th>
+                            <th className="px-4 py-2 text-right font-medium">Unidad</th>
                             <th className="px-4 py-2 text-right font-medium">Total</th>
                           </tr>
                         </thead>
@@ -257,11 +251,11 @@ export default function InstitutionalModule() {
                       <div className="text-lg font-bold">${mappedData.subtotal?.toFixed(2)}</div>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground uppercase tracking-widest">Tax</Label>
+                      <Label className="text-xs text-muted-foreground uppercase tracking-widest">Impuestos</Label>
                       <div className="text-lg font-bold">${mappedData.taxAmount?.toFixed(2)}</div>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground uppercase tracking-widest text-primary">Grand Total</Label>
+                      <Label className="text-xs text-muted-foreground uppercase tracking-widest text-primary">Gran Total</Label>
                       <div className="text-2xl font-bold text-primary font-headline">${mappedData.totalAmount?.toFixed(2)}</div>
                     </div>
                   </div>
@@ -269,11 +263,11 @@ export default function InstitutionalModule() {
                   {transactionType === 'sale' && (
                     <div className="p-4 bg-primary/5 border border-primary/20 rounded-lg space-y-4">
                        <div className="flex items-center gap-2 text-primary font-medium">
-                        <DollarSign className="h-4 w-4" /> Margin Configuration
+                        <DollarSign className="h-4 w-4" /> Configuración de Margen
                        </div>
                        <div className="flex items-center gap-6">
                           <div className="flex-1 space-y-2">
-                            <Label htmlFor="costBasis">Inventory Cost Basis</Label>
+                            <Label htmlFor="costBasis">Costo de Inventario</Label>
                             <Input 
                               id="costBasis" 
                               type="number" 
@@ -283,12 +277,12 @@ export default function InstitutionalModule() {
                             />
                           </div>
                           <div className="flex-1 space-y-1">
-                             <Label className="text-xs text-muted-foreground uppercase">Estimated Gain</Label>
+                             <Label className="text-xs text-muted-foreground uppercase">Ganancia Estimada</Label>
                              <div className="text-xl font-bold text-accent">
                                 ${(mappedData.totalAmount! - costBasis).toFixed(2)}
                              </div>
                              <Badge variant="outline" className="border-accent text-accent">
-                                {(((mappedData.totalAmount! - costBasis) / mappedData.totalAmount!) * 100).toFixed(1)}% Margin
+                                {(((mappedData.totalAmount! - costBasis) / mappedData.totalAmount!) * 100).toFixed(1)}% Margen
                              </Badge>
                           </div>
                        </div>
@@ -297,7 +291,7 @@ export default function InstitutionalModule() {
 
                   <div className="pt-4 border-t">
                     <Button onClick={handleSave} className="w-full gap-2 bg-primary hover:bg-primary/90 h-12 text-lg">
-                      <ArrowRight className="h-5 w-5" /> Commit to Institutional Ledger
+                      <ArrowRight className="h-5 w-5" /> Confirmar en Libro Mayor
                     </Button>
                   </div>
                 </div>
@@ -307,8 +301,8 @@ export default function InstitutionalModule() {
                     <AlertCircle className="h-8 w-8" />
                   </div>
                   <div className="max-w-[300px]">
-                    <p className="font-medium text-foreground">Waiting for Data Pipeline</p>
-                    <p className="text-sm">Once JSON is processed, AI mapped fields will populate here for human verification.</p>
+                    <p className="font-medium text-foreground">Esperando Flujo de Datos</p>
+                    <p className="text-sm">Una vez procesado el JSON, los campos mapeados por IA aparecerán aquí para verificación humana.</p>
                   </div>
                 </div>
               )}

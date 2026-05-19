@@ -18,16 +18,27 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 
 const navItems = [
-  { label: "Dashboard", icon: LayoutDashboard, href: "/" },
-  { label: "Institutional", icon: Zap, href: "/institutional", highlight: true },
-  { label: "Suppliers", icon: Truck, href: "/suppliers" },
-  { label: "Customers", icon: Users, href: "/customers" },
-  { label: "Ledger", icon: History, href: "/ledger" },
+  { label: "Panel de Control", icon: LayoutDashboard, href: "/" },
+  { label: "Institucional", icon: Zap, href: "/institutional", highlight: true },
+  { label: "Proveedores", icon: Truck, href: "/suppliers" },
+  { label: "Clientes", icon: Users, href: "/customers" },
+  { label: "Libro Mayor", icon: History, href: "/ledger" },
 ]
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const [isCollapsed, setIsCollapsed] = React.useState(false)
+
+  const getPageTitle = (path: string) => {
+    switch (path) {
+      case "/": return "Panel de Control";
+      case "/institutional": return "Gestión Institucional";
+      case "/suppliers": return "Directorio de Proveedores";
+      case "/customers": return "Directorio de Clientes";
+      case "/ledger": return "Libro de Transacciones";
+      default: return "Vantage Ledger";
+    }
+  }
 
   return (
     <div className="flex min-h-screen bg-background font-body">
@@ -81,7 +92,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 {!isCollapsed && <span>{item.label}</span>}
                 {!isCollapsed && item.highlight && (
                   <span className="ml-auto rounded-full bg-accent px-1.5 py-0.5 text-[10px] text-accent-foreground font-bold uppercase tracking-wider">
-                    New
+                    Nuevo
                   </span>
                 )}
               </div>
@@ -95,7 +106,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             isCollapsed && "justify-center"
           )}>
             <Settings className="h-5 w-5 shrink-0" />
-            {!isCollapsed && <span>Settings</span>}
+            {!isCollapsed && <span>Configuración</span>}
           </div>
         </div>
       </aside>
@@ -103,8 +114,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Main Content */}
       <main className="flex-1 overflow-auto">
         <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b bg-background/80 px-8 backdrop-blur-md">
-           <h2 className="font-headline text-2xl font-bold tracking-tight capitalize">
-            {pathname === "/" ? "Dashboard Overview" : pathname.replace("/", "").replace("-", " ")}
+           <h2 className="font-headline text-2xl font-bold tracking-tight">
+            {getPageTitle(pathname)}
            </h2>
            <div className="flex items-center gap-4">
               <Button variant="outline" size="icon" className="md:hidden">
