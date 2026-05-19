@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useLedgerStore } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput } from "@/ai/flows/ai-json-key-mapper"
-import { Loader2, FileJson, ArrowUpTrayIcon, DollarSign, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, FileCode } from "lucide-react"
+import { Loader2, FileJson, DollarSign, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, FileCode } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -38,7 +38,9 @@ export default function InstitutionalModule() {
   const [mappedData, setMappedData] = React.useState<AiJsonKeyMapperOutput | null>(null)
   const [selectedSupplierId, setSelectedSupplierId] = React.useState('')
   const [isDragging, setIsDragging] = React.useState(false)
+  
   const fileInputRef = React.useRef<HTMLInputElement>(null)
+  const fileInputEmitRef = React.useRef<HTMLInputElement>(null)
 
   React.useEffect(() => {
     setMounted(true)
@@ -76,7 +78,7 @@ export default function InstitutionalModule() {
       setIsProcessing(true)
       const result = await aiJsonKeyMapper({ invoiceJsonString: rawData })
       setMappedData(result)
-      toast({ title: "Datos Cargados", description: "Documento analizado correctamente." })
+      toast({ title: "Documento Procesado", description: "Se han extraído los datos del DTE correctamente." })
     } catch (error) {
       toast({ title: "Error de Formato", description: "No se pudo leer el archivo JSON.", variant: "destructive" })
     } finally {
@@ -101,7 +103,7 @@ export default function InstitutionalModule() {
     e.preventDefault()
     setIsDragging(false)
     const file = e.dataTransfer.files?.[0]
-    if (file && file.type === "application/json") {
+    if (file && (file.type === "application/json" || file.name.endsWith('.json'))) {
       const reader = new FileReader()
       reader.onload = (event) => {
         const content = event.target?.result as string
@@ -167,7 +169,7 @@ export default function InstitutionalModule() {
     })
     setMappedData(null)
     setJsonInput('')
-    toast({ title: "Factura Emitida", description: "La venta se ha vinculado al proyecto." })
+    toast({ title: "Factura Emitida", description: "La venta se ha vinculado al proyecto y registrado en el libro mayor." })
   }
 
   if (!mounted) return null
@@ -177,7 +179,7 @@ export default function InstitutionalModule() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="bg-secondary p-1">
           <TabsTrigger value="projects" className="gap-2"><Briefcase className="h-4 w-4" /> Proyectos</TabsTrigger>
-          <TabsTrigger value="purchases" className="gap-2"><Plus className="h-4 w-4" /> Importar DTE Proveedor</TabsTrigger>
+          <TabsTrigger value="purchases" className="gap-2"><Plus className="h-4 w-4" /> Importar Compras DTE</TabsTrigger>
           <TabsTrigger value="comparison" className="gap-2"><Calculator className="h-4 w-4" /> Conciliación Final</TabsTrigger>
         </TabsList>
 
@@ -214,7 +216,7 @@ export default function InstitutionalModule() {
 
             <Card className="md:col-span-2">
               <CardHeader>
-                <CardTitle>Proyectos SV Activos</CardTitle>
+                <CardTitle>Proyectos Activos</CardTitle>
                 <CardDescription>Gestión de presupuestos institucionales en ejecución.</CardDescription>
               </CardHeader>
               <CardContent>
@@ -243,7 +245,7 @@ export default function InstitutionalModule() {
                   )) : (
                     <div className="py-20 text-center text-muted-foreground flex flex-col items-center gap-2">
                       <Briefcase className="h-12 w-12 opacity-10" />
-                      <p>No hay proyectos SV registrados.</p>
+                      <p>No hay proyectos registrados.</p>
                     </div>
                   )}
                 </div>
@@ -264,8 +266,8 @@ export default function InstitutionalModule() {
               <div className="space-y-6">
                 <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><FileCode className="h-5 w-5 text-accent" /> Importación DTE El Salvador</CardTitle>
-                    <CardDescription>Suba o arrastre el JSON del proveedor para vincular al proyecto <strong>{currentProject?.name}</strong>.</CardDescription>
+                    <CardTitle className="flex items-center gap-2"><FileCode className="h-5 w-5 text-accent" /> Importación DTE de Proveedor</CardTitle>
+                    <CardDescription>Cargue el JSON del proveedor para vincular al proyecto <strong>{currentProject?.name}</strong>.</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
                     <div className="space-y-2">
@@ -276,7 +278,6 @@ export default function InstitutionalModule() {
                       </Select>
                     </div>
 
-                    {/* Drag and Drop Zone */}
                     <div 
                       className={cn(
                         "relative border-2 border-dashed rounded-xl p-8 transition-all flex flex-col items-center justify-center gap-4 cursor-pointer",
@@ -298,8 +299,8 @@ export default function InstitutionalModule() {
                         <Upload className={cn("h-8 w-8 text-muted-foreground", isDragging && "text-primary animate-bounce")} />
                       </div>
                       <div className="text-center">
-                        <p className="font-bold">Buscar o arrastrar archivo JSON</p>
-                        <p className="text-xs text-muted-foreground mt-1">Formato DTE SV aceptado</p>
+                        <p className="font-bold">Buscar o arrastrar archivo JSON (DTE)</p>
+                        <p className="text-xs text-muted-foreground mt-1">Haga clic para seleccionar o suelte el archivo aquí</p>
                       </div>
                     </div>
 
@@ -352,7 +353,7 @@ export default function InstitutionalModule() {
                       </div>
 
                       <div className="space-y-1 p-4 bg-primary/5 rounded-lg border border-primary/20">
-                         <div className="flex justify-between text-xs"><span>Subtotal SV:</span><span>${mappedData.subtotal?.toFixed(2)}</span></div>
+                         <div className="flex justify-between text-xs"><span>Subtotal:</span><span>${mappedData.subtotal?.toFixed(2)}</span></div>
                          <div className="flex justify-between text-xs"><span>Impuestos:</span><span>${mappedData.taxAmount?.toFixed(2)}</span></div>
                          <div className="flex justify-between text-lg font-bold text-primary mt-2"><span>Total a Pagar:</span><span>${mappedData.totalAmount?.toFixed(2)}</span></div>
                       </div>
@@ -373,7 +374,11 @@ export default function InstitutionalModule() {
 
         <TabsContent value="comparison">
           {!selectedProjectId ? (
-             <div className="py-20 text-center">Seleccione un proyecto para la conciliación de factura final.</div>
+             <div className="py-20 text-center flex flex-col items-center gap-4 bg-secondary/10 rounded-lg border border-dashed">
+                <Briefcase className="h-12 w-12 text-muted-foreground opacity-20" />
+                <p className="text-muted-foreground">Seleccione un proyecto para la conciliación de factura final.</p>
+                <Button variant="outline" onClick={() => setActiveTab('projects')}>Ir a Proyectos</Button>
+             </div>
           ) : (
             <div className="space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -382,7 +387,7 @@ export default function InstitutionalModule() {
                   <CardContent><div className="text-3xl font-bold">${projectCosts.toLocaleString()}</div></CardContent>
                 </Card>
                 <Card className="bg-primary/5 border-primary/20 shadow-sm">
-                  <CardHeader className="pb-2"><CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Venta Objetivo SV</CardTitle></CardHeader>
+                  <CardHeader className="pb-2"><CardTitle className="text-xs font-semibold uppercase text-muted-foreground">Venta Objetivo</CardTitle></CardHeader>
                   <CardContent><div className="text-3xl font-bold">${currentProject?.targetSaleAmount.toLocaleString()}</div></CardContent>
                 </Card>
                 <Card className={cn("shadow-sm", projectInvoices > 0 ? "bg-accent/10 border-accent/20" : "bg-muted/50")}>
@@ -394,31 +399,52 @@ export default function InstitutionalModule() {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><ReceiptText className="h-5 w-5 text-primary" /> Registrar Factura de Venta SV</CardTitle>
-                    <CardDescription>Cargue el JSON de la factura que emitió para conciliar contra el presupuesto.</CardDescription>
+                    <CardTitle className="flex items-center gap-2"><ReceiptText className="h-5 w-5 text-primary" /> Registrar Factura de Venta Emitida</CardTitle>
+                    <CardDescription>Cargue el JSON de la factura final (DTE) para conciliar contra el presupuesto y costos.</CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                     <div 
+                  <CardContent className="space-y-6">
+                    <div 
                       className={cn(
-                        "relative border-2 border-dashed rounded-xl p-6 transition-all flex flex-col items-center justify-center gap-2 cursor-pointer",
-                        isDragging ? "border-primary bg-primary/5" : "border-muted"
+                        "relative border-2 border-dashed rounded-xl p-8 transition-all flex flex-col items-center justify-center gap-4 cursor-pointer",
+                        isDragging ? "border-primary bg-primary/5" : "border-muted hover:border-primary/50"
                       )}
                       onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
                       onDragLeave={() => setIsDragging(false)}
                       onDrop={handleDrop}
-                      onClick={() => fileInputRef.current?.click()}
+                      onClick={() => fileInputEmitRef.current?.click()}
                     >
-                      <Upload className="h-6 w-6 text-muted-foreground" />
-                      <p className="text-sm font-medium">Arrastre la factura emitida</p>
+                      <input 
+                        type="file" 
+                        ref={fileInputEmitRef} 
+                        className="hidden" 
+                        accept=".json" 
+                        onChange={handleFileUpload} 
+                      />
+                      <div className="h-16 w-16 rounded-full bg-secondary flex items-center justify-center">
+                        <Upload className={cn("h-8 w-8 text-muted-foreground", isDragging && "text-primary animate-bounce")} />
+                      </div>
+                      <div className="text-center">
+                        <p className="font-bold">Buscar o arrastrar DTE emitido</p>
+                        <p className="text-xs text-muted-foreground mt-1">Seleccione el archivo JSON de su factura final</p>
+                      </div>
                     </div>
-                    <Textarea placeholder="Contenido del DTE emitido..." className="min-h-[120px] font-code" value={jsonInput} onChange={e => setJsonInput(e.target.value)} />
-                    <Button className="w-full h-12 gap-2" onClick={() => handleProcessData()} disabled={isProcessing || !jsonInput}>Validar y Analizar</Button>
+
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                      <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-2 text-muted-foreground">O pegar contenido manual</span></div>
+                    </div>
+
+                    <Textarea placeholder="Contenido del DTE emitido..." className="min-h-[120px] font-code text-xs" value={jsonInput} onChange={e => setJsonInput(e.target.value)} />
+                    
+                    <Button className="w-full h-12 gap-2" onClick={() => handleProcessData()} disabled={isProcessing || !jsonInput}>
+                      {isProcessing ? <Loader2 className="animate-spin h-5 w-5" /> : "Validar y Analizar Factura"}
+                    </Button>
                   </CardContent>
                 </Card>
 
                 <Card className="border-accent/20">
                   <CardHeader>
-                    <CardTitle>Analítica de Desviación</CardTitle>
+                    <CardTitle>Análisis de Desviación y Margen</CardTitle>
                   </CardHeader>
                   <CardContent>
                     {mappedData ? (
@@ -440,19 +466,24 @@ export default function InstitutionalModule() {
                            </div>
                         </div>
 
+                        <div className="p-4 bg-secondary/50 rounded-lg border space-y-2">
+                           <div className="flex justify-between text-xs"><span>Costos Totales (Compras):</span><span>${projectCosts.toFixed(2)}</span></div>
+                           <div className="flex justify-between font-bold text-sm"><span>Ganancia Proyectada:</span><span className="text-primary">${((mappedData.totalAmount || 0) - projectCosts).toFixed(2)}</span></div>
+                        </div>
+
                         {Math.abs((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)) > 1 && (
                           <div className="p-4 bg-orange-500/10 border border-orange-500/20 rounded-lg text-xs text-orange-600 flex gap-3">
                             <Upload className="h-5 w-5 shrink-0" />
-                            <p><strong>Atención Fiscal:</strong> La factura cargada no coincide con el monto objetivo definido para este proyecto SV. Revise el DTE antes de finalizar.</p>
+                            <p><strong>Alerta:</strong> El monto de la factura no coincide con el objetivo del proyecto. Verifique antes de registrar.</p>
                           </div>
                         )}
                         
-                        <Button className="w-full h-12 bg-accent hover:bg-accent/90" onClick={handleSaveFinalInvoice}>Finalizar Conciliación y Registrar Venta</Button>
+                        <Button className="w-full h-12 bg-accent hover:bg-accent/90 shadow-lg shadow-accent/20" onClick={handleSaveFinalInvoice}>Finalizar Conciliación y Registrar Venta</Button>
                       </div>
                     ) : (
-                      <div className="h-64 flex flex-col items-center justify-center text-muted-foreground italic opacity-50">
+                      <div className="h-64 flex flex-col items-center justify-center text-muted-foreground italic opacity-50 border-2 border-dashed rounded-lg">
                         <Calculator className="h-10 w-10 mb-2" />
-                        <p>Analice la factura emitida para ver la comparativa de ganancias.</p>
+                        <p className="text-center px-6">Analice la factura emitida para visualizar la comparativa de ganancias y desviaciones.</p>
                       </div>
                     )}
                   </CardContent>
