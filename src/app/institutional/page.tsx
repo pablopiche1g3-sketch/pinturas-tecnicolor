@@ -9,9 +9,17 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogTrigger,
+  DialogFooter
+} from "@/components/ui/dialog"
 import { useLedgerStore } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput } from "@/ai/flows/ai-json-key-mapper"
-import { Loader2, FileJson, DollarSign, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, FileCode } from "lucide-react"
+import { Loader2, FileJson, DollarSign, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, FileCode, CheckCircle2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -23,6 +31,7 @@ export default function InstitutionalModule() {
   const [mounted, setMounted] = React.useState(false)
   const [activeTab, setActiveTab] = React.useState('projects')
   const [selectedProjectId, setSelectedProjectId] = React.useState<string>('')
+  const [isProjectDialogOpen, setIsProjectDialogOpen] = React.useState(false)
   
   // Project Creation State
   const [newProject, setNewProject] = React.useState({
@@ -68,6 +77,7 @@ export default function InstitutionalModule() {
       status: 'active'
     })
     setNewProject({ name: '', purchaseOrder: '', targetSaleAmount: 0, customerId: '' })
+    setIsProjectDialogOpen(false)
     toast({ title: "Proyecto Creado", description: "El proyecto se ha registrado exitosamente." })
   }
 
@@ -184,68 +194,134 @@ export default function InstitutionalModule() {
         </TabsList>
 
         <TabsContent value="projects">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <Card className="md:col-span-1 border-primary/20 bg-primary/5">
-              <CardHeader>
-                <CardTitle>Configurar Proyecto</CardTitle>
-                <CardDescription>Defina el presupuesto y la orden de compra maestra.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Nombre del Proyecto</Label>
-                  <Input placeholder="Ej. Licitación Hospital Central" value={newProject.name} onChange={e => setNewProject({...newProject, name: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Orden de Compra (OC)</Label>
-                  <Input placeholder="Ej. OC-2024-SV-001" value={newProject.purchaseOrder} onChange={e => setNewProject({...newProject, purchaseOrder: e.target.value})} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Cliente</Label>
-                  <Select value={newProject.customerId} onValueChange={val => setNewProject({...newProject, customerId: val})}>
-                    <SelectTrigger><SelectValue placeholder="Seleccionar cliente" /></SelectTrigger>
-                    <SelectContent>{customers.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Monto de Venta Objetivo ($)</Label>
-                  <Input type="number" value={newProject.targetSaleAmount} onChange={e => setNewProject({...newProject, targetSaleAmount: Number(e.target.value)})} />
-                </div>
-                <Button className="w-full bg-accent hover:bg-accent/90 shadow-lg shadow-accent/20" onClick={handleCreateProject}>Crear Proyecto</Button>
-              </CardContent>
-            </Card>
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-bold font-headline">Gestión de Proyectos Institucionales</h3>
+                <p className="text-sm text-muted-foreground">Administre sus presupuestos y órdenes de compra maestras.</p>
+              </div>
+              
+              <Dialog open={isProjectDialogOpen} onOpenChange={setIsProjectDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2 bg-accent hover:bg-accent/90 shadow-lg shadow-accent/20">
+                    <Plus className="h-4 w-4" /> Nuevo Proyecto
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[425px]">
+                  <DialogHeader>
+                    <DialogTitle>Registrar Nuevo Proyecto</DialogTitle>
+                    <CardDescription>Configure los límites financieros y la OC maestra.</CardDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label>Nombre del Proyecto</Label>
+                      <Input 
+                        placeholder="Ej. Licitación Hospital Central" 
+                        value={newProject.name} 
+                        onChange={e => setNewProject({...newProject, name: e.target.value})} 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Orden de Compra (OC)</Label>
+                      <Input 
+                        placeholder="Ej. OC-2024-SV-001" 
+                        value={newProject.purchaseOrder} 
+                        onChange={e => setNewProject({...newProject, purchaseOrder: e.target.value})} 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Cliente Institucional</Label>
+                      <Select value={newProject.customerId} onValueChange={val => setNewProject({...newProject, customerId: val})}>
+                        <SelectTrigger><SelectValue placeholder="Seleccionar cliente" /></SelectTrigger>
+                        <SelectContent>
+                          {customers.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Monto de Venta Objetivo ($)</Label>
+                      <Input 
+                        type="number" 
+                        value={newProject.targetSaleAmount} 
+                        onChange={e => setNewProject({...newProject, targetSaleAmount: Number(e.target.value)})} 
+                      />
+                      <p className="text-[10px] text-muted-foreground italic">Este monto servirá de guía para no facturar de más o de menos.</p>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button className="w-full bg-accent hover:bg-accent/90" onClick={handleCreateProject}>Crear Proyecto</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
 
-            <Card className="md:col-span-2">
+            <Card>
               <CardHeader>
-                <CardTitle>Proyectos Activos</CardTitle>
-                <CardDescription>Gestión de presupuestos institucionales en ejecución.</CardDescription>
+                <CardTitle className="text-lg">Proyectos Activos</CardTitle>
+                <CardDescription>Seleccione un proyecto para inyectar compras o realizar la conciliación final.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {projects.length > 0 ? projects.map(p => (
-                    <div key={p.id} className={`p-4 rounded-lg border flex items-center justify-between transition-all ${selectedProjectId === p.id ? 'border-primary bg-primary/10 ring-1 ring-primary' : 'hover:bg-muted/50'}`}>
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-lg">{p.name}</h4>
-                          <Badge variant="outline" className="bg-primary/5 border-primary/20 text-primary">{p.purchaseOrder}</Badge>
+                    <div 
+                      key={p.id} 
+                      className={cn(
+                        "relative p-5 rounded-xl border transition-all cursor-pointer group",
+                        selectedProjectId === p.id 
+                          ? "border-primary bg-primary/5 ring-1 ring-primary shadow-md" 
+                          : "hover:border-muted-foreground/30 hover:bg-muted/50 border-border"
+                      )}
+                      onClick={() => setSelectedProjectId(p.id)}
+                    >
+                      {selectedProjectId === p.id && (
+                        <CheckCircle2 className="absolute top-4 right-4 h-5 w-5 text-primary" />
+                      )}
+                      <div className="space-y-3">
+                        <div className="space-y-1">
+                          <h4 className="font-bold text-lg truncate pr-6">{p.name}</h4>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="bg-background font-mono text-[10px]">{p.purchaseOrder}</Badge>
+                            <span className="text-[10px] text-muted-foreground uppercase font-semibold">{p.status}</span>
+                          </div>
                         </div>
-                        <p className="text-sm text-muted-foreground">{p.customerName}</p>
-                        <div className="text-xs font-semibold flex gap-3 mt-2">
-                           <span>Objetivo: <span className="text-primary">${p.targetSaleAmount.toLocaleString()}</span></span>
-                           <span className="text-muted-foreground">|</span>
-                           <span>Estado: <span className="text-green-500 uppercase">{p.status}</span></span>
+                        
+                        <div className="space-y-1">
+                          <p className="text-xs text-muted-foreground font-medium">{p.customerName}</p>
+                          <div className="flex justify-between items-end">
+                            <div className="space-y-0.5">
+                              <p className="text-[10px] uppercase text-muted-foreground font-bold">Venta Objetivo</p>
+                              <p className="text-sm font-bold text-primary">${p.targetSaleAmount.toLocaleString()}</p>
+                            </div>
+                            <Button 
+                              variant="ghost" 
+                              size="icon" 
+                              className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                deleteProject(p.id);
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button variant={selectedProjectId === p.id ? "default" : "outline"} size="sm" onClick={() => setSelectedProjectId(p.id)}>
-                          {selectedProjectId === p.id ? "Activo" : "Seleccionar"}
-                        </Button>
-                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteProject(p.id)}><Trash2 className="h-4 w-4" /></Button>
+
+                        {selectedProjectId === p.id && (
+                          <div className="pt-2 flex gap-2">
+                             <Button size="sm" className="w-full text-[10px] h-7 bg-primary/20 text-primary hover:bg-primary/30" onClick={() => setActiveTab('purchases')}>
+                               Gestionar Compras
+                             </Button>
+                             <Button size="sm" className="w-full text-[10px] h-7 bg-accent/20 text-accent hover:bg-accent/30" onClick={() => setActiveTab('comparison')}>
+                               Conciliación
+                             </Button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   )) : (
-                    <div className="py-20 text-center text-muted-foreground flex flex-col items-center gap-2">
-                      <Briefcase className="h-12 w-12 opacity-10" />
-                      <p>No hay proyectos registrados.</p>
+                    <div className="col-span-full py-20 text-center text-muted-foreground flex flex-col items-center gap-2 border-2 border-dashed rounded-xl opacity-40">
+                      <Briefcase className="h-12 w-12" />
+                      <p>No hay proyectos registrados. Comience creando uno nuevo.</p>
                     </div>
                   )}
                 </div>
@@ -258,7 +334,7 @@ export default function InstitutionalModule() {
           {!selectedProjectId ? (
              <div className="flex flex-col items-center justify-center py-20 bg-secondary/20 rounded-lg border border-dashed">
                 <Briefcase className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
-                <p className="text-muted-foreground">Seleccione un proyecto para comenzar la importación de compras.</p>
+                <p className="text-muted-foreground">Seleccione un proyecto en la pestaña anterior para comenzar la importación de compras.</p>
                 <Button variant="link" onClick={() => setActiveTab('projects')}>Ir a Proyectos</Button>
              </div>
           ) : (
