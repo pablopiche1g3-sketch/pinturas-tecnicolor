@@ -6,91 +6,95 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { useLedgerStore } from "@/lib/store"
+import { useLedgerStore, type Project } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput } from "@/ai/flows/ai-json-key-mapper"
-import { Zap, Loader2, CheckCircle2, AlertCircle, FileJson, ArrowRight, DollarSign } from "lucide-react"
+import { Zap, Loader2, CheckCircle2, AlertCircle, FileJson, ArrowRight, DollarSign, Plus, Briefcase, Calculator, ReceiptText, Trash2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 
 export default function InstitutionalModule() {
-  const { entities, addTransaction } = useLedgerStore()
+  const { entities, projects, transactions, addProject, deleteProject, addTransaction } = useLedgerStore()
   const { toast } = useToast()
   
   const [mounted, setMounted] = React.useState(false)
+  const [activeTab, setActiveTab] = React.useState('projects')
+  const [selectedProjectId, setSelectedProjectId] = React.useState<string>('')
+  
+  // Project Creation State
+  const [newProject, setNewProject] = React.useState({
+    name: '',
+    purchaseOrder: '',
+    targetSaleAmount: 0,
+    customerId: ''
+  })
+
+  // AI Processor State
   const [jsonInput, setJsonInput] = React.useState('')
   const [isProcessing, setIsProcessing] = React.useState(false)
   const [mappedData, setMappedData] = React.useState<AiJsonKeyMapperOutput | null>(null)
-  const [selectedEntityId, setSelectedEntityId] = React.useState('')
-  const [transactionType, setTransactionType] = React.useState<'purchase' | 'sale'>('purchase')
-  const [costBasis, setCostBasis] = React.useState<number>(0)
+  const [selectedSupplierId, setSelectedSupplierId] = React.useState('')
 
   React.useEffect(() => {
     setMounted(true)
   }, [])
 
-  const suppliers = entities.filter(e => e.type === 'supplier')
   const customers = entities.filter(e => e.type === 'customer')
-  const currentEntityList = transactionType === 'purchase' ? suppliers : customers
+  const suppliers = entities.filter(e => e.type === 'supplier')
+  const currentProject = projects.find(p => p.id === selectedProjectId)
+  const projectTransactions = transactions.filter(t => t.projectId === selectedProjectId)
+  const projectCosts = projectTransactions.filter(t => t.type === 'purchase').reduce((acc, curr) => acc + curr.totalAmount, 0)
+  const projectInvoices = projectTransactions.filter(t => t.type === 'sale').reduce((acc, curr) => acc + curr.totalAmount, 0)
 
-  const handleProcess = async () => {
-    if (!jsonInput.trim()) {
-      toast({
-        title: "Entrada requerida",
-        description: "Por favor, pegue un payload JSON para procesar.",
-        variant: "destructive"
-      })
+  const handleCreateProject = () => {
+    if (!newProject.name || !newProject.customerId || !newProject.purchaseOrder) {
+      toast({ title: "Datos incompletos", description: "Rellene todos los campos del proyecto.", variant: "destructive" })
       return
     }
+    const customer = customers.find(c => c.id === newProject.customerId)
+    addProject({
+      name: newProject.name,
+      purchaseOrder: newProject.purchaseOrder,
+      targetSaleAmount: newProject.targetSaleAmount,
+      customerId: newProject.customerId,
+      customerName: customer?.name || 'Cliente Desconocido',
+      status: 'active'
+    })
+    setNewProject({ name: '', purchaseOrder: '', targetSaleAmount: 0, customerId: '' })
+    toast({ title: "Proyecto Creado", description: "El proyecto se ha registrado exitosamente." })
+  }
 
+  const handleProcessAI = async () => {
+    if (!jsonInput.trim()) return
     try {
-      JSON.parse(jsonInput)
-      
       setIsProcessing(true)
       const result = await aiJsonKeyMapper({ invoiceJsonString: jsonInput })
       setMappedData(result)
-      
-      if (transactionType === 'sale' && result.totalAmount) {
-        setCostBasis(result.totalAmount * 0.7)
-      }
-
-      toast({
-        title: "Mapeo IA Exitoso",
-        description: "Revise los campos de datos extraídos a continuación.",
-      })
+      toast({ title: "Mapeo IA Exitoso", description: "Datos extraídos correctamente." })
     } catch (error) {
-      toast({
-        title: "Fallo en el Procesamiento",
-        description: error instanceof Error ? error.message : "JSON inválido o fallo de la IA.",
-        variant: "destructive"
-      })
+      toast({ title: "Error", description: "No se pudo procesar el JSON.", variant: "destructive" })
     } finally {
       setIsProcessing(false)
     }
   }
 
-  const handleSave = () => {
-    if (!mappedData || !selectedEntityId) {
-      toast({
-        title: "Información Faltante",
-        description: "Por favor, seleccione una entidad y verifique los datos mapeados.",
-        variant: "destructive"
-      })
+  const handleSavePurchase = () => {
+    if (!mappedData || !selectedSupplierId || !selectedProjectId) {
+      toast({ title: "Información faltante", description: "Seleccione proveedor y proyecto.", variant: "destructive" })
       return
     }
-
-    const selectedEntity = entities.find(e => e.id === selectedEntityId)
-    if (!selectedEntity) return
-
+    const supplier = suppliers.find(s => s.id === selectedSupplierId)
     addTransaction({
-      invoiceNumber: mappedData.invoiceNumber || `TX-${Date.now()}`,
+      invoiceNumber: mappedData.invoiceNumber || `PUR-${Date.now()}`,
       issueDate: mappedData.issueDate || new Date().toISOString(),
-      entityId: selectedEntity.id,
-      entityName: selectedEntity.name,
-      type: transactionType,
+      entityId: selectedSupplierId,
+      entityName: supplier?.name || '',
+      projectId: selectedProjectId,
+      type: 'purchase',
       items: (mappedData.items || []).map(i => ({
-        description: i.description || 'Artículo genérico',
+        description: i.description || 'Compra institucional',
         quantity: i.quantity || 1,
         unitPrice: i.unitPrice || 0,
         lineTotal: i.lineTotal || 0,
@@ -98,218 +102,243 @@ export default function InstitutionalModule() {
       subtotal: mappedData.subtotal || 0,
       taxAmount: mappedData.taxAmount || 0,
       totalAmount: mappedData.totalAmount || 0,
-      costBasis: transactionType === 'purchase' ? (mappedData.totalAmount || 0) : costBasis,
-      gain: transactionType === 'sale' ? (mappedData.totalAmount || 0) - costBasis : 0,
+      costBasis: mappedData.totalAmount || 0,
+      gain: 0
     })
-
-    toast({
-      title: "Libro Mayor Actualizado",
-      description: "Los datos se han persistido correctamente.",
-    })
-
     setMappedData(null)
     setJsonInput('')
-    setSelectedEntityId('')
+    toast({ title: "Gasto Registrado", description: "Se añadió la compra al proyecto." })
   }
 
-  if (!mounted) {
-    return (
-      <AppLayout>
-        <div className="flex h-[60vh] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      </AppLayout>
-    )
+  const handleSaveFinalInvoice = () => {
+    if (!mappedData || !selectedProjectId || !currentProject) return
+    addTransaction({
+      invoiceNumber: mappedData.invoiceNumber || `INV-${Date.now()}`,
+      issueDate: mappedData.issueDate || new Date().toISOString(),
+      entityId: currentProject.customerId,
+      entityName: currentProject.customerName,
+      projectId: selectedProjectId,
+      type: 'sale',
+      items: (mappedData.items || []).map(i => ({
+        description: i.description || 'Venta final de proyecto',
+        quantity: i.quantity || 1,
+        unitPrice: i.unitPrice || 0,
+        lineTotal: i.lineTotal || 0,
+      })),
+      subtotal: mappedData.subtotal || 0,
+      taxAmount: mappedData.taxAmount || 0,
+      totalAmount: mappedData.totalAmount || 0,
+      costBasis: projectCosts,
+      gain: (mappedData.totalAmount || 0) - projectCosts
+    })
+    setMappedData(null)
+    setJsonInput('')
+    toast({ title: "Factura Emitida", description: "La venta se ha vinculado al proyecto." })
   }
+
+  if (!mounted) return null
 
   return (
     <AppLayout>
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        <div className="lg:col-span-5 space-y-6">
-          <Card className="border-accent/20">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileJson className="h-5 w-5 text-accent" />
-                Módulo de Entrada
-              </CardTitle>
-              <CardDescription>Pegue el payload JSON original de su proveedor o cliente.</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-               <div className="space-y-4">
-                <div className="flex gap-4">
-                  <div className="flex-1 space-y-2">
-                    <Label>Tipo de Flujo</Label>
-                    <Select 
-                      value={transactionType} 
-                      onValueChange={(val: any) => {
-                        setTransactionType(val)
-                        setMappedData(null)
-                      }}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar tipo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="purchase">Compra Institucional</SelectItem>
-                        <SelectItem value="sale">Venta de Factura</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="flex-1 space-y-2">
-                    <Label>{transactionType === 'purchase' ? 'Proveedor' : 'Cliente'}</Label>
-                    <Select value={selectedEntityId} onValueChange={setSelectedEntityId}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Seleccionar entidad" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {currentEntityList.map(e => (
-                          <SelectItem key={e.id} value={e.id}>{e.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+        <TabsList className="bg-secondary p-1">
+          <TabsTrigger value="projects" className="gap-2"><Briefcase className="h-4 w-4" /> Proyectos</TabsTrigger>
+          <TabsTrigger value="purchases" className="gap-2"><Plus className="h-4 w-4" /> Registrar Compras</TabsTrigger>
+          <TabsTrigger value="comparison" className="gap-2"><Calculator className="h-4 w-4" /> Comparación y Factura</TabsTrigger>
+        </TabsList>
 
+        <TabsContent value="projects">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card className="md:col-span-1">
+              <CardHeader>
+                <CardTitle>Nuevo Proyecto</CardTitle>
+                <CardDescription>Defina el presupuesto y la orden de compra.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Payload JSON</Label>
-                  <Textarea 
-                    placeholder="Pegue el JSON aquí..." 
-                    className="min-h-[300px] font-code text-sm bg-black/30 resize-none border-primary/20 focus-visible:ring-primary"
-                    value={jsonInput}
-                    onChange={(e) => setJsonInput(e.target.value)}
-                  />
+                  <Label>Nombre del Proyecto</Label>
+                  <Input placeholder="Ej. Licitación Hospital Central" value={newProject.name} onChange={e => setNewProject({...newProject, name: e.target.value})} />
                 </div>
+                <div className="space-y-2">
+                  <Label>Orden de Compra (OC)</Label>
+                  <Input placeholder="Ej. OC-2024-001" value={newProject.purchaseOrder} onChange={e => setNewProject({...newProject, purchaseOrder: e.target.value})} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Cliente</Label>
+                  <Select value={newProject.customerId} onValueChange={val => setNewProject({...newProject, customerId: val})}>
+                    <SelectTrigger><SelectValue placeholder="Seleccionar cliente" /></SelectTrigger>
+                    <SelectContent>{customers.map(c => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}</SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Monto de Venta Objetivo ($)</Label>
+                  <Input type="number" value={newProject.targetSaleAmount} onChange={e => setNewProject({...newProject, targetSaleAmount: Number(e.target.value)})} />
+                </div>
+                <Button className="w-full bg-accent hover:bg-accent/90" onClick={handleCreateProject}>Crear Proyecto</Button>
+              </CardContent>
+            </Card>
 
-                <Button 
-                  className="w-full h-12 gap-2 text-lg font-headline transition-all hover:scale-[1.01] active:scale-[0.99]" 
-                  onClick={handleProcess}
-                  disabled={isProcessing}
-                >
-                  {isProcessing ? (
-                    <><Loader2 className="h-5 w-5 animate-spin" /> Procesando Mapeo IA...</>
-                  ) : (
-                    <><Zap className="h-5 w-5 fill-current" /> Ejecutar Análisis Inteligente</>
+            <Card className="md:col-span-2">
+              <CardHeader>
+                <CardTitle>Listado de Proyectos</CardTitle>
+                <CardDescription>Gestión de presupuestos institucionales activos.</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {projects.length > 0 ? projects.map(p => (
+                    <div key={p.id} className={`p-4 rounded-lg border flex items-center justify-between transition-all ${selectedProjectId === p.id ? 'border-primary bg-primary/5 ring-1 ring-primary' : 'hover:bg-muted/50'}`}>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold">{p.name}</h4>
+                          <Badge variant="outline" className="text-[10px]">{p.purchaseOrder}</Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{p.customerName}</p>
+                        <div className="text-xs font-medium">Objetivo: <span className="text-primary">${p.targetSaleAmount.toLocaleString()}</span></div>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button variant={selectedProjectId === p.id ? "default" : "outline"} size="sm" onClick={() => setSelectedProjectId(p.id)}>
+                          {selectedProjectId === p.id ? "Seleccionado" : "Seleccionar"}
+                        </Button>
+                        <Button variant="ghost" size="icon" className="text-destructive" onClick={() => deleteProject(p.id)}><Trash2 className="h-4 w-4" /></Button>
+                      </div>
+                    </div>
+                  )) : (
+                    <div className="py-12 text-center text-muted-foreground">No hay proyectos registrados.</div>
                   )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
 
-        <div className="lg:col-span-7 space-y-6">
-          <Card className="min-h-[600px] border-primary/20">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-primary" />
-                Espacio de Validación
-              </CardTitle>
-              <CardDescription>Revise y finalice los campos financieros mapeados antes de confirmar en el libro mayor.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {mappedData ? (
-                <div className="space-y-6 animate-in fade-in slide-in-from-right-4 duration-500">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground uppercase tracking-widest">Ref. Factura</Label>
-                      <div className="p-3 bg-secondary rounded-md font-mono text-sm border">{mappedData.invoiceNumber || 'N/D'}</div>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground uppercase tracking-widest">Fecha de Emisión</Label>
-                      <div className="p-3 bg-secondary rounded-md text-sm border">{mappedData.issueDate || 'N/D'}</div>
-                    </div>
-                  </div>
-
+        <TabsContent value="purchases">
+          {!selectedProjectId ? (
+             <div className="flex flex-col items-center justify-center py-20 bg-secondary/20 rounded-lg border border-dashed">
+                <Briefcase className="h-12 w-12 text-muted-foreground mb-4 opacity-20" />
+                <p>Seleccione un proyecto en la pestaña "Proyectos" para añadir compras.</p>
+             </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2"><FileJson className="h-5 w-5 text-accent" /> Importar Factura de Proveedor</CardTitle>
+                  <CardDescription>Pegue el JSON del proveedor para mapear costos al proyecto <strong>{currentProject?.name}</strong>.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
                   <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground uppercase tracking-widest">Líneas de Detalle</Label>
-                    <div className="border rounded-md overflow-hidden">
-                      <table className="w-full text-sm">
-                        <thead className="bg-muted/50 border-b">
-                          <tr>
-                            <th className="px-4 py-2 text-left font-medium">Descripción</th>
-                            <th className="px-4 py-2 text-right font-medium">Cant.</th>
-                            <th className="px-4 py-2 text-right font-medium">Unidad</th>
-                            <th className="px-4 py-2 text-right font-medium">Total</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {mappedData.items?.map((item, idx) => (
-                            <tr key={idx} className="border-b last:border-0 hover:bg-muted/30 transition-colors">
-                              <td className="px-4 py-2">{item.description}</td>
-                              <td className="px-4 py-2 text-right">{item.quantity}</td>
-                              <td className="px-4 py-2 text-right">${item.unitPrice?.toFixed(2)}</td>
-                              <td className="px-4 py-2 text-right font-medium">${item.lineTotal?.toFixed(2)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    <Label>Proveedor</Label>
+                    <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
+                      <SelectTrigger><SelectValue placeholder="Seleccionar proveedor" /></SelectTrigger>
+                      <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                    </Select>
                   </div>
-
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground uppercase tracking-widest">Subtotal</Label>
-                      <div className="text-lg font-bold">${mappedData.subtotal?.toFixed(2)}</div>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground uppercase tracking-widest">Impuestos</Label>
-                      <div className="text-lg font-bold">${mappedData.taxAmount?.toFixed(2)}</div>
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground uppercase tracking-widest text-primary">Gran Total</Label>
-                      <div className="text-2xl font-bold text-primary font-headline">${mappedData.totalAmount?.toFixed(2)}</div>
-                    </div>
+                  <div className="space-y-2">
+                    <Label>Payload JSON</Label>
+                    <Textarea placeholder="Pegue el JSON aquí..." className="min-h-[200px] font-code text-sm bg-black/30" value={jsonInput} onChange={e => setJsonInput(e.target.value)} />
                   </div>
+                  <Button className="w-full h-12 gap-2" onClick={handleProcessAI} disabled={isProcessing}>
+                    {isProcessing ? <Loader2 className="animate-spin h-5 w-5" /> : <><Zap className="h-5 w-5 fill-current" /> Procesar con IA</>}
+                  </Button>
+                </CardContent>
+              </Card>
 
-                  {transactionType === 'sale' && (
-                    <div className="p-4 bg-primary/5 border border-primary/20 rounded-lg space-y-4">
-                       <div className="flex items-center gap-2 text-primary font-medium">
-                        <DollarSign className="h-4 w-4" /> Configuración de Margen
-                       </div>
-                       <div className="flex items-center gap-6">
-                          <div className="flex-1 space-y-2">
-                            <Label htmlFor="costBasis">Costo de Inventario</Label>
-                            <Input 
-                              id="costBasis" 
-                              type="number" 
-                              value={costBasis} 
-                              onChange={(e) => setCostBasis(Number(e.target.value))}
-                              className="bg-background"
-                            />
-                          </div>
-                          <div className="flex-1 space-y-1">
-                             <Label className="text-xs text-muted-foreground uppercase">Ganancia Estimada</Label>
-                             <div className="text-xl font-bold text-accent">
-                                ${(mappedData.totalAmount! - costBasis).toFixed(2)}
-                             </div>
-                             <Badge variant="outline" className="border-accent text-accent">
-                                {(((mappedData.totalAmount! - costBasis) / mappedData.totalAmount!) * 100).toFixed(1)}% Margen
-                             </Badge>
-                          </div>
-                       </div>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Previsualización de Costos</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {mappedData ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div className="p-3 bg-secondary rounded-md">Ref: {mappedData.invoiceNumber || 'N/D'}</div>
+                        <div className="p-3 bg-secondary rounded-md">Fecha: {mappedData.issueDate || 'N/D'}</div>
+                      </div>
+                      <div className="border rounded-md max-h-[200px] overflow-auto">
+                        <table className="w-full text-xs">
+                          <thead className="bg-muted sticky top-0"><tr><th className="p-2 text-left">Item</th><th className="p-2 text-right">Total</th></tr></thead>
+                          <tbody>{mappedData.items?.map((it, idx) => (<tr key={idx} className="border-t"><td className="p-2">{it.description}</td><td className="p-2 text-right">${it.lineTotal?.toFixed(2)}</td></tr>))}</tbody>
+                        </table>
+                      </div>
+                      <div className="text-xl font-bold text-right text-primary">Total Compra: ${mappedData.totalAmount?.toFixed(2)}</div>
+                      <Button className="w-full bg-primary" onClick={handleSavePurchase}>Confirmar Gasto en Proyecto</Button>
                     </div>
+                  ) : (
+                    <div className="h-64 flex items-center justify-center text-muted-foreground text-center px-8">Mapee un JSON para ver los costos antes de cargarlos.</div>
                   )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </TabsContent>
 
-                  <div className="pt-4 border-t">
-                    <Button onClick={handleSave} className="w-full gap-2 bg-primary hover:bg-primary/90 h-12 text-lg">
-                      <ArrowRight className="h-5 w-5" /> Confirmar en Libro Mayor
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="h-full flex flex-col items-center justify-center text-center space-y-4 text-muted-foreground py-20">
-                  <div className="h-16 w-16 rounded-full bg-secondary flex items-center justify-center">
-                    <AlertCircle className="h-8 w-8" />
-                  </div>
-                  <div className="max-w-[300px]">
-                    <p className="font-medium text-foreground">Esperando Flujo de Datos</p>
-                    <p className="text-sm">Una vez procesado el JSON, los campos mapeados por IA aparecerán aquí para verificación humana.</p>
-                  </div>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+        <TabsContent value="comparison">
+          {!selectedProjectId ? (
+             <div className="py-20 text-center">Seleccione un proyecto para ver la comparación.</div>
+          ) : (
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <Card className="bg-destructive/5 border-destructive/20">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Costos Acumulados</CardTitle></CardHeader>
+                  <CardContent><div className="text-2xl font-bold">${projectCosts.toLocaleString()}</div></CardContent>
+                </Card>
+                <Card className="bg-primary/5 border-primary/20">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Objetivo de Venta</CardTitle></CardHeader>
+                  <CardContent><div className="text-2xl font-bold">${currentProject?.targetSaleAmount.toLocaleString()}</div></CardContent>
+                </Card>
+                <Card className="bg-accent/5 border-accent/20">
+                  <CardHeader className="pb-2"><CardTitle className="text-sm font-medium">Facturado Real</CardTitle></CardHeader>
+                  <CardContent><div className="text-2xl font-bold">${projectInvoices.toLocaleString()}</div></CardContent>
+                </Card>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2"><ReceiptText className="h-5 w-5 text-primary" /> Cargar Factura Emitida</CardTitle>
+                    <CardDescription>Valide que lo facturado coincida con el objetivo para evitar desvíos.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <Textarea placeholder="Pegue el JSON de la factura que emitió..." className="min-h-[150px] font-code" value={jsonInput} onChange={e => setJsonInput(e.target.value)} />
+                    <Button className="w-full gap-2" onClick={handleProcessAI} disabled={isProcessing}>Procesar Factura Emitida</Button>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Análisis de Desviación</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {mappedData ? (
+                      <div className="space-y-6">
+                        <div className="space-y-2">
+                           <div className="flex justify-between text-sm"><span>Monto Factura IA:</span><span className="font-bold">${mappedData.totalAmount?.toFixed(2)}</span></div>
+                           <div className="flex justify-between text-sm"><span>Objetivo Proyecto:</span><span>${currentProject?.targetSaleAmount.toFixed(2)}</span></div>
+                           <hr />
+                           <div className="flex justify-between text-lg font-headline">
+                              <span>Diferencia:</span>
+                              <span className={Math.abs((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)) < 1 ? 'text-green-500' : 'text-orange-500'}>
+                                 ${((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)).toFixed(2)}
+                              </span>
+                           </div>
+                        </div>
+                        {Math.abs((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)) > 1 && (
+                          <div className="p-3 bg-orange-500/10 border border-orange-500/20 rounded text-xs text-orange-500 flex gap-2">
+                            <AlertCircle className="h-4 w-4 shrink-0" />
+                            Atención: La factura no coincide exactamente con el monto de venta objetivo.
+                          </div>
+                        )}
+                        <Button className="w-full bg-accent" onClick={handleSaveFinalInvoice}>Finalizar y Registrar Venta</Button>
+                      </div>
+                    ) : (
+                      <div className="h-48 flex items-center justify-center text-muted-foreground italic">Procese su factura final para comparar contra el presupuesto.</div>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </AppLayout>
   )
 }

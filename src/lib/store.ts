@@ -10,6 +10,17 @@ export interface Entity {
   createdAt: string;
 }
 
+export interface Project {
+  id: string;
+  name: string;
+  purchaseOrder: string;
+  targetSaleAmount: number;
+  customerId: string;
+  customerName: string;
+  createdAt: string;
+  status: 'active' | 'completed';
+}
+
 export interface TransactionItem {
   description: string;
   quantity: number;
@@ -23,20 +34,24 @@ export interface Transaction {
   issueDate: string;
   entityId: string;
   entityName: string;
+  projectId?: string; // Asociación opcional a un proyecto
   type: 'purchase' | 'sale';
   items: TransactionItem[];
   subtotal: number;
   taxAmount: number;
   totalAmount: number;
-  costBasis: number; // For sales, what it cost us. For purchases, same as totalAmount
-  gain: number; // For sales, totalAmount - costBasis
+  costBasis: number;
+  gain: number;
 }
 
 interface LedgerStore {
   entities: Entity[];
+  projects: Project[];
   transactions: Transaction[];
   addEntity: (entity: Omit<Entity, 'id' | 'createdAt'>) => void;
   deleteEntity: (id: string) => void;
+  addProject: (project: Omit<Project, 'id' | 'createdAt'>) => void;
+  deleteProject: (id: string) => void;
   addTransaction: (transaction: Omit<Transaction, 'id'>) => void;
   deleteTransaction: (id: string) => void;
 }
@@ -45,6 +60,7 @@ export const useLedgerStore = create<LedgerStore>()(
   persist(
     (set) => ({
       entities: [],
+      projects: [],
       transactions: [],
       addEntity: (entity) => set((state) => ({
         entities: [
@@ -58,6 +74,20 @@ export const useLedgerStore = create<LedgerStore>()(
       })),
       deleteEntity: (id) => set((state) => ({
         entities: state.entities.filter((e) => e.id !== id)
+      })),
+      addProject: (project) => set((state) => ({
+        projects: [
+          ...state.projects,
+          {
+            ...project,
+            id: Math.random().toString(36).substring(2, 9),
+            createdAt: new Date().toISOString()
+          }
+        ]
+      })),
+      deleteProject: (id) => set((state) => ({
+        projects: state.projects.filter((p) => p.id !== id),
+        transactions: state.transactions.filter((t) => t.projectId !== id)
       })),
       addTransaction: (transaction) => set((state) => ({
         transactions: [
@@ -73,7 +103,7 @@ export const useLedgerStore = create<LedgerStore>()(
       })),
     }),
     {
-      name: 'vantage-ledger-store',
+      name: 'vantage-ledger-store-v2',
     }
   )
 );
