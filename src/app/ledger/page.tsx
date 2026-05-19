@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -13,11 +14,26 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Trash2, TrendingUp, TrendingDown, ArrowRightLeft, FileText } from "lucide-react"
+import { Trash2, TrendingUp, TrendingDown, ArrowRightLeft, FileText, Loader2 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 
 export default function LedgerPage() {
   const { transactions, deleteTransaction } = useLedgerStore()
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  if (!mounted) {
+    return (
+      <AppLayout>
+        <div className="flex h-[60vh] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </AppLayout>
+    )
+  }
 
   return (
     <AppLayout>

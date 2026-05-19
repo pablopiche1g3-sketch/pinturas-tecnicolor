@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -15,7 +16,9 @@ import {
   DollarSign, 
   ArrowUpRight, 
   Activity, 
-  Target 
+  Target,
+  Truck,
+  Users
 } from "lucide-react"
 import { useLedgerStore } from "@/lib/store"
 import { 
@@ -30,6 +33,11 @@ import {
 
 export default function Dashboard() {
   const { transactions } = useLedgerStore()
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
   
   const totalRevenue = transactions
     .filter(t => t.type === 'sale')
@@ -52,6 +60,16 @@ export default function Dashboard() {
     value: t.totalAmount,
     type: t.type
   }))
+
+  if (!mounted) {
+    return (
+      <AppLayout>
+        <div className="flex h-[60vh] items-center justify-center">
+          <Activity className="h-8 w-8 animate-pulse text-muted-foreground" />
+        </div>
+      </AppLayout>
+    )
+  }
 
   return (
     <AppLayout>

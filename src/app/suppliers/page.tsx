@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -22,17 +23,22 @@ import {
   DialogTrigger,
   DialogFooter
 } from "@/components/ui/dialog"
-import { Plus, Trash2, Mail, Phone, Truck } from "lucide-react"
+import { Plus, Trash2, Mail, Phone, Truck, Loader2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 
 export default function SuppliersPage() {
   const { entities, addEntity, deleteEntity } = useLedgerStore()
   const [isOpen, setIsOpen] = React.useState(false)
+  const [mounted, setMounted] = React.useState(false)
   const [formData, setFormData] = React.useState({
     name: '',
     email: '',
     phone: ''
   })
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const suppliers = entities.filter(e => e.type === 'supplier')
 
@@ -47,6 +53,16 @@ export default function SuppliersPage() {
     })
     setFormData({ name: '', email: '', phone: '' })
     setIsOpen(false)
+  }
+
+  if (!mounted) {
+    return (
+      <AppLayout>
+        <div className="flex h-[60vh] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </AppLayout>
+    )
   }
 
   return (

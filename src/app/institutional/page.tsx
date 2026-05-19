@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -18,12 +19,17 @@ export default function InstitutionalModule() {
   const { entities, addTransaction } = useLedgerStore()
   const { toast } = useToast()
   
+  const [mounted, setMounted] = React.useState(false)
   const [jsonInput, setJsonInput] = React.useState('')
   const [isProcessing, setIsProcessing] = React.useState(false)
   const [mappedData, setMappedData] = React.useState<AiJsonKeyMapperOutput | null>(null)
   const [selectedEntityId, setSelectedEntityId] = React.useState('')
   const [transactionType, setTransactionType] = React.useState<'purchase' | 'sale'>('purchase')
   const [costBasis, setCostBasis] = React.useState<number>(0) // Only for sales
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const suppliers = entities.filter(e => e.type === 'supplier')
   const customers = entities.filter(e => e.type === 'customer')
@@ -108,6 +114,16 @@ export default function InstitutionalModule() {
     setMappedData(null)
     setJsonInput('')
     setSelectedEntityId('')
+  }
+
+  if (!mounted) {
+    return (
+      <AppLayout>
+        <div className="flex h-[60vh] items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </AppLayout>
+    )
   }
 
   return (
