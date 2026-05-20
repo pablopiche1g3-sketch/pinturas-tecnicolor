@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -11,12 +12,12 @@ import {
   History, 
   ChevronLeft,
   ChevronRight,
-  Menu,
   Palette,
   Package
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import { ThemeToggle } from "@/components/ThemeToggle"
 
 const navItems = [
   { label: "Panel de Control", icon: LayoutDashboard, href: "/" },
@@ -44,10 +45,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen bg-[#F8FAFC] font-body text-slate-900">
+    <div className="flex min-h-screen bg-background font-body text-foreground">
       <aside 
         className={cn(
-          "relative z-40 flex flex-col border-r bg-white transition-all duration-300 ease-in-out shadow-sm",
+          "relative z-40 flex flex-col border-r bg-card transition-all duration-300 ease-in-out shadow-sm",
           isCollapsed ? "w-20" : "w-64"
         )}
       >
@@ -58,8 +59,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <Palette className="h-5 w-5 text-white" />
               </div>
               <div className="flex flex-col leading-none">
-                <span className="font-headline font-bold text-lg tracking-tight text-slate-900">Tecnicolor</span>
-                <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Institucional</span>
+                <span className="font-headline font-bold text-lg tracking-tight text-foreground">Tecnicolor</span>
+                <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Institucional</span>
               </div>
             </div>
           )}
@@ -71,10 +72,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <Button 
             variant="ghost" 
             size="icon" 
-            className="absolute -right-4 top-16 h-8 w-8 rounded-full border bg-white shadow-md md:flex hidden hover:bg-slate-50"
+            className="absolute -right-4 top-16 h-8 w-8 rounded-full border bg-card shadow-md md:flex hidden hover:bg-accent"
             onClick={() => setIsCollapsed(!isCollapsed)}
           >
-            {isCollapsed ? <ChevronRight className="h-4 w-4 text-slate-600" /> : <ChevronLeft className="h-4 w-4 text-slate-600" />}
+            {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
           </Button>
         </div>
 
@@ -85,14 +86,14 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 className={cn(
                   "group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all cursor-pointer",
                   pathname === item.href 
-                    ? "bg-blue-50 text-blue-600 shadow-sm ring-1 ring-blue-100" 
-                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900",
-                  item.highlight && pathname !== item.href && "bg-amber-50/50 text-amber-700"
+                    ? "bg-primary/10 text-primary shadow-sm ring-1 ring-primary/20" 
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  item.highlight && pathname !== item.href && "bg-accent/50 text-foreground"
                 )}
               >
                 <item.icon className={cn(
                   "h-5 w-5 shrink-0 transition-colors",
-                  pathname === item.href ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600"
+                  pathname === item.href ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
                 )} />
                 {!isCollapsed && <span>{item.label}</span>}
               </div>
@@ -102,10 +103,13 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       </aside>
 
       <main className="flex-1 overflow-auto">
-        <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b bg-white/80 px-8 backdrop-blur-md">
-           <h2 className="font-headline text-2xl font-bold tracking-tight text-slate-900">
+        <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b bg-background/80 px-8 backdrop-blur-md">
+           <h2 className="font-headline text-2xl font-bold tracking-tight text-foreground">
             {getPageTitle(pathname)}
            </h2>
+           <div className="flex items-center gap-4">
+              <ThemeToggle />
+           </div>
         </header>
         <div className="p-8 max-w-7xl mx-auto">
           {children}
