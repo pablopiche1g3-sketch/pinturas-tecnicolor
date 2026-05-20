@@ -12,7 +12,8 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Menu
+  Menu,
+  Palette
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -36,40 +37,43 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       case "/suppliers": return "Directorio de Proveedores";
       case "/customers": return "Directorio de Clientes";
       case "/ledger": return "Libro de Transacciones";
-      default: return "Vantage Ledger";
+      default: return "Tecnicolor Institucional";
     }
   }
 
   return (
-    <div className="flex min-h-screen bg-background font-body">
+    <div className="flex min-h-screen bg-[#F8FAFC] font-body text-slate-900">
       {/* Sidebar */}
       <aside 
         className={cn(
-          "relative z-40 flex flex-col border-r bg-card transition-all duration-300 ease-in-out",
+          "relative z-40 flex flex-col border-r bg-white transition-all duration-300 ease-in-out shadow-sm",
           isCollapsed ? "w-20" : "w-64"
         )}
       >
         <div className="flex h-20 items-center justify-between px-6 border-b">
           {!isCollapsed && (
-            <div className="flex items-center gap-2">
-              <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-                <span className="font-headline font-bold text-white text-lg">V</span>
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-200">
+                <Palette className="h-5 w-5 text-white" />
               </div>
-              <span className="font-headline font-bold text-xl tracking-tight">Vantage</span>
+              <div className="flex flex-col leading-none">
+                <span className="font-headline font-bold text-lg tracking-tight text-slate-900">Tecnicolor</span>
+                <span className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Institucional</span>
+              </div>
             </div>
           )}
           {isCollapsed && (
-             <div className="h-8 w-8 mx-auto rounded-lg bg-primary flex items-center justify-center">
-                <span className="font-headline font-bold text-white text-lg">V</span>
+             <div className="h-9 w-9 mx-auto rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-200">
+                <Palette className="h-5 w-5 text-white" />
              </div>
           )}
           <Button 
             variant="ghost" 
             size="icon" 
-            className="absolute -right-4 top-16 h-8 w-8 rounded-full border bg-card shadow-md md:flex hidden"
+            className="absolute -right-4 top-16 h-8 w-8 rounded-full border bg-white shadow-md md:flex hidden hover:bg-slate-50"
             onClick={() => setIsCollapsed(!isCollapsed)}
           >
-            {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+            {isCollapsed ? <ChevronRight className="h-4 w-4 text-slate-600" /> : <ChevronLeft className="h-4 w-4 text-slate-600" />}
           </Button>
         </div>
 
@@ -78,21 +82,21 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <Link key={item.href} href={item.href}>
               <div
                 className={cn(
-                  "group flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors cursor-pointer",
+                  "group flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-all cursor-pointer",
                   pathname === item.href 
-                    ? "bg-primary/10 text-primary" 
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                  item.highlight && "ring-1 ring-accent/20 bg-accent/5"
+                    ? "bg-blue-50 text-blue-600 shadow-sm ring-1 ring-blue-100" 
+                    : "text-slate-500 hover:bg-slate-50 hover:text-slate-900",
+                  item.highlight && pathname !== item.href && "bg-amber-50/50 text-amber-700"
                 )}
               >
                 <item.icon className={cn(
-                  "h-5 w-5 shrink-0",
-                  pathname === item.href ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
+                  "h-5 w-5 shrink-0 transition-colors",
+                  pathname === item.href ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600"
                 )} />
                 {!isCollapsed && <span>{item.label}</span>}
                 {!isCollapsed && item.highlight && (
-                  <span className="ml-auto rounded-full bg-accent px-1.5 py-0.5 text-[10px] text-accent-foreground font-bold uppercase tracking-wider">
-                    Nuevo
+                  <span className="ml-auto rounded-full bg-blue-600 px-1.5 py-0.5 text-[9px] text-white font-bold uppercase tracking-wider">
+                    Activo
                   </span>
                 )}
               </div>
@@ -102,7 +106,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         <div className="border-t p-4">
           <div className={cn(
-            "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors cursor-pointer",
+            "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer",
             isCollapsed && "justify-center"
           )}>
             <Settings className="h-5 w-5 shrink-0" />
@@ -113,20 +117,26 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto">
-        <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b bg-background/80 px-8 backdrop-blur-md">
-           <h2 className="font-headline text-2xl font-bold tracking-tight">
+        <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b bg-white/80 px-8 backdrop-blur-md">
+           <h2 className="font-headline text-2xl font-bold tracking-tight text-slate-900">
             {getPageTitle(pathname)}
            </h2>
            <div className="flex items-center gap-4">
-              <Button variant="outline" size="icon" className="md:hidden">
+              <Button variant="outline" size="icon" className="md:hidden border-slate-200">
                 <Menu className="h-5 w-5" />
               </Button>
-              <div className="h-10 w-10 rounded-full bg-secondary flex items-center justify-center border">
-                <span className="text-sm font-bold">JD</span>
+              <div className="flex items-center gap-3 pl-4 border-l">
+                <div className="flex flex-col items-end leading-none">
+                  <span className="text-sm font-bold text-slate-900">Juan Pérez</span>
+                  <span className="text-[10px] text-slate-500">Administrador</span>
+                </div>
+                <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center border-2 border-white shadow-sm ring-1 ring-blue-50">
+                  <span className="text-sm font-bold text-blue-700">JP</span>
+                </div>
               </div>
            </div>
         </header>
-        <div className="p-8">
+        <div className="p-8 max-w-7xl mx-auto">
           {children}
         </div>
       </main>

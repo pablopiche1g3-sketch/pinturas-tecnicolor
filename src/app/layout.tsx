@@ -2,8 +2,8 @@ import type {Metadata} from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Vantage Ledger | Sistemas Financieros Avanzados',
-  description: 'Gestión optimizada de entidades financieras y mapeo de transacciones con IA.',
+  title: 'Pinturas Tecnicolor Institucional | Gestión Financiera',
+  description: 'Sistema de gestión de proyectos y conciliación DTE para Pinturas Tecnicolor.',
 };
 
 export default function RootLayout({
@@ -12,7 +12,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="es" className="dark">
+    <html lang="es">
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
