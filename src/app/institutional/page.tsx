@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -63,6 +64,7 @@ export default function InstitutionalModule() {
   
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const fileInputEmitRef = React.useRef<HTMLInputElement>(null)
+  const fileInputVoidRef = React.useRef<HTMLInputElement>(null)
 
   React.useEffect(() => {
     setMounted(true)
@@ -204,14 +206,42 @@ export default function InstitutionalModule() {
   }
 
   const handleVoidTransaction = () => {
-    if (!transactionToVoid || !voidReason) {
-      toast({ title: "Error", description: "Seleccione una factura y proporcione un motivo.", variant: "destructive" })
+    if (!transactionToVoid && !mappedData) {
+      toast({ title: "Error", description: "Seleccione una factura o cargue un DTE.", variant: "destructive" })
       return
     }
-    voidTransaction(transactionToVoid, voidReason)
+    if (!voidReason) {
+      toast({ title: "Error", description: "Proporcione un motivo para la anulación.", variant: "destructive" })
+      return
+    }
+
+    if (transactionToVoid) {
+      voidTransaction(transactionToVoid, voidReason)
+    } else if (mappedData) {
+      // Si se cargó un DTE nuevo para registrar como anulado
+      addTransaction({
+        invoiceNumber: mappedData.invoiceNumber || `VOID-${Date.now()}`,
+        issueDate: mappedData.issueDate || new Date().toISOString(),
+        entityId: 'manual',
+        entityName: mappedData.supplierName || mappedData.customerName || 'N/A',
+        projectId: selectedProjectId,
+        type: 'sale',
+        items: [],
+        subtotal: mappedData.subtotal || 0,
+        taxAmount: mappedData.taxAmount || 0,
+        totalAmount: mappedData.totalAmount || 0,
+        costBasis: 0,
+        gain: 0,
+        isVoided: true,
+        voidReason: voidReason
+      })
+    }
+
     setTransactionToVoid('')
     setVoidReason('')
-    toast({ title: "Documento Anulado", description: "El documento ha sido marcado como anulado correctamente." })
+    setMappedData(null)
+    setJsonInput('')
+    toast({ title: "Documento Anulado", description: "El registro se ha procesado correctamente." })
   }
 
   if (!mounted) return null
@@ -537,25 +567,56 @@ export default function InstitutionalModule() {
               <Button variant="outline" onClick={() => setActiveTab('projects')}>Ir a Proyectos</Button>
             </div>
           ) : (
-            <div className="space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-destructive"><XCircle className="h-5 w-5" /> Gestión de Documentos Anulados</CardTitle>
-                  <CardDescription>Marque documentos como inválidos o visualice el historial de anulaciones del proyecto.</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-destructive"><XCircle className="h-5 w-5" /> Gestión de Documentos Anulados</CardTitle>
+                    <CardDescription>Marque documentos como inválidos arrastrando el DTE o seleccionando una factura existente.</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    <div 
+                      className={cn(
+                        "relative border-2 border-dashed rounded-xl p-8 transition-all flex flex-col items-center justify-center gap-4 cursor-pointer",
+                        isDragging ? "border-destructive bg-destructive/5" : "border-muted hover:border-destructive/50"
+                      )}
+                      onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+                      onDragLeave={() => setIsDragging(false)}
+                      onDrop={handleDrop}
+                      onClick={() => fileInputVoidRef.current?.click()}
+                    >
+                      <input 
+                        type="file" 
+                        ref={fileInputVoidRef} 
+                        className="hidden" 
+                        accept=".json" 
+                        onChange={handleFileUpload} 
+                      />
+                      <div className="h-16 w-16 rounded-full bg-secondary flex items-center justify-center">
+                        <Upload className={cn("h-8 w-8 text-muted-foreground", isDragging && "text-destructive animate-bounce")} />
+                      </div>
+                      <div className="text-center">
+                        <p className="font-bold">Arrastrar DTE Anulado</p>
+                        <p className="text-xs text-muted-foreground mt-1">Suelte el archivo JSON para registrar la anulación</p>
+                      </div>
+                    </div>
+
+                    <div className="relative">
+                      <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+                      <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-2 text-muted-foreground">O seleccionar manualmente</span></div>
+                    </div>
+
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <Label>Documento a Anular</Label>
+                        <Label>Documento del Proyecto</Label>
                         <Select value={transactionToVoid} onValueChange={setTransactionToVoid}>
-                          <SelectTrigger><SelectValue placeholder="Seleccione factura/DTE" /></SelectTrigger>
+                          <SelectTrigger><SelectValue placeholder="Seleccione factura activa" /></SelectTrigger>
                           <SelectContent>
                             {transactions
                               .filter(t => t.projectId === selectedProjectId && !t.isVoided)
                               .map(t => (
                                 <SelectItem key={t.id} value={t.id}>
-                                  {t.invoiceNumber} - ${t.totalAmount.toFixed(2)} ({t.type === 'sale' ? 'Venta' : 'Compra'})
+                                  {t.invoiceNumber} - ${t.totalAmount.toFixed(2)}
                                 </SelectItem>
                               ))
                             }
@@ -565,48 +626,61 @@ export default function InstitutionalModule() {
                       <div className="space-y-2">
                         <Label>Motivo de Anulación</Label>
                         <Textarea 
-                          placeholder="Ej. Error en digitación de montos, devolución de producto, etc." 
+                          placeholder="Ej. Error en digitación, devolución, etc." 
                           value={voidReason}
                           onChange={e => setVoidReason(e.target.value)}
                         />
                       </div>
-                      <Button variant="destructive" className="w-full" onClick={handleVoidTransaction} disabled={!transactionToVoid || !voidReason}>
-                        Marcar Documento como Anulado
+                      <Button variant="destructive" className="w-full" onClick={handleVoidTransaction} disabled={(!transactionToVoid && !mappedData) || !voidReason}>
+                        Registrar Anulación
                       </Button>
                     </div>
+                  </CardContent>
+                </Card>
+              </div>
 
-                    <div className="space-y-2">
-                      <Label className="text-sm font-bold uppercase text-muted-foreground">Historial de Anulaciones</Label>
-                      <ScrollArea className="h-[250px] border rounded-lg bg-muted/20">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Factura #</TableHead>
-                              <TableHead>Monto</TableHead>
-                              <TableHead>Motivo</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {voidedTransactions.length > 0 ? (
-                              voidedTransactions.map(t => (
-                                <TableRow key={t.id} className="opacity-60 grayscale">
-                                  <TableCell className="font-mono text-xs">{t.invoiceNumber}</TableCell>
-                                  <TableCell className="font-bold text-xs">${t.totalAmount.toFixed(2)}</TableCell>
-                                  <TableCell className="text-[10px] italic">{t.voidReason}</TableCell>
-                                </TableRow>
-                              ))
-                            ) : (
-                              <TableRow>
-                                <TableCell colSpan={3} className="text-center py-10 text-muted-foreground italic text-xs">
-                                  No hay documentos anulados en este proyecto.
-                                </TableCell>
-                              </TableRow>
-                            )}
-                          </TableBody>
-                        </Table>
-                      </ScrollArea>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Historial de Anulaciones</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {mappedData && (
+                    <div className="mb-6 p-4 bg-destructive/5 border border-destructive/20 rounded-lg space-y-2">
+                       <p className="text-xs font-bold uppercase text-destructive">Vista Previa de Documento Cargado</p>
+                       <div className="flex justify-between text-sm font-mono">
+                          <span>Factura: {mappedData.invoiceNumber}</span>
+                          <span>Monto: ${mappedData.totalAmount?.toFixed(2)}</span>
+                       </div>
                     </div>
-                  </div>
+                  )}
+                  <ScrollArea className="h-[400px]">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Factura #</TableHead>
+                          <TableHead>Monto</TableHead>
+                          <TableHead>Motivo</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {voidedTransactions.length > 0 ? (
+                          voidedTransactions.map(t => (
+                            <TableRow key={t.id} className="opacity-60">
+                              <TableCell className="font-mono text-xs">{t.invoiceNumber}</TableCell>
+                              <TableCell className="font-bold text-xs">${t.totalAmount.toFixed(2)}</TableCell>
+                              <TableCell className="text-[10px] italic">{t.voidReason}</TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={3} className="text-center py-20 text-muted-foreground italic text-xs">
+                              Sin registros de anulaciones para este proyecto.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
                 </CardContent>
               </Card>
             </div>
