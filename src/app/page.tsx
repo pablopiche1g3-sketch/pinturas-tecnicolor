@@ -15,9 +15,7 @@ import {
   DollarSign, 
   ArrowUpRight, 
   Activity, 
-  Target,
-  Truck,
-  Users
+  Target
 } from "lucide-react"
 import { useLedgerStore } from "@/lib/store"
 import { 
@@ -136,91 +134,51 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Chart Section */}
-        <div className="grid gap-4 md:grid-cols-7">
-          <Card className="col-span-4">
-            <CardHeader>
-              <CardTitle>Actividad Financiera</CardTitle>
-              <CardDescription>Visualización de los flujos recientes de compras y ventas institucionales.</CardDescription>
-            </CardHeader>
-            <CardContent className="pl-2">
-              <div className="h-[300px] w-full">
-                {chartData.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData}>
-                      <XAxis 
-                        dataKey="name" 
-                        stroke="#888888" 
-                        fontSize={12} 
-                        tickLine={false} 
-                        axisLine={false} 
-                      />
-                      <YAxis 
-                        stroke="#888888" 
-                        fontSize={12} 
-                        tickLine={false} 
-                        axisLine={false} 
-                        tickFormatter={(value) => `$${value}`}
-                      />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))' }}
-                        itemStyle={{ color: 'hsl(var(--primary))' }}
-                        labelFormatter={(label) => `Factura: ${label}`}
-                      />
-                      <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                        {chartData.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.type === 'purchase' ? 'hsl(var(--destructive))' : 'hsl(var(--primary))'} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-muted-foreground">
-                    No hay transacciones disponibles para visualización.
-                  </div>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="col-span-3">
-            <CardHeader>
-              <CardTitle>Análisis Reciente</CardTitle>
-              <CardDescription>Hallazgos clave de los datos procesados.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-8">
-                <div className="flex items-center">
-                  <Activity className="h-9 w-9 text-accent mr-3" />
-                  <div className="ml-4 space-y-1">
-                    <p className="text-sm font-medium leading-none">Mapeo Automatizado</p>
-                    <p className="text-xs text-muted-foreground">
-                      La IA mapeó con éxito el 100% de la última factura.
-                    </p>
-                  </div>
+        {/* Chart Section - Expandido para ocupar todo el ancho */}
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle>Actividad Financiera Reciente</CardTitle>
+            <CardDescription>Visualización de los últimos flujos de compras y ventas institucionales.</CardDescription>
+          </CardHeader>
+          <CardContent className="pl-2">
+            <div className="h-[400px] w-full">
+              {chartData.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <XAxis 
+                      dataKey="name" 
+                      stroke="#888888" 
+                      fontSize={11} 
+                      tickLine={false} 
+                      axisLine={false} 
+                    />
+                    <YAxis 
+                      stroke="#888888" 
+                      fontSize={11} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      tickFormatter={(value) => `$${value}`}
+                    />
+                    <Tooltip 
+                      contentStyle={{ backgroundColor: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px' }}
+                      itemStyle={{ color: 'hsl(var(--primary))' }}
+                      labelFormatter={(label) => `Factura: ${label}`}
+                    />
+                    <Bar dataKey="value" radius={[6, 6, 0, 0]} barSize={40}>
+                      {chartData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.type === 'purchase' ? 'hsl(var(--destructive))' : 'hsl(var(--primary))'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="flex h-full items-center justify-center text-muted-foreground border-2 border-dashed rounded-lg">
+                  No hay transacciones disponibles para visualización en el gráfico.
                 </div>
-                <div className="flex items-center">
-                  <Truck className="h-9 w-9 text-primary mr-3" />
-                  <div className="ml-4 space-y-1">
-                    <p className="text-sm font-medium leading-none">Crecimiento de Proveedores</p>
-                    <p className="text-xs text-muted-foreground">
-                      3 nuevos socios institucionales añadidos esta semana.
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center">
-                  <Users className="h-9 w-9 text-accent mr-3" />
-                  <div className="ml-4 space-y-1">
-                    <p className="text-sm font-medium leading-none">Retención de Clientes</p>
-                    <p className="text-xs text-muted-foreground">
-                      Los 5 principales clientes aportan el 45% de las ganancias.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </AppLayout>
   )
