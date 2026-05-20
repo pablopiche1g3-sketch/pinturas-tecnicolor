@@ -4,7 +4,6 @@
 
 @layer base {
   :root {
-    /* Base Colors - Blue (Institucional) */
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
@@ -27,19 +26,6 @@
     --radius: 0.75rem;
   }
 
-  /* Theme Variants */
-  .theme-orange {
-    --primary: 24.6 95% 53.1%;
-    --accent: 38 92% 50%;
-    --ring: 24.6 95% 53.1%;
-  }
-
-  .theme-green {
-    --primary: 142.1 76.2% 36.3%;
-    --accent: 160 84% 39%;
-    --ring: 142.1 76.2% 36.3%;
-  }
-
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
@@ -60,16 +46,6 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 224.3 76.3% 48%;
-  }
-
-  .dark.theme-orange {
-    --primary: 20.5 90.2% 48.2%;
-    --accent: 31.6 89.1% 45.9%;
-  }
-
-  .dark.theme-green {
-    --primary: 142.1 70.6% 45.3%;
-    --accent: 158 64% 52%;
   }
 }
 

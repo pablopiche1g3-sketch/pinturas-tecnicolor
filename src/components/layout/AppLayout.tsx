@@ -20,7 +20,6 @@ import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useLedgerStore } from "@/lib/store"
 
 const navItems = [
   { label: "Panel de Control", icon: LayoutDashboard, href: "/" },
@@ -34,7 +33,6 @@ const navItems = [
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isMobile = useIsMobile()
-  const { themeColor } = useLedgerStore()
   const [isCollapsed, setIsCollapsed] = React.useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false)
 
@@ -49,8 +47,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       default: return "Tecnicolor Institucional";
     }
   }
-
-  const themeClass = themeColor === 'blue' ? '' : `theme-${themeColor}`;
 
   const NavContent = () => (
     <nav className="flex-1 space-y-1 p-4">
@@ -77,7 +73,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <div className={cn("flex min-h-screen bg-background font-body text-foreground", themeClass)}>
+    <div className="flex min-h-screen bg-background font-body text-foreground">
       {/* Sidebar Desktop */}
       {!isMobile && (
         <aside 

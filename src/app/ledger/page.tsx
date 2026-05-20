@@ -113,7 +113,7 @@ export default function LedgerPage() {
                       <TrendingUp className="h-2 w-2" /> Venta
                     </Badge>
                   )}
-                  <Badge variant="secondary" className="text-[8px] h-4 w-fit bg-slate-100">{getDocTypeBadge(t.documentType)}</Badge>
+                  <Badge variant="secondary" className="text-[8px] h-4 w-fit bg-muted">{getDocTypeBadge(t.documentType)}</Badge>
                 </div>
               </TableCell>
               <TableCell className="font-mono text-[10px] max-w-[150px] truncate" title={t.invoiceNumber}>{t.invoiceNumber}</TableCell>
@@ -137,7 +137,7 @@ export default function LedgerPage() {
                     {t.isVoided && (
                       <div className="flex flex-col items-end">
                          <span className="text-[8px] text-destructive uppercase font-bold max-w-[120px] truncate">Motivo: {t.voidReason}</span>
-                         {t.relatedDocumentNumber && <span className="text-[8px] text-slate-500 font-mono">Modif: {t.relatedDocumentNumber}</span>}
+                         {t.relatedDocumentNumber && <span className="text-[8px] text-muted-foreground font-mono">Modif: {t.relatedDocumentNumber}</span>}
                       </div>
                     )}
                  </div>
@@ -170,10 +170,10 @@ export default function LedgerPage() {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-2xl font-bold font-headline tracking-tight">Libro Mayor Consolidado</h3>
+            <h3 className="text-2xl font-bold font-headline tracking-tight text-foreground">Libro Mayor Consolidado</h3>
             <p className="text-sm text-muted-foreground">Control financiero detallado por proyectos (FAC, CCF, NC).</p>
           </div>
-          <Button variant="outline" className="gap-2 bg-white shadow-sm border-slate-200">
+          <Button variant="outline" className="gap-2 bg-card shadow-sm">
             <FileSpreadsheet className="h-4 w-4 text-green-600" /> Exportar Libro Completo
           </Button>
         </div>
@@ -184,18 +184,18 @@ export default function LedgerPage() {
               <AccordionItem 
                 key={project.id} 
                 value={project.id}
-                className="border rounded-xl bg-white shadow-sm overflow-hidden"
+                className="border rounded-xl bg-card shadow-sm overflow-hidden"
               >
-                <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-slate-50 transition-all">
+                <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted transition-all">
                   <div className="flex flex-1 items-center justify-between text-left pr-4">
                     <div className="flex items-center gap-4">
-                      <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center">
-                        <Briefcase className="h-5 w-5 text-blue-600" />
+                      <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                        <Briefcase className="h-5 w-5 text-primary" />
                       </div>
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-slate-900">{project.name}</h4>
-                          <Badge variant="outline" className="font-mono text-[10px] bg-white">{project.purchaseOrder}</Badge>
+                          <h4 className="font-bold text-foreground">{project.name}</h4>
+                          <Badge variant="outline" className="font-mono text-[10px] bg-background">{project.purchaseOrder}</Badge>
                         </div>
                         <p className="text-xs text-muted-foreground">{project.customerName}</p>
                       </div>
@@ -212,18 +212,18 @@ export default function LedgerPage() {
                       </div>
                       <div className="text-right border-l pl-8">
                         <p className="text-[10px] uppercase text-muted-foreground font-bold leading-none mb-1">Utilidad Neta</p>
-                        <p className="text-sm font-black text-blue-600">${stats.totalGain.toLocaleString()}</p>
+                        <p className="text-sm font-black text-primary">${stats.totalGain.toLocaleString()}</p>
                       </div>
                     </div>
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="border-t">
                   <div className="p-0">
-                    <div className="bg-slate-50/50 p-4 border-b flex items-center justify-between">
+                    <div className="bg-muted/30 p-4 border-b flex items-center justify-between">
                        <div className="flex gap-4">
                           <div className="flex flex-col">
                              <span className="text-[10px] uppercase text-muted-foreground font-bold">Objetivo OC</span>
-                             <span className="text-sm font-medium">${project.targetSaleAmount.toLocaleString()}</span>
+                             <span className="text-sm font-medium text-foreground">${project.targetSaleAmount.toLocaleString()}</span>
                           </div>
                           <div className="flex flex-col">
                              <span className="text-[10px] uppercase text-muted-foreground font-bold">Desviación</span>
@@ -246,14 +246,14 @@ export default function LedgerPage() {
             ))}
 
             {orphanTransactions.length > 0 && (
-              <AccordionItem value="orphans" className="border rounded-xl bg-white shadow-sm overflow-hidden">
-                <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-slate-50">
+              <AccordionItem value="orphans" className="border rounded-xl bg-card shadow-sm overflow-hidden">
+                <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-muted">
                   <div className="flex flex-1 items-center gap-4">
-                    <div className="h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center">
-                      <ArrowRightLeft className="h-5 w-5 text-slate-500" />
+                    <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center">
+                      <ArrowRightLeft className="h-5 w-5 text-muted-foreground" />
                     </div>
                     <div>
-                      <h4 className="font-bold text-slate-900">Ventas Generales / Sin Proyecto</h4>
+                      <h4 className="font-bold text-foreground">Ventas Generales / Sin Proyecto</h4>
                       <p className="text-xs text-muted-foreground">Transacciones manuales o ventas de mostrador.</p>
                     </div>
                   </div>

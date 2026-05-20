@@ -69,14 +69,11 @@ export interface Transaction {
   relatedDocumentNumber?: string;
 }
 
-export type ThemeColor = 'blue' | 'orange' | 'green';
-
 interface LedgerStore {
   entities: Entity[];
   projects: Project[];
   transactions: Transaction[];
   inventory: InventoryItem[];
-  themeColor: ThemeColor;
   addEntity: (entity: Omit<Entity, 'id' | 'createdAt'>) => void;
   deleteEntity: (id: string) => void;
   addProject: (project: Omit<Project, 'id' | 'createdAt'>) => void;
@@ -86,7 +83,6 @@ interface LedgerStore {
   deleteTransaction: (id: string) => void;
   addToInventory: (items: Omit<InventoryItem, 'id' | 'dateAdded'>[]) => void;
   removeFromInventory: (id: string) => void;
-  setThemeColor: (color: ThemeColor) => void;
 }
 
 export const useLedgerStore = create<LedgerStore>()(
@@ -96,7 +92,6 @@ export const useLedgerStore = create<LedgerStore>()(
       projects: [],
       transactions: [],
       inventory: [],
-      themeColor: 'blue',
       addEntity: (entity) => set((state) => ({
         entities: [
           ...state.entities,
@@ -155,10 +150,9 @@ export const useLedgerStore = create<LedgerStore>()(
       removeFromInventory: (id) => set((state) => ({
         inventory: state.inventory.filter(i => i.id !== id)
       })),
-      setThemeColor: (color) => set({ themeColor: color }),
     }),
     {
-      name: 'tecnicolor-ledger-store-v4',
+      name: 'tecnicolor-ledger-store-v5',
     }
   )
 );
