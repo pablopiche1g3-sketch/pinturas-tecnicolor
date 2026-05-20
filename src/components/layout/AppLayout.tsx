@@ -9,7 +9,6 @@ import {
   Truck, 
   Zap, 
   History, 
-  Settings,
   ChevronLeft,
   ChevronRight,
   Menu,
@@ -103,16 +102,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
-
-        <div className="border-t p-4">
-          <div className={cn(
-            "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-slate-500 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer",
-            isCollapsed && "justify-center"
-          )}>
-            <Settings className="h-5 w-5 shrink-0" />
-            {!isCollapsed && <span>Configuración</span>}
-          </div>
-        </div>
       </aside>
 
       {/* Main Content */}
@@ -125,15 +114,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               <Button variant="outline" size="icon" className="md:hidden border-slate-200">
                 <Menu className="h-5 w-5" />
               </Button>
-              <div className="flex items-center gap-3 pl-4 border-l">
-                <div className="flex flex-col items-end leading-none">
-                  <span className="text-sm font-bold text-slate-900">Juan Pérez</span>
-                  <span className="text-[10px] text-slate-500">Administrador</span>
-                </div>
-                <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center border-2 border-white shadow-sm ring-1 ring-blue-50">
-                  <span className="text-sm font-bold text-blue-700">JP</span>
-                </div>
-              </div>
            </div>
         </header>
         <div className="p-8 max-w-7xl mx-auto">
