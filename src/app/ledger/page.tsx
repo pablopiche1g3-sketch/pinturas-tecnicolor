@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -26,7 +25,8 @@ import {
   ChevronRight,
   Calculator,
   Receipt,
-  ArrowRightLeft
+  ArrowRightLeft,
+  FileText
 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
@@ -50,7 +50,15 @@ export default function LedgerPage() {
     )
   }
 
-  // Agrupar transacciones por proyecto
+  const getDocTypeBadge = (type: string) => {
+    switch(type) {
+      case '01': return 'FAC';
+      case '03': return 'CCF';
+      case '07': return 'NC';
+      default: return 'DTE';
+    }
+  }
+
   const groupedData = projects.map(project => {
     const projectTransactions = transactions.filter(t => t.projectId === project.id)
     const validTransactions = projectTransactions.filter(t => !t.isVoided)
@@ -71,7 +79,6 @@ export default function LedgerPage() {
     }
   })
 
-  // Transacciones sin proyecto
   const orphanTransactions = transactions.filter(t => !t.projectId)
 
   const renderTransactionTable = (txs: Transaction[]) => (
@@ -79,7 +86,7 @@ export default function LedgerPage() {
       <TableHeader>
         <TableRow className="bg-muted/50">
           <TableHead className="w-[120px]">Tipo/Estado</TableHead>
-          <TableHead>Factura #</TableHead>
+          <TableHead>DTE #</TableHead>
           <TableHead>Entidad</TableHead>
           <TableHead>Fecha</TableHead>
           <TableHead className="text-right">Monto Total</TableHead>
@@ -92,23 +99,26 @@ export default function LedgerPage() {
           [...txs].reverse().map((t) => (
             <TableRow key={t.id} className={cn("group", t.isVoided && "bg-muted/30 grayscale opacity-60")}>
               <TableCell>
-                {t.isVoided ? (
-                  <Badge variant="outline" className="text-muted-foreground border-muted-foreground/30 bg-muted/50 gap-1">
-                    <XCircle className="h-3 w-3" /> Anulada
-                  </Badge>
-                ) : t.type === 'purchase' ? (
-                  <Badge variant="outline" className="text-destructive border-destructive/30 bg-destructive/5 gap-1">
-                    <TrendingDown className="h-3 w-3" /> Compra
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="text-primary border-primary/30 bg-primary/5 gap-1">
-                    <TrendingUp className="h-3 w-3" /> Venta
-                  </Badge>
-                )}
+                <div className="flex flex-col gap-1">
+                  {t.isVoided ? (
+                    <Badge variant="outline" className="text-muted-foreground border-muted-foreground/30 bg-muted/50 gap-1 text-[9px]">
+                      <XCircle className="h-2 w-2" /> Anulada
+                    </Badge>
+                  ) : t.type === 'purchase' ? (
+                    <Badge variant="outline" className="text-destructive border-destructive/30 bg-destructive/5 gap-1 text-[9px]">
+                      <TrendingDown className="h-2 w-2" /> Compra
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-primary border-primary/30 bg-primary/5 gap-1 text-[9px]">
+                      <TrendingUp className="h-2 w-2" /> Venta
+                    </Badge>
+                  )}
+                  <Badge variant="secondary" className="text-[8px] h-4 w-fit bg-slate-100">{getDocTypeBadge(t.documentType)}</Badge>
+                </div>
               </TableCell>
-              <TableCell className="font-mono text-[11px]">{t.invoiceNumber}</TableCell>
+              <TableCell className="font-mono text-[10px] max-w-[150px] truncate" title={t.invoiceNumber}>{t.invoiceNumber}</TableCell>
               <TableCell className="font-medium text-xs">{t.entityName}</TableCell>
-              <TableCell className="text-muted-foreground text-[11px] whitespace-nowrap">
+              <TableCell className="text-muted-foreground text-[10px] whitespace-nowrap">
                 {new Date(t.issueDate).toLocaleDateString()}
               </TableCell>
               <TableCell className="text-right font-bold text-xs">
@@ -125,9 +135,10 @@ export default function LedgerPage() {
                       {t.type === 'sale' ? `+$${t.gain.toFixed(2)}` : `Costo: $${t.costBasis.toFixed(2)}`}
                     </span>
                     {t.isVoided && (
-                      <span className="text-[9px] text-destructive uppercase font-bold max-w-[120px] truncate" title={t.voidReason}>
-                        Motivo: {t.voidReason}
-                      </span>
+                      <div className="flex flex-col items-end">
+                         <span className="text-[8px] text-destructive uppercase font-bold max-w-[120px] truncate">Motivo: {t.voidReason}</span>
+                         {t.relatedDocumentNumber && <span className="text-[8px] text-slate-500 font-mono">Modif: {t.relatedDocumentNumber}</span>}
+                      </div>
                     )}
                  </div>
               </TableCell>
@@ -160,7 +171,7 @@ export default function LedgerPage() {
         <div className="flex items-center justify-between">
           <div>
             <h3 className="text-2xl font-bold font-headline tracking-tight">Libro Mayor Consolidado</h3>
-            <p className="text-sm text-muted-foreground">Control financiero detallado por proyectos institucionales y ventas generales.</p>
+            <p className="text-sm text-muted-foreground">Control financiero detallado por proyectos (FAC, CCF, NC).</p>
           </div>
           <Button variant="outline" className="gap-2 bg-white shadow-sm border-slate-200">
             <FileSpreadsheet className="h-4 w-4 text-green-600" /> Exportar Libro Completo

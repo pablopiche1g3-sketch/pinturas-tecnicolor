@@ -55,6 +55,7 @@ export interface Transaction {
   entityName: string;
   projectId?: string;
   type: 'purchase' | 'sale';
+  documentType: '01' | '03' | '07' | string; // 01: Factura, 03: CCF, 07: Nota Crédito
   items: TransactionItem[];
   subtotal: number;
   taxAmount: number;
@@ -65,6 +66,7 @@ export interface Transaction {
   gain: number;
   isVoided?: boolean;
   voidReason?: string;
+  relatedDocumentNumber?: string;
 }
 
 interface LedgerStore {
@@ -77,7 +79,7 @@ interface LedgerStore {
   addProject: (project: Omit<Project, 'id' | 'createdAt'>) => void;
   deleteProject: (id: string) => void;
   addTransaction: (transaction: Omit<Transaction, 'id'>) => void;
-  voidTransaction: (id: string, reason: string) => void;
+  voidTransaction: (id: string, reason: string, relatedDoc?: string) => void;
   deleteTransaction: (id: string) => void;
   addToInventory: (items: Omit<InventoryItem, 'id' | 'dateAdded'>[]) => void;
   removeFromInventory: (id: string) => void;
@@ -127,9 +129,9 @@ export const useLedgerStore = create<LedgerStore>()(
           }
         ]
       })),
-      voidTransaction: (id, reason) => set((state) => ({
+      voidTransaction: (id, reason, relatedDoc) => set((state) => ({
         transactions: state.transactions.map((t) => 
-          t.id === id ? { ...t, isVoided: true, voidReason: reason } : t
+          t.id === id ? { ...t, isVoided: true, voidReason: reason, relatedDocumentNumber: relatedDoc } : t
         )
       })),
       deleteTransaction: (id) => set((state) => ({
@@ -150,7 +152,7 @@ export const useLedgerStore = create<LedgerStore>()(
       })),
     }),
     {
-      name: 'tecnicolor-ledger-store-v3',
+      name: 'tecnicolor-ledger-store-v4',
     }
   )
 );

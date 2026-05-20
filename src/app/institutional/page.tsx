@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dialog"
 import { useLedgerStore, type ProjectProduct, type TransactionItem } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput } from "@/ai/flows/ai-json-key-mapper"
-import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, ArrowRight, CheckCircle2 } from "lucide-react"
+import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, ArrowRight, CheckCircle2, FileText } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -122,13 +122,17 @@ export default function InstitutionalModule() {
       const result = await aiJsonKeyMapper({ invoiceJsonString: rawData })
       setMappedData(result)
       
-      // If we are in the voided tab, try to find the transaction automatically
-      if (activeTab === 'voided' && result.invoiceNumber) {
-        const found = transactions.find(t => t.invoiceNumber === result.invoiceNumber || t.id === result.invoiceNumber)
-        if (found) setTransactionToVoid(found.id)
+      // Auto-matching for void/credit note
+      if (activeTab === 'voided') {
+        const targetId = result.relatedDocumentNumber || result.invoiceNumber
+        const found = transactions.find(t => t.invoiceNumber === targetId || t.id === targetId)
+        if (found) {
+          setTransactionToVoid(found.id)
+          setVoidReason(result.documentType === '07' ? 'Anulación por Nota de Crédito' : 'Ajuste fiscal detectado')
+        }
       }
 
-      toast({ title: "Documento Analizado", description: "Se han extraído los datos del DTE V3." })
+      toast({ title: "Documento Analizado", description: `Tipo de DTE: ${result.documentType || 'Desconocido'}` })
     } catch (error) {
       toast({ title: "Error", description: "No se pudo leer el archivo DTE V3.", variant: "destructive" })
     } finally {
@@ -227,6 +231,7 @@ export default function InstitutionalModule() {
       entityName: supplier?.name || '',
       projectId: selectedProjectId,
       type: 'purchase',
+      documentType: mappedData.documentType || '03',
       items: validItems,
       subtotal: subtotal,
       taxAmount: tax,
@@ -265,6 +270,7 @@ export default function InstitutionalModule() {
       entityName: currentProject.customerName,
       projectId: selectedProjectId,
       type: 'sale',
+      documentType: mappedData.documentType || '01',
       items: finalItems,
       subtotal: subtotal,
       taxAmount: tax,
@@ -286,11 +292,11 @@ export default function InstitutionalModule() {
       return
     }
 
-    voidTransaction(transactionToVoid, voidReason)
+    voidTransaction(transactionToVoid, voidReason, mappedData?.invoiceNumber)
     setTransactionToVoid('')
     setVoidReason('')
     setMappedData(null)
-    toast({ title: "Anulación Registrada", description: "El documento ha sido invalidado." })
+    toast({ title: "Anulación Registrada", description: "El documento ha sido invalidado en el sistema." })
   }
 
   if (!mounted) return null
@@ -301,7 +307,7 @@ export default function InstitutionalModule() {
         <TabsList className="bg-secondary p-1">
           <TabsTrigger value="projects" className="gap-2"><Briefcase className="h-4 w-4" /> Proyectos</TabsTrigger>
           <TabsTrigger value="purchases" className="gap-2"><Upload className="h-4 w-4" /> Compras DTE V3</TabsTrigger>
-          <TabsTrigger value="voided" className="gap-2"><XCircle className="h-4 w-4" /> Anulaciones</TabsTrigger>
+          <TabsTrigger value="voided" className="gap-2"><XCircle className="h-4 w-4" /> Notas de Crédito / Anulaciones</TabsTrigger>
           <TabsTrigger value="comparison" className="gap-2"><Calculator className="h-4 w-4" /> Conciliación Final</TabsTrigger>
         </TabsList>
 
@@ -418,12 +424,12 @@ export default function InstitutionalModule() {
           {!selectedProjectId ? (
             <div className="py-20 text-center border-2 border-dashed rounded-lg opacity-40 flex flex-col items-center gap-4">
                <Package className="h-10 w-10 text-slate-300" />
-               <p className="text-slate-500">Seleccione un proyecto para registrar facturas DTE V3 de proveedores.</p>
+               <p className="text-slate-500">Seleccione un proyecto para registrar facturas o Créditos Fiscales DTE V3.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <Card>
-                <CardHeader><CardTitle>Importar DTE SV V3</CardTitle></CardHeader>
+                <CardHeader><CardTitle>Importar Compra / Crédito Fiscal SV</CardTitle></CardHeader>
                 <CardContent className="space-y-6">
                   <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
                     <SelectTrigger><SelectValue placeholder="Seleccionar Proveedor" /></SelectTrigger>
@@ -440,8 +446,8 @@ export default function InstitutionalModule() {
                     <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileUpload} />
                     <Upload className="h-10 w-10 text-slate-400" />
                     <div className="text-center">
-                      <p className="text-sm font-bold text-slate-700">Seleccionar o Arrastrar DTE V3</p>
-                      <p className="text-[10px] text-muted-foreground uppercase mt-1">Soporta Código de Generación SV</p>
+                      <p className="text-sm font-bold text-slate-700">Arrastrar Factura o CCF V3</p>
+                      <p className="text-[10px] text-muted-foreground uppercase mt-1">Soporta Códigos 01 y 03 de Hacienda</p>
                     </div>
                   </div>
                   <Button className="w-full h-12 bg-blue-600 hover:bg-blue-700" onClick={() => handleProcessData()} disabled={isProcessing || !jsonInput}>
@@ -455,6 +461,11 @@ export default function InstitutionalModule() {
                 <CardContent>
                   {mappedData ? (
                     <div className="space-y-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Badge variant="secondary" className="bg-blue-100 text-blue-700 uppercase text-[10px]">
+                           DTE TIPO: {mappedData.documentType === '03' ? 'CRÉDITO FISCAL' : 'FACTURA'}
+                        </Badge>
+                      </div>
                       <div className="border rounded-lg overflow-hidden">
                         <table className="w-full text-[10px]">
                           <thead className="bg-slate-50"><tr><th className="p-2 text-left">Código/Item</th><th className="p-2 text-right">Cant.</th><th className="p-2 text-center">Estado OC</th></tr></thead>
@@ -510,7 +521,7 @@ export default function InstitutionalModule() {
         <TabsContent value="voided">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <Card>
-              <CardHeader><CardTitle>Registro de Anulación (DTE)</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Anulación / Nota de Crédito (Tipo 07)</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 <div 
                   className={cn("border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer", isDragging ? "bg-red-50 border-red-400" : "bg-slate-50/50")}
@@ -520,18 +531,23 @@ export default function InstitutionalModule() {
                   onClick={() => fileInputVoidRef.current?.click()}
                 >
                   <input type="file" ref={fileInputVoidRef} className="hidden" accept=".json" onChange={handleFileUpload} />
-                  <XCircle className="h-8 w-8 text-destructive opacity-50" />
-                  <p className="text-xs font-bold text-slate-600">Cargar DTE a Anular / Devolución</p>
+                  <FileText className="h-8 w-8 text-destructive opacity-50" />
+                  <p className="text-xs font-bold text-slate-600">Cargar Nota de Crédito o DTE a Anular</p>
                 </div>
 
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label>Seleccionar transacción a invalidar</Label>
+                    <Label>Transacción que se anula o modifica</Label>
                     <Select value={transactionToVoid} onValueChange={setTransactionToVoid}>
-                      <SelectTrigger><SelectValue placeholder="Seleccionar transacción" /></SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder="Seleccionar transacción original" /></SelectTrigger>
                       <SelectContent>
                         {transactions.filter(t => !t.isVoided).map(t => (
-                          <SelectItem key={t.id} value={t.id}>{t.invoiceNumber} - {t.entityName} - ${t.totalAmount.toFixed(2)}</SelectItem>
+                          <SelectItem key={t.id} value={t.id}>
+                            <div className="flex flex-col text-[10px]">
+                              <span>{t.invoiceNumber} ({t.documentType === '03' ? 'CCF' : 'FAC'})</span>
+                              <span className="text-muted-foreground">${t.totalAmount.toFixed(2)} - {t.entityName}</span>
+                            </div>
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -539,16 +555,19 @@ export default function InstitutionalModule() {
                   
                   {mappedData && (
                     <div className="p-3 bg-red-50 border border-red-100 rounded-lg text-[10px]">
-                      <p className="font-bold text-red-800">DTE Detectado: {mappedData.invoiceNumber}</p>
-                      <p>Fecha: {mappedData.issueDate}</p>
-                      <p>Monto: ${mappedData.totalAmount?.toFixed(2)}</p>
+                      <p className="font-bold text-red-800">
+                        {mappedData.documentType === '07' ? 'Nota de Crédito Detectada' : 'Documento para Anulación'}
+                      </p>
+                      <p>DTE # {mappedData.invoiceNumber}</p>
+                      {mappedData.relatedDocumentNumber && <p className="font-bold">Afecta a: {mappedData.relatedDocumentNumber}</p>}
+                      <p>Monto del ajuste: ${mappedData.totalAmount?.toFixed(2)}</p>
                     </div>
                   )}
 
                   <div className="space-y-2">
-                    <Label>Motivo de la anulación</Label>
+                    <Label>Motivo de la anulación o devolución</Label>
                     <Textarea 
-                      placeholder="Indique si es devolución, error en DTE, etc." 
+                      placeholder="Indique si es devolución total, error en DTE, etc." 
                       value={voidReason} 
                       onChange={e => setVoidReason(e.target.value)} 
                     />
@@ -556,20 +575,23 @@ export default function InstitutionalModule() {
                 </div>
                 
                 <Button variant="destructive" className="w-full" onClick={handleVoidTransaction} disabled={!transactionToVoid}>
-                  Anular Movimiento Permanentemente
+                  Invalidar Transacción Permanentemente
                 </Button>
               </CardContent>
             </Card>
             <Card>
-              <CardHeader><CardTitle>Historial de Ajustes Fiscales</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Historial de Ajustes y Notas de Crédito</CardTitle></CardHeader>
               <CardContent>
                 <ScrollArea className="h-[400px]">
                   {transactions.filter(t => t.isVoided).map(t => (
                     <div key={t.id} className="p-3 border-b text-[10px] flex justify-between items-start opacity-70 bg-slate-50 mb-2 rounded">
-                      <div>
-                        <p className="font-bold text-slate-900">{t.invoiceNumber}</p>
+                      <div className="space-y-1">
+                        <div className="flex gap-2">
+                          <p className="font-bold text-slate-900">{t.invoiceNumber}</p>
+                          {t.relatedDocumentNumber && <Badge variant="outline" className="text-[8px]">Modifica: {t.relatedDocumentNumber}</Badge>}
+                        </div>
                         <p className="text-muted-foreground">{t.entityName}</p>
-                        <p className="italic text-destructive font-medium mt-1">Motivo: {t.voidReason}</p>
+                        <p className="italic text-destructive font-medium">Motivo: {t.voidReason}</p>
                         <p className="text-[8px] text-muted-foreground">Fecha: {new Date(t.issueDate).toLocaleDateString()}</p>
                       </div>
                       <span className="font-mono font-bold text-slate-600">${t.totalAmount.toFixed(2)}</span>
