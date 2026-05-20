@@ -57,15 +57,12 @@ export default function InstitutionalModule() {
   const [selectedSupplierId, setSelectedSupplierId] = React.useState('')
   const [isDragging, setIsDragging] = React.useState(false)
   const [applyRetention, setApplyRetention] = React.useState(false)
-  const [isConsolidated, setIsConsolidated] = React.useState(false)
-  const [consolidatedConcept, setConsolidatedConcept] = React.useState('SUMINISTRO SEGÚN ORDEN DE COMPRA')
 
   const [voidReason, setVoidReason] = React.useState('')
   const [transactionToVoid, setTransactionToVoid] = React.useState<string>('')
   
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const fileInputEmitRef = React.useRef<HTMLInputElement>(null)
-  const fileInputVoidRef = React.useRef<HTMLInputElement>(null)
 
   React.useEffect(() => {
     setMounted(true)
@@ -78,7 +75,6 @@ export default function InstitutionalModule() {
   
   const projectCosts = projectTransactions.filter(t => t.type === 'purchase').reduce((acc, curr) => acc + curr.totalAmount, 0)
 
-  // Cálculo de progreso de productos
   const getProductProgress = (productCode: string) => {
     if (!selectedProjectId) return 0
     const received = projectTransactions
@@ -238,22 +234,12 @@ export default function InstitutionalModule() {
     const retention = applyRetention ? subtotal * 0.01 : 0
     const total = (mappedData.totalAmount || 0) - retention
 
-    let finalItems: TransactionItem[] = []
-    if (isConsolidated) {
-      finalItems = [{
-        description: consolidatedConcept,
-        quantity: 1,
-        unitPrice: subtotal,
-        lineTotal: subtotal
-      }]
-    } else {
-      finalItems = (mappedData.items || []).map(i => ({
-        description: i.description || 'Venta proyecto',
-        quantity: i.quantity || 1,
-        unitPrice: i.unitPrice || 0,
-        lineTotal: i.lineTotal || 0,
-      }))
-    }
+    const finalItems = (mappedData.items || []).map(i => ({
+      description: i.description || 'Venta proyecto',
+      quantity: i.quantity || 1,
+      unitPrice: i.unitPrice || 0,
+      lineTotal: i.lineTotal || 0,
+    }))
 
     addTransaction({
       invoiceNumber: mappedData.invoiceNumber || `INV-${Date.now()}`,
@@ -276,19 +262,15 @@ export default function InstitutionalModule() {
   }
 
   const handleVoidTransaction = () => {
-    if (!transactionToVoid && !mappedData) return
+    if (!transactionToVoid) return
     if (!voidReason) {
       toast({ title: "Error", description: "Indique el motivo de anulación.", variant: "destructive" })
       return
     }
 
-    if (transactionToVoid) {
-      voidTransaction(transactionToVoid, voidReason)
-    }
-
+    voidTransaction(transactionToVoid, voidReason)
     setTransactionToVoid('')
     setVoidReason('')
-    setMappedData(null)
     toast({ title: "Anulación Registrada", description: "El documento ha sido invalidado." })
   }
 
@@ -537,16 +519,6 @@ export default function InstitutionalModule() {
                     <Label className="text-xs">Aplicar Retención 1%</Label>
                     <Switch checked={applyRetention} onCheckedChange={setApplyRetention} />
                   </div>
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs">Consolidar en concepto único</Label>
-                    <Switch checked={isConsolidated} onCheckedChange={setIsConsolidated} />
-                  </div>
-                  {isConsolidated && (
-                    <div className="space-y-2">
-                      <Label className="text-[10px] uppercase font-bold">Concepto de Facturación</Label>
-                      <Input value={consolidatedConcept} onChange={e => setConsolidatedConcept(e.target.value)} className="h-8 text-xs" />
-                    </div>
-                  )}
                 </div>
                 
                 <Button className="w-full h-12" onClick={() => handleProcessData()} disabled={!jsonInput}>Analizar y Comparar</Button>
