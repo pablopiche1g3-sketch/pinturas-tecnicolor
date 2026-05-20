@@ -10,6 +10,13 @@ export interface Entity {
   createdAt: string;
 }
 
+export interface ProjectProduct {
+  code: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -17,11 +24,13 @@ export interface Project {
   targetSaleAmount: number;
   customerId: string;
   customerName: string;
+  expectedProducts: ProjectProduct[];
   createdAt: string;
   status: 'active' | 'completed';
 }
 
 export interface TransactionItem {
+  code?: string;
   description: string;
   quantity: number;
   unitPrice: number;
@@ -34,7 +43,7 @@ export interface Transaction {
   issueDate: string;
   entityId: string;
   entityName: string;
-  projectId?: string; // Asociación opcional a un proyecto
+  projectId?: string;
   type: 'purchase' | 'sale';
   items: TransactionItem[];
   subtotal: number;
