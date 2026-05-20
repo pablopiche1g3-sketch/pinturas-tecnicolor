@@ -59,6 +59,7 @@ export interface Transaction {
   subtotal: number;
   taxAmount: number;
   retentionAmount?: number;
+  perceptionAmount?: number;
   totalAmount: number;
   costBasis: number;
   gain: number;

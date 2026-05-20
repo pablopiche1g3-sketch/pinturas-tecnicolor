@@ -14,20 +14,21 @@ const AiJsonKeyMapperInputSchema = z.object({
 export type AiJsonKeyMapperInput = z.infer<typeof AiJsonKeyMapperInputSchema>;
 
 const AiJsonKeyMapperOutputSchema = z.object({
-  invoiceNumber: z.string().optional().describe('Código de generación o número de control del DTE.'),
+  invoiceNumber: z.string().optional().describe('Código de generación (codigoGeneracion) o número de control (numeroControl) del DTE.'),
   issueDate: z.string().optional().describe('Fecha de emisión extraída de identificacion.fecEmi (YYYY-MM-DD).'),
-  supplierName: z.string().optional().describe('Nombre del emisor.'),
-  customerName: z.string().optional().describe('Nombre del receptor.'),
+  supplierName: z.string().optional().describe('Nombre del emisor (emisor.nombre).'),
+  customerName: z.string().optional().describe('Nombre del receptor (receptor.nombre).'),
   items: z.array(z.object({
     code: z.string().optional().describe('Código del producto (cuerpoDocumento[].codigo).'),
     description: z.string().optional().describe('Descripción (cuerpoDocumento[].descripcion).'),
     quantity: z.number().optional().describe('Cantidad (cuerpoDocumento[].cantidad).'),
     unitPrice: z.number().optional().describe('Precio unitario (cuerpoDocumento[].precioUni).'),
-    lineTotal: z.number().optional().describe('Venta gravada o total de línea (cuerpoDocumento[].ventaGravada).'),
+    lineTotal: z.number().optional().describe('Venta gravada de la línea (cuerpoDocumento[].ventaGravada).'),
   })).optional().describe('Lista de ítems del cuerpo del documento.'),
-  subtotal: z.number().optional().describe('Subtotal de operaciones gravadas (resumen.totalGravada).'),
+  subtotal: z.number().optional().describe('Subtotal gravado (resumen.totalGravada o resumen.subTotal).'),
   taxAmount: z.number().optional().describe('Monto de IVA (resumen.tributos donde codigo sea 20).'),
   retentionAmount: z.number().optional().describe('IVA Retenido (resumen.ivaRete1).'),
+  perceptionAmount: z.number().optional().describe('IVA Percibido (resumen.ivaPerci1).'),
   totalAmount: z.number().optional().describe('Monto total a pagar (resumen.totalPagar).'),
 }).describe('Estructura estandarizada compatible con DTE V3 El Salvador.');
 export type AiJsonKeyMapperOutput = z.infer<typeof AiJsonKeyMapperOutputSchema>;
@@ -44,8 +45,8 @@ const aiJsonKeyMapperPrompt = ai.definePrompt({
   
   Tu objetivo es extraer los datos financieros de un JSON DTE salvadoreño y mapearlos a nuestro esquema. 
   
-  Reglas de mapeo para DTE V3:
-  - "invoiceNumber": Prioriza "identificacion.codigoGeneracion". Si no existe, usa "identificacion.numeroControl".
+  Reglas de mapeo para DTE V3 (Basado en la estructura de Hacienda):
+  - "invoiceNumber": Usa "identificacion.codigoGeneracion". Si no existe, usa "identificacion.numeroControl".
   - "issueDate": Usa "identificacion.fecEmi".
   - "supplierName": Usa "emisor.nombre".
   - "customerName": Usa "receptor.nombre".
@@ -54,13 +55,14 @@ const aiJsonKeyMapperPrompt = ai.definePrompt({
     - "description": "cuerpoDocumento[].descripcion".
     - "quantity": "cuerpoDocumento[].cantidad".
     - "unitPrice": "cuerpoDocumento[].precioUni".
-    - "lineTotal": "cuerpoDocumento[].ventaGravada" o "cuerpoDocumento[].montoItem".
-  - "subtotal": Usa "resumen.totalGravada" o "resumen.subTotalVentas".
-  - "taxAmount": Suma los montos en "resumen.tributos" donde el código de tributo sea 20 (IVA).
-  - "retentionAmount": Usa "resumen.ivaRete1" si está presente.
+    - "lineTotal": "cuerpoDocumento[].ventaGravada".
+  - "subtotal": Usa "resumen.totalGravada" o "resumen.subTotal".
+  - "taxAmount": Busca en "resumen.tributos" el objeto donde "codigo" sea "20" y extrae su "valor".
+  - "retentionAmount": Usa "resumen.ivaRete1" (si es mayor a 0).
+  - "perceptionAmount": Usa "resumen.ivaPerci1" (si es mayor a 0).
   - "totalAmount": Usa "resumen.totalPagar".
   
-  Si el JSON no sigue la estructura V3 perfectamente, intenta inferir los campos basándote en facturas comerciales estándar de El Salvador.
+  Asegúrate de manejar los números como flotantes. El JSON puede venir con una firma electrónica al final, ignórala y concéntrate en la estructura de datos.
   
   Documento JSON a procesar:
   {{{invoiceJsonString}}}`,

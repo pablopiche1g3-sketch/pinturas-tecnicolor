@@ -121,6 +121,13 @@ export default function InstitutionalModule() {
       setIsProcessing(true)
       const result = await aiJsonKeyMapper({ invoiceJsonString: rawData })
       setMappedData(result)
+      
+      // If we are in the voided tab, try to find the transaction automatically
+      if (activeTab === 'voided' && result.invoiceNumber) {
+        const found = transactions.find(t => t.invoiceNumber === result.invoiceNumber || t.id === result.invoiceNumber)
+        if (found) setTransactionToVoid(found.id)
+      }
+
       toast({ title: "Documento Analizado", description: "Se han extraído los datos del DTE V3." })
     } catch (error) {
       toast({ title: "Error", description: "No se pudo leer el archivo DTE V3.", variant: "destructive" })
@@ -129,7 +136,7 @@ export default function InstitutionalModule() {
     }
   }
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, target?: string) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
       const reader = new FileReader()
@@ -211,6 +218,7 @@ export default function InstitutionalModule() {
 
     const subtotal = validItems.reduce((acc, curr) => acc + curr.lineTotal, 0)
     const tax = mappedData.taxAmount || (subtotal * 0.13)
+    const total = mappedData.totalAmount || (subtotal + tax)
 
     addTransaction({
       invoiceNumber: mappedData.invoiceNumber || `DTE-${Date.now()}`,
@@ -222,8 +230,10 @@ export default function InstitutionalModule() {
       items: validItems,
       subtotal: subtotal,
       taxAmount: tax,
-      totalAmount: subtotal + tax,
-      costBasis: subtotal + tax,
+      retentionAmount: mappedData.retentionAmount,
+      perceptionAmount: mappedData.perceptionAmount,
+      totalAmount: total,
+      costBasis: total,
       gain: 0
     })
 
@@ -238,7 +248,7 @@ export default function InstitutionalModule() {
     const subtotal = mappedData.subtotal || 0
     const tax = mappedData.taxAmount || 0
     const retention = applyRetention ? subtotal * 0.01 : (mappedData.retentionAmount || 0)
-    const total = (mappedData.totalAmount || 0) - (applyRetention ? retention : 0)
+    const total = (mappedData.totalAmount || (subtotal + tax)) - (applyRetention ? retention : 0)
 
     const finalItems = (mappedData.items || []).map(i => ({
       code: i.code,
@@ -259,6 +269,7 @@ export default function InstitutionalModule() {
       subtotal: subtotal,
       taxAmount: tax,
       retentionAmount: retention,
+      perceptionAmount: mappedData.perceptionAmount,
       totalAmount: total,
       costBasis: projectCosts,
       gain: total - projectCosts
@@ -278,6 +289,7 @@ export default function InstitutionalModule() {
     voidTransaction(transactionToVoid, voidReason)
     setTransactionToVoid('')
     setVoidReason('')
+    setMappedData(null)
     toast({ title: "Anulación Registrada", description: "El documento ha sido invalidado." })
   }
 
@@ -425,7 +437,7 @@ export default function InstitutionalModule() {
                     onDrop={handleDrop}
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={(e) => handleFileUpload(e)} />
+                    <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileUpload} />
                     <Upload className="h-10 w-10 text-slate-400" />
                     <div className="text-center">
                       <p className="text-sm font-bold text-slate-700">Seleccionar o Arrastrar DTE V3</p>
@@ -464,9 +476,27 @@ export default function InstitutionalModule() {
                           </tbody>
                         </table>
                       </div>
-                      <div className="flex justify-between items-center text-xs p-3 bg-slate-50 rounded-lg">
-                        <span className="text-muted-foreground font-bold">TOTAL DTE:</span>
-                        <span className="text-lg font-black text-slate-900">${mappedData.totalAmount?.toFixed(2)}</span>
+                      <div className="space-y-1 bg-slate-50 p-3 rounded-lg border">
+                        <div className="flex justify-between text-[10px]">
+                          <span className="text-muted-foreground">IVA (13%):</span>
+                          <span className="font-bold">${mappedData.taxAmount?.toFixed(2)}</span>
+                        </div>
+                        {mappedData.retentionAmount && mappedData.retentionAmount > 0 && (
+                          <div className="flex justify-between text-[10px] text-orange-600">
+                            <span>Retención IVA:</span>
+                            <span className="font-bold">-${mappedData.retentionAmount.toFixed(2)}</span>
+                          </div>
+                        )}
+                        {mappedData.perceptionAmount && mappedData.perceptionAmount > 0 && (
+                          <div className="flex justify-between text-[10px] text-blue-600">
+                            <span>Percepción IVA:</span>
+                            <span className="font-bold">+${mappedData.perceptionAmount.toFixed(2)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center pt-2 mt-2 border-t">
+                          <span className="text-xs font-black uppercase">TOTAL DTE:</span>
+                          <span className="text-lg font-black text-slate-900">${mappedData.totalAmount?.toFixed(2)}</span>
+                        </div>
                       </div>
                       <Button className="w-full bg-blue-600" onClick={handleSavePurchase}>Confirmar Carga en Proyecto</Button>
                     </div>
@@ -483,40 +513,71 @@ export default function InstitutionalModule() {
               <CardHeader><CardTitle>Registro de Anulación (DTE)</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 <div 
-                  className="border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer bg-slate-50/50"
+                  className={cn("border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer", isDragging ? "bg-red-50 border-red-400" : "bg-slate-50/50")}
+                  onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={handleDrop}
                   onClick={() => fileInputVoidRef.current?.click()}
                 >
-                  <input type="file" ref={fileInputVoidRef} className="hidden" accept=".json" onChange={(e) => handleFileUpload(e)} />
+                  <input type="file" ref={fileInputVoidRef} className="hidden" accept=".json" onChange={handleFileUpload} />
                   <XCircle className="h-8 w-8 text-destructive opacity-50" />
-                  <p className="text-xs font-bold text-slate-600">Cargar DTE a Anular</p>
+                  <p className="text-xs font-bold text-slate-600">Cargar DTE a Anular / Devolución</p>
                 </div>
 
-                <Select value={transactionToVoid} onValueChange={setTransactionToVoid}>
-                  <SelectTrigger><SelectValue placeholder="Seleccionar transacción registrada" /></SelectTrigger>
-                  <SelectContent>
-                    {transactions.filter(t => t.projectId === selectedProjectId && !t.isVoided).map(t => (
-                      <SelectItem key={t.id} value={t.id}>{t.invoiceNumber} - ${t.totalAmount.toFixed(2)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Textarea placeholder="Motivo de la anulación o devolución (Requerido)" value={voidReason} onChange={e => setVoidReason(e.target.value)} />
-                <Button variant="destructive" className="w-full" onClick={handleVoidTransaction}>Anular Permanentemente</Button>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Seleccionar transacción a invalidar</Label>
+                    <Select value={transactionToVoid} onValueChange={setTransactionToVoid}>
+                      <SelectTrigger><SelectValue placeholder="Seleccionar transacción" /></SelectTrigger>
+                      <SelectContent>
+                        {transactions.filter(t => !t.isVoided).map(t => (
+                          <SelectItem key={t.id} value={t.id}>{t.invoiceNumber} - {t.entityName} - ${t.totalAmount.toFixed(2)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  {mappedData && (
+                    <div className="p-3 bg-red-50 border border-red-100 rounded-lg text-[10px]">
+                      <p className="font-bold text-red-800">DTE Detectado: {mappedData.invoiceNumber}</p>
+                      <p>Fecha: {mappedData.issueDate}</p>
+                      <p>Monto: ${mappedData.totalAmount?.toFixed(2)}</p>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <Label>Motivo de la anulación</Label>
+                    <Textarea 
+                      placeholder="Indique si es devolución, error en DTE, etc." 
+                      value={voidReason} 
+                      onChange={e => setVoidReason(e.target.value)} 
+                    />
+                  </div>
+                </div>
+                
+                <Button variant="destructive" className="w-full" onClick={handleVoidTransaction} disabled={!transactionToVoid}>
+                  Anular Movimiento Permanentemente
+                </Button>
               </CardContent>
             </Card>
             <Card>
               <CardHeader><CardTitle>Historial de Ajustes Fiscales</CardTitle></CardHeader>
               <CardContent>
-                <ScrollArea className="h-[300px]">
-                  {transactions.filter(t => t.projectId === selectedProjectId && t.isVoided).map(t => (
+                <ScrollArea className="h-[400px]">
+                  {transactions.filter(t => t.isVoided).map(t => (
                     <div key={t.id} className="p-3 border-b text-[10px] flex justify-between items-start opacity-70 bg-slate-50 mb-2 rounded">
                       <div>
                         <p className="font-bold text-slate-900">{t.invoiceNumber}</p>
-                        <p className="italic text-destructive font-medium">Motivo: {t.voidReason}</p>
+                        <p className="text-muted-foreground">{t.entityName}</p>
+                        <p className="italic text-destructive font-medium mt-1">Motivo: {t.voidReason}</p>
                         <p className="text-[8px] text-muted-foreground">Fecha: {new Date(t.issueDate).toLocaleDateString()}</p>
                       </div>
                       <span className="font-mono font-bold text-slate-600">${t.totalAmount.toFixed(2)}</span>
                     </div>
                   ))}
+                  {transactions.filter(t => t.isVoided).length === 0 && (
+                    <div className="py-20 text-center opacity-30 italic text-xs">No hay anulaciones registradas.</div>
+                  )}
                 </ScrollArea>
               </CardContent>
             </Card>
@@ -532,10 +593,13 @@ export default function InstitutionalModule() {
                 <CardHeader><CardTitle>Cargar Factura Emitida (DTE SV)</CardTitle></CardHeader>
                 <CardContent className="space-y-6">
                   <div 
-                    className="border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-4 cursor-pointer border-blue-100 hover:bg-blue-50 transition-colors"
+                    className={cn("border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-4 cursor-pointer border-blue-100 transition-colors", isDragging ? "bg-blue-50 border-blue-400" : "hover:bg-blue-50/50")}
+                    onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleDrop}
                     onClick={() => fileInputEmitRef.current?.click()}
                   >
-                    <input type="file" ref={fileInputEmitRef} className="hidden" accept=".json" onChange={(e) => handleFileUpload(e)} />
+                    <input type="file" ref={fileInputEmitRef} className="hidden" accept=".json" onChange={handleFileUpload} />
                     <ReceiptText className="h-10 w-10 text-blue-600" />
                     <div className="text-center">
                       <p className="text-sm font-bold">Arrastrar Factura de Venta Emitida</p>
@@ -546,14 +610,16 @@ export default function InstitutionalModule() {
                   <div className="space-y-4 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
                     <div className="flex items-center justify-between">
                       <div className="space-y-0.5">
-                        <Label className="text-xs">Aplicar Retención IVA 1%</Label>
-                        <p className="text-[9px] text-muted-foreground italic">Solo si no viene en el DTE.</p>
+                        <Label className="text-xs">Aplicar Retención IVA 1% Manual</Label>
+                        <p className="text-[9px] text-muted-foreground italic">Usar si el DTE no la incluye automáticamente.</p>
                       </div>
                       <Switch checked={applyRetention} onCheckedChange={setApplyRetention} />
                     </div>
                   </div>
                   
-                  <Button className="w-full h-12 bg-blue-600" onClick={() => handleProcessData()} disabled={!jsonInput}>Comparar contra OC</Button>
+                  <Button className="w-full h-12 bg-blue-600" onClick={() => handleProcessData()} disabled={!jsonInput || isProcessing}>
+                    {isProcessing ? <Loader2 className="animate-spin" /> : "Comparar contra OC"}
+                  </Button>
                 </CardContent>
               </Card>
 
