@@ -1,33 +1,35 @@
 'use server';
 /**
- * @fileOverview Agente de IA para el mapeo de JSON financieros, optimizado para DTE (Documentos Tributarios Electrónicos) de El Salvador.
+ * @fileOverview Agente de IA especializado en DTE (Documentos Tributarios Electrónicos) de El Salvador Versión 3.
  *
- * - aiJsonKeyMapper - Función para el mapeo de llaves.
+ * - aiJsonKeyMapper - Función para el mapeo de llaves de JSON fiscales salvadoreños.
  */
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 
 const AiJsonKeyMapperInputSchema = z.object({
-  invoiceJsonString: z.string().describe('El JSON crudo del DTE o factura comercial. Puede seguir el formato oficial de El Salvador (emisor, receptor, cuerpoDocumento, resumen).'),
+  invoiceJsonString: z.string().describe('El JSON crudo del DTE o factura comercial. Sigue el formato oficial de Hacienda El Salvador V3.'),
 });
 export type AiJsonKeyMapperInput = z.infer<typeof AiJsonKeyMapperInputSchema>;
 
 const AiJsonKeyMapperOutputSchema = z.object({
-  invoiceNumber: z.string().optional().describe('Número de control o serie del DTE.'),
-  issueDate: z.string().optional().describe('Fecha de emisión (YYYY-MM-DD).'),
-  supplierName: z.string().optional().describe('Nombre o razón social del emisor/proveedor.'),
-  customerName: z.string().optional().describe('Nombre o razón social del receptor/cliente.'),
+  invoiceNumber: z.string().optional().describe('Código de generación o número de control del DTE.'),
+  issueDate: z.string().optional().describe('Fecha de emisión extraída de identificacion.fecEmi (YYYY-MM-DD).'),
+  supplierName: z.string().optional().describe('Nombre del emisor.'),
+  customerName: z.string().optional().describe('Nombre del receptor.'),
   items: z.array(z.object({
-    description: z.string().optional().describe('Descripción del bien o servicio.'),
-    quantity: z.number().optional().describe('Cantidad.'),
-    unitPrice: z.number().optional().describe('Precio unitario sin impuestos.'),
-    lineTotal: z.number().optional().describe('Monto total de la línea (cantidad * precio).'),
+    code: z.string().optional().describe('Código del producto (cuerpoDocumento[].codigo).'),
+    description: z.string().optional().describe('Descripción (cuerpoDocumento[].descripcion).'),
+    quantity: z.number().optional().describe('Cantidad (cuerpoDocumento[].cantidad).'),
+    unitPrice: z.number().optional().describe('Precio unitario (cuerpoDocumento[].precioUni).'),
+    lineTotal: z.number().optional().describe('Venta gravada o total de línea (cuerpoDocumento[].ventaGravada).'),
   })).optional().describe('Lista de ítems del cuerpo del documento.'),
-  subtotal: z.number().optional().describe('Subtotal o total de operaciones gravadas.'),
-  taxAmount: z.number().optional().describe('Monto total de impuestos (IVA, etc.).'),
-  totalAmount: z.number().optional().describe('Monto total a pagar.'),
-}).describe('Estructura estandarizada de la factura procesada.');
+  subtotal: z.number().optional().describe('Subtotal de operaciones gravadas (resumen.totalGravada).'),
+  taxAmount: z.number().optional().describe('Monto de IVA (resumen.tributos donde codigo sea 20).'),
+  retentionAmount: z.number().optional().describe('IVA Retenido (resumen.ivaRete1).'),
+  totalAmount: z.number().optional().describe('Monto total a pagar (resumen.totalPagar).'),
+}).describe('Estructura estandarizada compatible con DTE V3 El Salvador.');
 export type AiJsonKeyMapperOutput = z.infer<typeof AiJsonKeyMapperOutputSchema>;
 
 export async function aiJsonKeyMapper(input: AiJsonKeyMapperInput): Promise<AiJsonKeyMapperOutput> {
@@ -38,17 +40,29 @@ const aiJsonKeyMapperPrompt = ai.definePrompt({
   name: 'aiJsonKeyMapperPrompt',
   input: { schema: AiJsonKeyMapperInputSchema },
   output: { schema: AiJsonKeyMapperOutputSchema },
-  prompt: `Eres un experto en documentos fiscales de El Salvador (DTE). Tu tarea es mapear un JSON de factura (que puede venir con llaves como "cuerpoDocumento", "resumen", "identificacion") a nuestro esquema estandarizado.
+  prompt: `Eres un experto en la normativa de Facturación Electrónica (DTE) de El Salvador, específicamente en la Versión 3.
   
-  Especial atención a los formatos DTE:
-  - "identificacion.numeroControl" o "identificacion.codigoGeneracion" mapean a "invoiceNumber".
-  - "emisor.nombre" mapea a "supplierName".
-  - "cuerpoDocumento" contiene los "items".
-  - "resumen.totalPagar" mapea a "totalAmount".
+  Tu objetivo es extraer los datos financieros de un JSON DTE salvadoreño y mapearlos a nuestro esquema. 
   
-  Si el JSON no es un DTE oficial, usa tu lógica para identificar los campos financieros estándar.
+  Reglas de mapeo para DTE V3:
+  - "invoiceNumber": Prioriza "identificacion.codigoGeneracion". Si no existe, usa "identificacion.numeroControl".
+  - "issueDate": Usa "identificacion.fecEmi".
+  - "supplierName": Usa "emisor.nombre".
+  - "customerName": Usa "receptor.nombre".
+  - "items": Mapea el array "cuerpoDocumento".
+    - "code": "cuerpoDocumento[].codigo".
+    - "description": "cuerpoDocumento[].descripcion".
+    - "quantity": "cuerpoDocumento[].cantidad".
+    - "unitPrice": "cuerpoDocumento[].precioUni".
+    - "lineTotal": "cuerpoDocumento[].ventaGravada" o "cuerpoDocumento[].montoItem".
+  - "subtotal": Usa "resumen.totalGravada" o "resumen.subTotalVentas".
+  - "taxAmount": Suma los montos en "resumen.tributos" donde el código de tributo sea 20 (IVA).
+  - "retentionAmount": Usa "resumen.ivaRete1" si está presente.
+  - "totalAmount": Usa "resumen.totalPagar".
   
-  Documento JSON:
+  Si el JSON no sigue la estructura V3 perfectamente, intenta inferir los campos basándote en facturas comerciales estándar de El Salvador.
+  
+  Documento JSON a procesar:
   {{{invoiceJsonString}}}`,
 });
 
@@ -61,7 +75,7 @@ const aiJsonKeyMapperFlow = ai.defineFlow(
   async (input) => {
     const { output } = await aiJsonKeyMapperPrompt(input);
     if (!output) {
-      throw new Error('No se pudo procesar el formato del JSON suministrado.');
+      throw new Error('No se pudo procesar el DTE. El formato no es válido o está incompleto.');
     }
     return output;
   }

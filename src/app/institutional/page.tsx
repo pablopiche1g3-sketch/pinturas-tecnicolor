@@ -1,4 +1,3 @@
-
 "use client"
 
 import * as React from "react"
@@ -63,6 +62,7 @@ export default function InstitutionalModule() {
   
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const fileInputEmitRef = React.useRef<HTMLInputElement>(null)
+  const fileInputVoidRef = React.useRef<HTMLInputElement>(null)
 
   React.useEffect(() => {
     setMounted(true)
@@ -121,15 +121,15 @@ export default function InstitutionalModule() {
       setIsProcessing(true)
       const result = await aiJsonKeyMapper({ invoiceJsonString: rawData })
       setMappedData(result)
-      toast({ title: "Documento Analizado", description: "Se han extraído los datos del DTE." })
+      toast({ title: "Documento Analizado", description: "Se han extraído los datos del DTE V3." })
     } catch (error) {
-      toast({ title: "Error", description: "No se pudo leer el archivo JSON.", variant: "destructive" })
+      toast({ title: "Error", description: "No se pudo leer el archivo DTE V3.", variant: "destructive" })
     } finally {
       setIsProcessing(false)
     }
   }
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, target?: string) => {
     const file = e.target.files?.[0]
     if (file) {
       const reader = new FileReader()
@@ -168,7 +168,7 @@ export default function InstitutionalModule() {
     
     rawItems.forEach(item => {
       const isExpected = currentProject.expectedProducts.some(ep => 
-        ep.code === (item as any).code || 
+        ep.code === item.code || 
         item.description?.toLowerCase().includes(ep.description.toLowerCase())
       )
       
@@ -177,7 +177,7 @@ export default function InstitutionalModule() {
         quantity: item.quantity || 1,
         unitPrice: item.unitPrice || 0,
         lineTotal: item.lineTotal || 0,
-        code: (item as any).code || 'S/C'
+        code: item.code || 'S/C'
       }
 
       if (isExpected) {
@@ -190,7 +190,7 @@ export default function InstitutionalModule() {
     if (orphanItems.length > 0) {
       toast({
         title: "Productos no autorizados",
-        description: `${orphanItems.length} productos serán enviados a Inventario Global.`,
+        description: `${orphanItems.length} productos enviados a Inventario Global.`,
         variant: "destructive"
       })
       
@@ -203,8 +203,14 @@ export default function InstitutionalModule() {
       })))
     }
 
+    if (validItems.length === 0 && orphanItems.length > 0) {
+      setMappedData(null)
+      setJsonInput('')
+      return
+    }
+
     const subtotal = validItems.reduce((acc, curr) => acc + curr.lineTotal, 0)
-    const tax = subtotal * 0.13
+    const tax = mappedData.taxAmount || (subtotal * 0.13)
 
     addTransaction({
       invoiceNumber: mappedData.invoiceNumber || `DTE-${Date.now()}`,
@@ -231,10 +237,11 @@ export default function InstitutionalModule() {
     
     const subtotal = mappedData.subtotal || 0
     const tax = mappedData.taxAmount || 0
-    const retention = applyRetention ? subtotal * 0.01 : 0
-    const total = (mappedData.totalAmount || 0) - retention
+    const retention = applyRetention ? subtotal * 0.01 : (mappedData.retentionAmount || 0)
+    const total = (mappedData.totalAmount || 0) - (applyRetention ? retention : 0)
 
     const finalItems = (mappedData.items || []).map(i => ({
+      code: i.code,
       description: i.description || 'Venta proyecto',
       quantity: i.quantity || 1,
       unitPrice: i.unitPrice || 0,
@@ -281,7 +288,7 @@ export default function InstitutionalModule() {
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="bg-secondary p-1">
           <TabsTrigger value="projects" className="gap-2"><Briefcase className="h-4 w-4" /> Proyectos</TabsTrigger>
-          <TabsTrigger value="purchases" className="gap-2"><Upload className="h-4 w-4" /> Ingresar Compras</TabsTrigger>
+          <TabsTrigger value="purchases" className="gap-2"><Upload className="h-4 w-4" /> Compras DTE V3</TabsTrigger>
           <TabsTrigger value="voided" className="gap-2"><XCircle className="h-4 w-4" /> Anulaciones</TabsTrigger>
           <TabsTrigger value="comparison" className="gap-2"><Calculator className="h-4 w-4" /> Conciliación Final</TabsTrigger>
         </TabsList>
@@ -290,13 +297,13 @@ export default function InstitutionalModule() {
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-xl font-bold font-headline">Control de Proyectos</h3>
-                <p className="text-sm text-muted-foreground">Gestione presupuestos y suministros autorizados.</p>
+                <h3 className="text-xl font-bold font-headline text-slate-900">Control de Proyectos</h3>
+                <p className="text-sm text-muted-foreground">Gestione presupuestos y suministros autorizados por OC.</p>
               </div>
               
               <Dialog open={isProjectDialogOpen} onOpenChange={setIsProjectDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button className="gap-2 bg-accent hover:bg-accent/90">
+                  <Button className="gap-2 bg-blue-600 hover:bg-blue-700">
                     <Plus className="h-4 w-4" /> Nuevo Proyecto
                   </Button>
                 </DialogTrigger>
@@ -309,11 +316,11 @@ export default function InstitutionalModule() {
                     <div className="space-y-4 border-r pr-6">
                       <div className="space-y-2">
                         <Label>Nombre del Proyecto</Label>
-                        <Input value={newProject.name} onChange={e => setNewProject({...newProject, name: e.target.value})} placeholder="ej. Hospital Rosales" />
+                        <Input value={newProject.name} onChange={e => setNewProject({...newProject, name: e.target.value})} placeholder="ej. Hospital El Salvador" />
                       </div>
                       <div className="space-y-2">
                         <Label>Orden de Compra</Label>
-                        <Input value={newProject.purchaseOrder} onChange={e => setNewProject({...newProject, purchaseOrder: e.target.value})} placeholder="OC-2024-001" />
+                        <Input value={newProject.purchaseOrder} onChange={e => setNewProject({...newProject, purchaseOrder: e.target.value})} placeholder="OC-2024-SV" />
                       </div>
                       <div className="space-y-2">
                         <Label>Cliente</Label>
@@ -333,7 +340,7 @@ export default function InstitutionalModule() {
                     <div className="space-y-4">
                       <h4 className="font-bold text-xs uppercase text-muted-foreground">Productos de la OC</h4>
                       <div className="grid grid-cols-2 gap-2">
-                        <Input className="h-8 text-xs" placeholder="Código" value={tempProduct.code} onChange={e => setTempProduct({...tempProduct, code: e.target.value})} />
+                        <Input className="h-8 text-xs" placeholder="Código SV" value={tempProduct.code} onChange={e => setTempProduct({...tempProduct, code: e.target.value})} />
                         <Input className="h-8 text-xs" type="number" placeholder="Cantidad" value={tempProduct.quantity} onChange={e => setTempProduct({...tempProduct, quantity: Number(e.target.value)})} />
                         <Input className="col-span-2 h-8 text-xs" placeholder="Descripción del producto" value={tempProduct.description} onChange={e => setTempProduct({...tempProduct, description: e.target.value})} />
                       </div>
@@ -349,7 +356,7 @@ export default function InstitutionalModule() {
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button className="w-full bg-accent" onClick={handleCreateProject}>Guardar Proyecto</Button>
+                    <Button className="w-full bg-blue-600" onClick={handleCreateProject}>Guardar Proyecto</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -359,13 +366,13 @@ export default function InstitutionalModule() {
               {projects.map(p => (
                 <Card 
                   key={p.id} 
-                  className={cn("cursor-pointer border-2 transition-all", selectedProjectId === p.id ? "border-primary bg-primary/5" : "hover:border-primary/30")}
+                  className={cn("cursor-pointer border-2 transition-all", selectedProjectId === p.id ? "border-blue-600 bg-blue-50/30" : "hover:border-blue-200")}
                   onClick={() => setSelectedProjectId(p.id)}
                 >
                   <CardHeader className="p-4">
                     <div className="flex justify-between items-start">
-                      <CardTitle className="text-sm font-bold">{p.name}</CardTitle>
-                      <Badge variant="outline" className="text-[9px] uppercase">{p.purchaseOrder}</Badge>
+                      <CardTitle className="text-sm font-bold text-slate-800">{p.name}</CardTitle>
+                      <Badge variant="outline" className="text-[9px] uppercase font-mono">{p.purchaseOrder}</Badge>
                     </div>
                     <CardDescription className="text-xs">{p.customerName}</CardDescription>
                   </CardHeader>
@@ -398,13 +405,13 @@ export default function InstitutionalModule() {
         <TabsContent value="purchases">
           {!selectedProjectId ? (
             <div className="py-20 text-center border-2 border-dashed rounded-lg opacity-40 flex flex-col items-center gap-4">
-               <Package className="h-10 w-10" />
-               <p>Seleccione un proyecto para registrar facturas de proveedores.</p>
+               <Package className="h-10 w-10 text-slate-300" />
+               <p className="text-slate-500">Seleccione un proyecto para registrar facturas DTE V3 de proveedores.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <Card>
-                <CardHeader><CardTitle>Importar DTE de Proveedor</CardTitle></CardHeader>
+                <CardHeader><CardTitle>Importar DTE SV V3</CardTitle></CardHeader>
                 <CardContent className="space-y-6">
                   <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
                     <SelectTrigger><SelectValue placeholder="Seleccionar Proveedor" /></SelectTrigger>
@@ -412,42 +419,44 @@ export default function InstitutionalModule() {
                   </Select>
 
                   <div 
-                    className={cn("border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-4 cursor-pointer", isDragging ? "bg-primary/5 border-primary" : "border-muted")}
+                    className={cn("border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-4 cursor-pointer", isDragging ? "bg-blue-50 border-blue-400" : "border-slate-200")}
                     onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
                     onDragLeave={() => setIsDragging(false)}
                     onDrop={handleDrop}
                     onClick={() => fileInputRef.current?.click()}
                   >
-                    <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileUpload} />
-                    <Upload className="h-10 w-10 text-muted-foreground" />
+                    <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={(e) => handleFileUpload(e)} />
+                    <Upload className="h-10 w-10 text-slate-400" />
                     <div className="text-center">
-                      <p className="text-sm font-bold">Seleccionar o Arrastrar JSON</p>
-                      <p className="text-[10px] text-muted-foreground uppercase mt-1">Formato DTE El Salvador</p>
+                      <p className="text-sm font-bold text-slate-700">Seleccionar o Arrastrar DTE V3</p>
+                      <p className="text-[10px] text-muted-foreground uppercase mt-1">Soporta Código de Generación SV</p>
                     </div>
                   </div>
-                  <Button className="w-full h-12" onClick={() => handleProcessData()} disabled={isProcessing || !jsonInput}>
-                    {isProcessing ? <Loader2 className="animate-spin" /> : "Analizar y Validar OC"}
+                  <Button className="w-full h-12 bg-blue-600 hover:bg-blue-700" onClick={() => handleProcessData()} disabled={isProcessing || !jsonInput}>
+                    {isProcessing ? <Loader2 className="animate-spin" /> : "Validar contra Orden de Compra"}
                   </Button>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardHeader><CardTitle>Validación contra Inventario</CardTitle></CardHeader>
+                <CardHeader><CardTitle>Validación de Suministros</CardTitle></CardHeader>
                 <CardContent>
                   {mappedData ? (
                     <div className="space-y-4">
                       <div className="border rounded-lg overflow-hidden">
                         <table className="w-full text-[10px]">
-                          <thead className="bg-muted"><tr><th className="p-2 text-left">Item</th><th className="p-2 text-right">Cant.</th><th className="p-2 text-center">Estado OC</th></tr></thead>
+                          <thead className="bg-slate-50"><tr><th className="p-2 text-left">Código/Item</th><th className="p-2 text-right">Cant.</th><th className="p-2 text-center">Estado OC</th></tr></thead>
                           <tbody className="divide-y">
                             {mappedData.items?.map((it, idx) => {
-                              const isExpected = currentProject?.expectedProducts.some(ep => ep.code === (it as any).code || it.description?.toLowerCase().includes(ep.description.toLowerCase()));
+                              const isExpected = currentProject?.expectedProducts.some(ep => ep.code === it.code || it.description?.toLowerCase().includes(ep.description.toLowerCase()));
                               return (
-                                <tr key={idx} className={!isExpected ? "bg-orange-50" : ""}>
-                                  <td className="p-2 truncate max-w-[150px]">{it.description}</td>
-                                  <td className="p-2 text-right">{it.quantity}</td>
+                                <tr key={idx} className={!isExpected ? "bg-amber-50" : ""}>
+                                  <td className="p-2 truncate max-w-[150px]">
+                                    <span className="font-mono text-blue-600">{it.code}</span> - {it.description}
+                                  </td>
+                                  <td className="p-2 text-right font-bold">{it.quantity}</td>
                                   <td className="p-2 text-center">
-                                    {isExpected ? <Badge className="text-[8px] bg-green-500">AUTORIZADO</Badge> : <Badge variant="destructive" className="text-[8px]">FUERA DE OC</Badge>}
+                                    {isExpected ? <Badge className="text-[8px] bg-green-500 border-none">AUTORIZADO</Badge> : <Badge variant="destructive" className="text-[8px] border-none">FUERA DE OC</Badge>}
                                   </td>
                                 </tr>
                               )
@@ -455,9 +464,13 @@ export default function InstitutionalModule() {
                           </tbody>
                         </table>
                       </div>
-                      <Button className="w-full" onClick={handleSavePurchase}>Confirmar Carga</Button>
+                      <div className="flex justify-between items-center text-xs p-3 bg-slate-50 rounded-lg">
+                        <span className="text-muted-foreground font-bold">TOTAL DTE:</span>
+                        <span className="text-lg font-black text-slate-900">${mappedData.totalAmount?.toFixed(2)}</span>
+                      </div>
+                      <Button className="w-full bg-blue-600" onClick={handleSavePurchase}>Confirmar Carga en Proyecto</Button>
                     </div>
-                  ) : <div className="py-20 text-center text-muted-foreground italic text-xs">Cargue un JSON para validar los productos ingresados.</div>}
+                  ) : <div className="py-20 text-center text-muted-foreground italic text-xs">Cargue el JSON DTE para validar los ítems de ingreso.</div>}
                 </CardContent>
               </Card>
             </div>
@@ -467,31 +480,41 @@ export default function InstitutionalModule() {
         <TabsContent value="voided">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             <Card>
-              <CardHeader><CardTitle>Anulación de Registro</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Registro de Anulación (DTE)</CardTitle></CardHeader>
               <CardContent className="space-y-4">
+                <div 
+                  className="border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer bg-slate-50/50"
+                  onClick={() => fileInputVoidRef.current?.click()}
+                >
+                  <input type="file" ref={fileInputVoidRef} className="hidden" accept=".json" onChange={(e) => handleFileUpload(e)} />
+                  <XCircle className="h-8 w-8 text-destructive opacity-50" />
+                  <p className="text-xs font-bold text-slate-600">Cargar DTE a Anular</p>
+                </div>
+
                 <Select value={transactionToVoid} onValueChange={setTransactionToVoid}>
-                  <SelectTrigger><SelectValue placeholder="Seleccionar transacción" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder="Seleccionar transacción registrada" /></SelectTrigger>
                   <SelectContent>
                     {transactions.filter(t => t.projectId === selectedProjectId && !t.isVoided).map(t => (
-                      <SelectItem key={t.id} value={t.id}>{t.invoiceNumber} - ${t.totalAmount}</SelectItem>
+                      <SelectItem key={t.id} value={t.id}>{t.invoiceNumber} - ${t.totalAmount.toFixed(2)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-                <Textarea placeholder="Motivo de la anulación (Requerido)" value={voidReason} onChange={e => setVoidReason(e.target.value)} />
-                <Button variant="destructive" className="w-full" onClick={handleVoidTransaction}>Anular Permanente</Button>
+                <Textarea placeholder="Motivo de la anulación o devolución (Requerido)" value={voidReason} onChange={e => setVoidReason(e.target.value)} />
+                <Button variant="destructive" className="w-full" onClick={handleVoidTransaction}>Anular Permanentemente</Button>
               </CardContent>
             </Card>
             <Card>
-              <CardHeader><CardTitle>Historial de Ajustes</CardTitle></CardHeader>
+              <CardHeader><CardTitle>Historial de Ajustes Fiscales</CardTitle></CardHeader>
               <CardContent>
                 <ScrollArea className="h-[300px]">
                   {transactions.filter(t => t.projectId === selectedProjectId && t.isVoided).map(t => (
-                    <div key={t.id} className="p-3 border-b text-[10px] flex justify-between items-start opacity-60">
+                    <div key={t.id} className="p-3 border-b text-[10px] flex justify-between items-start opacity-70 bg-slate-50 mb-2 rounded">
                       <div>
-                        <p className="font-bold">{t.invoiceNumber}</p>
-                        <p className="italic text-destructive">Motivo: {t.voidReason}</p>
+                        <p className="font-bold text-slate-900">{t.invoiceNumber}</p>
+                        <p className="italic text-destructive font-medium">Motivo: {t.voidReason}</p>
+                        <p className="text-[8px] text-muted-foreground">Fecha: {new Date(t.issueDate).toLocaleDateString()}</p>
                       </div>
-                      <span className="font-mono">${t.totalAmount.toFixed(2)}</span>
+                      <span className="font-mono font-bold text-slate-600">${t.totalAmount.toFixed(2)}</span>
                     </div>
                   ))}
                 </ScrollArea>
@@ -501,67 +524,79 @@ export default function InstitutionalModule() {
         </TabsContent>
 
         <TabsContent value="comparison">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <Card>
-              <CardHeader><CardTitle>Conciliación de Factura Emitida</CardTitle></CardHeader>
-              <CardContent className="space-y-6">
-                <div 
-                  className="border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-4 cursor-pointer"
-                  onClick={() => fileInputEmitRef.current?.click()}
-                >
-                  <input type="file" ref={fileInputEmitRef} className="hidden" accept=".json" onChange={handleFileUpload} />
-                  <ReceiptText className="h-10 w-10 text-primary" />
-                  <p className="text-sm font-bold">Arrastrar Factura de Venta (DTE)</p>
-                </div>
-                
-                <div className="space-y-4 bg-muted/30 p-4 rounded-xl">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs">Aplicar Retención 1%</Label>
-                    <Switch checked={applyRetention} onCheckedChange={setApplyRetention} />
+          {!selectedProjectId ? (
+             <div className="py-20 text-center border-2 border-dashed rounded-lg opacity-40">Seleccione un proyecto para conciliar factura emitida.</div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <Card>
+                <CardHeader><CardTitle>Cargar Factura Emitida (DTE SV)</CardTitle></CardHeader>
+                <CardContent className="space-y-6">
+                  <div 
+                    className="border-2 border-dashed rounded-xl p-8 flex flex-col items-center justify-center gap-4 cursor-pointer border-blue-100 hover:bg-blue-50 transition-colors"
+                    onClick={() => fileInputEmitRef.current?.click()}
+                  >
+                    <input type="file" ref={fileInputEmitRef} className="hidden" accept=".json" onChange={(e) => handleFileUpload(e)} />
+                    <ReceiptText className="h-10 w-10 text-blue-600" />
+                    <div className="text-center">
+                      <p className="text-sm font-bold">Arrastrar Factura de Venta Emitida</p>
+                      <p className="text-[10px] text-muted-foreground">Analizaremos contra la Orden de Compra {currentProject?.purchaseOrder}</p>
+                    </div>
                   </div>
-                </div>
-                
-                <Button className="w-full h-12" onClick={() => handleProcessData()} disabled={!jsonInput}>Analizar y Comparar</Button>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader><CardTitle>Auditoría de Desviación</CardTitle></CardHeader>
-              <CardContent>
-                {mappedData ? (
-                  <div className="space-y-6">
-                    <div className="p-4 bg-slate-50 rounded-xl space-y-3">
-                      <div className="flex justify-between text-xs"><span>Venta Emitida:</span><span className="font-bold">${mappedData.totalAmount?.toFixed(2)}</span></div>
-                      <div className="flex justify-between text-xs"><span>Monto Objetivo OC:</span><span>${currentProject?.targetSaleAmount.toFixed(2)}</span></div>
-                      <div className="flex justify-between text-sm border-t pt-3 font-black">
-                        <span>Diferencia Final:</span>
-                        <span className={cn(Math.abs((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)) < 1 ? "text-green-600" : "text-orange-600")}>
-                          ${((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)).toFixed(2)}
-                        </span>
+                  
+                  <div className="space-y-4 bg-blue-50/50 p-4 rounded-xl border border-blue-100">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <Label className="text-xs">Aplicar Retención IVA 1%</Label>
+                        <p className="text-[9px] text-muted-foreground italic">Solo si no viene en el DTE.</p>
                       </div>
+                      <Switch checked={applyRetention} onCheckedChange={setApplyRetention} />
                     </div>
-                    
-                    <div className="space-y-2">
-                       <h4 className="text-[10px] uppercase font-bold text-muted-foreground">Productos Vinculados</h4>
-                       {currentProject?.expectedProducts.map(ep => {
-                         const found = mappedData.items?.some(it => it.description?.toLowerCase().includes(ep.description.toLowerCase()));
-                         return (
-                           <div key={ep.code} className="flex items-center gap-2 text-[10px]">
-                              {found ? <CheckCircle2 className="h-3 w-3 text-green-500" /> : <XCircle className="h-3 w-3 text-muted-foreground" />}
-                              <span>{ep.description}</span>
-                              <ArrowRight className="h-2 w-2 mx-1" />
-                              <span className={found ? "font-bold text-green-600" : "italic"}>{found ? "Vinculado" : "No detectado"}</span>
-                           </div>
-                         )
-                       })}
-                    </div>
-                    
-                    <Button className="w-full bg-accent" onClick={handleSaveFinalInvoice}>Cerrar y Guardar en Libro</Button>
                   </div>
-                ) : <div className="py-20 text-center opacity-40 italic text-xs">Cargue la factura emitida para comparar con la OC.</div>}
-              </CardContent>
-            </Card>
-          </div>
+                  
+                  <Button className="w-full h-12 bg-blue-600" onClick={() => handleProcessData()} disabled={!jsonInput}>Comparar contra OC</Button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader><CardTitle>Auditoría de Desviación SV</CardTitle></CardHeader>
+                <CardContent>
+                  {mappedData ? (
+                    <div className="space-y-6">
+                      <div className="p-4 bg-slate-900 rounded-xl space-y-3 text-white">
+                        <div className="flex justify-between text-xs"><span>Venta Emitida (Bruto):</span><span className="font-bold">${mappedData.totalAmount?.toFixed(2)}</span></div>
+                        <div className="flex justify-between text-xs text-slate-400"><span>Monto Objetivo OC:</span><span>${currentProject?.targetSaleAmount.toFixed(2)}</span></div>
+                        <div className="flex justify-between text-sm border-t border-slate-700 pt-3 font-black">
+                          <span>Diferencia Final:</span>
+                          <span className={cn(Math.abs((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)) < 1 ? "text-green-400" : "text-amber-400")}>
+                            ${((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <h4 className="text-[10px] uppercase font-bold text-muted-foreground">Validación de Ítems OC</h4>
+                        {currentProject?.expectedProducts.map(ep => {
+                          const found = mappedData.items?.some(it => it.code === ep.code || it.description?.toLowerCase().includes(ep.description.toLowerCase()));
+                          return (
+                            <div key={ep.code} className="flex items-center justify-between text-[10px] p-2 bg-slate-50 rounded">
+                                <div className="flex items-center gap-2">
+                                  {found ? <CheckCircle2 className="h-3 w-3 text-green-500" /> : <XCircle className="h-3 w-3 text-slate-300" />}
+                                  <span className="font-mono text-blue-600">{ep.code}</span>
+                                  <span>{ep.description}</span>
+                                </div>
+                                <span className={found ? "font-bold text-green-600" : "italic text-muted-foreground"}>{found ? "Vinculado" : "No detectado"}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                      
+                      <Button className="w-full bg-blue-600" onClick={handleSaveFinalInvoice}>Cerrar Proyecto y Guardar en Libro SV</Button>
+                    </div>
+                  ) : <div className="py-20 text-center opacity-40 italic text-xs">Cargue el DTE de venta para auditar contra la OC pactada.</div>}
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </AppLayout>
