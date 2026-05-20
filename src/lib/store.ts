@@ -17,6 +17,16 @@ export interface ProjectProduct {
   unitPrice: number;
 }
 
+export interface InventoryItem {
+  id: string;
+  code: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  sourceInvoice: string;
+  dateAdded: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -48,6 +58,7 @@ export interface Transaction {
   items: TransactionItem[];
   subtotal: number;
   taxAmount: number;
+  retentionAmount?: number;
   totalAmount: number;
   costBasis: number;
   gain: number;
@@ -59,6 +70,7 @@ interface LedgerStore {
   entities: Entity[];
   projects: Project[];
   transactions: Transaction[];
+  inventory: InventoryItem[];
   addEntity: (entity: Omit<Entity, 'id' | 'createdAt'>) => void;
   deleteEntity: (id: string) => void;
   addProject: (project: Omit<Project, 'id' | 'createdAt'>) => void;
@@ -66,6 +78,8 @@ interface LedgerStore {
   addTransaction: (transaction: Omit<Transaction, 'id'>) => void;
   voidTransaction: (id: string, reason: string) => void;
   deleteTransaction: (id: string) => void;
+  addToInventory: (items: Omit<InventoryItem, 'id' | 'dateAdded'>[]) => void;
+  removeFromInventory: (id: string) => void;
 }
 
 export const useLedgerStore = create<LedgerStore>()(
@@ -74,6 +88,7 @@ export const useLedgerStore = create<LedgerStore>()(
       entities: [],
       projects: [],
       transactions: [],
+      inventory: [],
       addEntity: (entity) => set((state) => ({
         entities: [
           ...state.entities,
@@ -119,9 +134,22 @@ export const useLedgerStore = create<LedgerStore>()(
       deleteTransaction: (id) => set((state) => ({
         transactions: state.transactions.filter((t) => t.id !== id)
       })),
+      addToInventory: (items) => set((state) => ({
+        inventory: [
+          ...state.inventory,
+          ...items.map(i => ({
+            ...i,
+            id: Math.random().toString(36).substring(2, 9),
+            dateAdded: new Date().toISOString()
+          }))
+        ]
+      })),
+      removeFromInventory: (id) => set((state) => ({
+        inventory: state.inventory.filter(i => i.id !== id)
+      })),
     }),
     {
-      name: 'vantage-ledger-store-v2',
+      name: 'tecnicolor-ledger-store-v3',
     }
   )
 );

@@ -12,7 +12,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Menu,
-  Palette
+  Palette,
+  Package
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -20,6 +21,7 @@ import { Button } from "@/components/ui/button"
 const navItems = [
   { label: "Panel de Control", icon: LayoutDashboard, href: "/" },
   { label: "Institucional", icon: Zap, href: "/institutional", highlight: true },
+  { label: "Inventario Global", icon: Package, href: "/inventory" },
   { label: "Proveedores", icon: Truck, href: "/suppliers" },
   { label: "Clientes", icon: Users, href: "/customers" },
   { label: "Libro Mayor", icon: History, href: "/ledger" },
@@ -33,6 +35,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     switch (path) {
       case "/": return "Panel de Control";
       case "/institutional": return "Gestión Institucional";
+      case "/inventory": return "Inventario de Excedentes";
       case "/suppliers": return "Directorio de Proveedores";
       case "/customers": return "Directorio de Clientes";
       case "/ledger": return "Libro de Transacciones";
@@ -42,7 +45,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-[#F8FAFC] font-body text-slate-900">
-      {/* Sidebar */}
       <aside 
         className={cn(
           "relative z-40 flex flex-col border-r bg-white transition-all duration-300 ease-in-out shadow-sm",
@@ -93,28 +95,17 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   pathname === item.href ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600"
                 )} />
                 {!isCollapsed && <span>{item.label}</span>}
-                {!isCollapsed && item.highlight && (
-                  <span className="ml-auto rounded-full bg-blue-600 px-1.5 py-0.5 text-[9px] text-white font-bold uppercase tracking-wider">
-                    Activo
-                  </span>
-                )}
               </div>
             </Link>
           ))}
         </nav>
       </aside>
 
-      {/* Main Content */}
       <main className="flex-1 overflow-auto">
         <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b bg-white/80 px-8 backdrop-blur-md">
            <h2 className="font-headline text-2xl font-bold tracking-tight text-slate-900">
             {getPageTitle(pathname)}
            </h2>
-           <div className="flex items-center gap-4">
-              <Button variant="outline" size="icon" className="md:hidden border-slate-200">
-                <Menu className="h-5 w-5" />
-              </Button>
-           </div>
         </header>
         <div className="p-8 max-w-7xl mx-auto">
           {children}
