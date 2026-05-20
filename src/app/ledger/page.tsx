@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Trash2, TrendingUp, TrendingDown, ArrowRightLeft, FileText, Loader2 } from "lucide-react"
+import { Trash2, TrendingUp, TrendingDown, ArrowRightLeft, FileText, Loader2, XCircle } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { cn } from "@/lib/utils"
 
 export default function LedgerPage() {
   const { transactions, deleteTransaction } = useLedgerStore()
@@ -54,7 +55,7 @@ export default function LedgerPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-[100px]">Tipo</TableHead>
+                  <TableHead className="w-[100px]">Tipo/Estado</TableHead>
                   <TableHead>Factura #</TableHead>
                   <TableHead>Entidad</TableHead>
                   <TableHead>Fecha</TableHead>
@@ -66,9 +67,13 @@ export default function LedgerPage() {
               <TableBody>
                 {transactions.length > 0 ? (
                   [...transactions].reverse().map((t) => (
-                    <TableRow key={t.id} className="group">
+                    <TableRow key={t.id} className={cn("group", t.isVoided && "bg-muted/30 grayscale opacity-60")}>
                       <TableCell>
-                        {t.type === 'purchase' ? (
+                        {t.isVoided ? (
+                          <Badge variant="outline" className="text-muted-foreground border-muted-foreground/30 bg-muted/50 gap-1">
+                            <XCircle className="h-3 w-3" /> Anulada
+                          </Badge>
+                        ) : t.type === 'purchase' ? (
                           <Badge variant="outline" className="text-destructive border-destructive/30 bg-destructive/5 gap-1">
                             <TrendingDown className="h-3 w-3" /> Compra
                           </Badge>
@@ -84,16 +89,26 @@ export default function LedgerPage() {
                         {new Date(t.issueDate).toLocaleDateString()}
                       </TableCell>
                       <TableCell className="text-right font-bold text-sm">
-                        ${t.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        <span className={t.isVoided ? 'line-through' : ''}>
+                          ${t.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </span>
                       </TableCell>
                       <TableCell className="text-right">
                          <div className="flex flex-col items-end gap-1">
-                            <span className={t.type === 'sale' ? 'text-primary font-bold' : 'text-muted-foreground text-xs'}>
+                            <span className={cn(
+                              t.type === 'sale' && !t.isVoided ? 'text-primary font-bold' : 'text-muted-foreground text-xs',
+                              t.isVoided && 'line-through'
+                            )}>
                               {t.type === 'sale' ? `+$${t.gain.toFixed(2)}` : `Costo: $${t.costBasis.toFixed(2)}`}
                             </span>
-                            {t.type === 'sale' && (
+                            {t.type === 'sale' && !t.isVoided && (
                               <span className="text-[10px] text-muted-foreground">
                                 ({((t.gain / t.totalAmount) * 100).toFixed(1)}% Margen)
+                              </span>
+                            )}
+                            {t.isVoided && (
+                              <span className="text-[9px] text-destructive uppercase font-bold max-w-[100px] truncate" title={t.voidReason}>
+                                Razón: {t.voidReason}
                               </span>
                             )}
                          </div>

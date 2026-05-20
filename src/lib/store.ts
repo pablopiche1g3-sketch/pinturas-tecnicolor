@@ -51,6 +51,8 @@ export interface Transaction {
   totalAmount: number;
   costBasis: number;
   gain: number;
+  isVoided?: boolean;
+  voidReason?: string;
 }
 
 interface LedgerStore {
@@ -62,6 +64,7 @@ interface LedgerStore {
   addProject: (project: Omit<Project, 'id' | 'createdAt'>) => void;
   deleteProject: (id: string) => void;
   addTransaction: (transaction: Omit<Transaction, 'id'>) => void;
+  voidTransaction: (id: string, reason: string) => void;
   deleteTransaction: (id: string) => void;
 }
 
@@ -104,8 +107,14 @@ export const useLedgerStore = create<LedgerStore>()(
           {
             ...transaction,
             id: Math.random().toString(36).substring(2, 9),
+            isVoided: false
           }
         ]
+      })),
+      voidTransaction: (id, reason) => set((state) => ({
+        transactions: state.transactions.map((t) => 
+          t.id === id ? { ...t, isVoided: true, voidReason: reason } : t
+        )
       })),
       deleteTransaction: (id) => set((state) => ({
         transactions: state.transactions.filter((t) => t.id !== id)

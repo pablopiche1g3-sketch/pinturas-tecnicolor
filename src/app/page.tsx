@@ -36,23 +36,25 @@ export default function Dashboard() {
     setMounted(true)
   }, [])
   
-  const totalRevenue = transactions
+  const validTransactions = transactions.filter(t => !t.isVoided)
+
+  const totalRevenue = validTransactions
     .filter(t => t.type === 'sale')
     .reduce((acc, curr) => acc + curr.totalAmount, 0)
     
-  const totalCosts = transactions
+  const totalCosts = validTransactions
     .reduce((acc, curr) => {
       if (curr.type === 'purchase') return acc + curr.totalAmount
       return acc + (curr.costBasis || 0)
     }, 0)
     
-  const totalProfit = transactions
+  const totalProfit = validTransactions
     .filter(t => t.type === 'sale')
     .reduce((acc, curr) => acc + curr.gain, 0)
     
   const profitMargin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0
 
-  const chartData = transactions.slice(-10).map(t => ({
+  const chartData = validTransactions.slice(-10).map(t => ({
     name: t.invoiceNumber,
     value: t.totalAmount,
     type: t.type
@@ -97,7 +99,7 @@ export default function Dashboard() {
             <CardContent>
               <div className="text-2xl font-bold font-headline">${totalCosts.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
               <p className="text-xs text-muted-foreground mt-1">
-                Procesado en {transactions.length} registros
+                Procesado en {validTransactions.length} registros válidos
               </p>
             </CardContent>
             <div className="absolute bottom-0 left-0 h-1 bg-destructive/30 w-full" />
@@ -134,7 +136,7 @@ export default function Dashboard() {
           </Card>
         </div>
 
-        {/* Chart Section - Expandido para ocupar todo el ancho */}
+        {/* Chart Section */}
         <Card className="w-full">
           <CardHeader>
             <CardTitle>Actividad Financiera Reciente</CardTitle>

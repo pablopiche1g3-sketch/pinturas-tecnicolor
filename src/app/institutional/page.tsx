@@ -19,14 +19,15 @@ import {
 } from "@/components/ui/dialog"
 import { useLedgerStore, type ProjectProduct } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput } from "@/ai/flows/ai-json-key-mapper"
-import { Loader2, FileJson, DollarSign, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, FileCode, CheckCircle2, Box, Info } from "lucide-react"
+import { Loader2, FileJson, DollarSign, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, FileCode, CheckCircle2, Box, Info, XCircle, AlertTriangle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 
 export default function InstitutionalModule() {
-  const { entities, projects, transactions, addProject, deleteProject, addTransaction } = useLedgerStore()
+  const { entities, projects, transactions, addProject, deleteProject, addTransaction, voidTransaction } = useLedgerStore()
   const { toast } = useToast()
   
   const [mounted, setMounted] = React.useState(false)
@@ -55,6 +56,10 @@ export default function InstitutionalModule() {
   const [mappedData, setMappedData] = React.useState<AiJsonKeyMapperOutput | null>(null)
   const [selectedSupplierId, setSelectedSupplierId] = React.useState('')
   const [isDragging, setIsDragging] = React.useState(false)
+
+  // Void Logic State
+  const [voidReason, setVoidReason] = React.useState('')
+  const [transactionToVoid, setTransactionToVoid] = React.useState<string>('')
   
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const fileInputEmitRef = React.useRef<HTMLInputElement>(null)
@@ -66,7 +71,9 @@ export default function InstitutionalModule() {
   const customers = entities.filter(e => e.type === 'customer')
   const suppliers = entities.filter(e => e.type === 'supplier')
   const currentProject = projects.find(p => p.id === selectedProjectId)
-  const projectTransactions = transactions.filter(t => t.projectId === selectedProjectId)
+  const projectTransactions = transactions.filter(t => t.projectId === selectedProjectId && !t.isVoided)
+  const voidedTransactions = transactions.filter(t => t.projectId === selectedProjectId && t.isVoided)
+  
   const projectCosts = projectTransactions.filter(t => t.type === 'purchase').reduce((acc, curr) => acc + curr.totalAmount, 0)
   const projectInvoices = projectTransactions.filter(t => t.type === 'sale').reduce((acc, curr) => acc + curr.totalAmount, 0)
 
@@ -196,6 +203,17 @@ export default function InstitutionalModule() {
     toast({ title: "Factura Emitida", description: "La venta se ha vinculado al proyecto y registrado en el libro mayor." })
   }
 
+  const handleVoidTransaction = () => {
+    if (!transactionToVoid || !voidReason) {
+      toast({ title: "Error", description: "Seleccione una factura y proporcione un motivo.", variant: "destructive" })
+      return
+    }
+    voidTransaction(transactionToVoid, voidReason)
+    setTransactionToVoid('')
+    setVoidReason('')
+    toast({ title: "Documento Anulado", description: "El documento ha sido marcado como anulado correctamente." })
+  }
+
   if (!mounted) return null
 
   return (
@@ -204,6 +222,7 @@ export default function InstitutionalModule() {
         <TabsList className="bg-secondary p-1">
           <TabsTrigger value="projects" className="gap-2"><Briefcase className="h-4 w-4" /> Proyectos</TabsTrigger>
           <TabsTrigger value="purchases" className="gap-2"><Plus className="h-4 w-4" /> Importar Compras DTE</TabsTrigger>
+          <TabsTrigger value="voided" className="gap-2"><XCircle className="h-4 w-4" /> Facturas Anuladas</TabsTrigger>
           <TabsTrigger value="comparison" className="gap-2"><Calculator className="h-4 w-4" /> Conciliación Final</TabsTrigger>
         </TabsList>
 
@@ -366,11 +385,14 @@ export default function InstitutionalModule() {
                         </div>
 
                         {selectedProjectId === p.id && (
-                          <div className="pt-2 flex gap-2">
-                             <Button size="sm" className="w-full text-[10px] h-7 bg-primary/20 text-primary hover:bg-primary/30" onClick={() => setActiveTab('purchases')}>
-                               Gestionar Compras
+                          <div className="pt-2 flex flex-wrap gap-2">
+                             <Button size="sm" className="flex-1 text-[10px] h-7 bg-primary/20 text-primary hover:bg-primary/30" onClick={() => setActiveTab('purchases')}>
+                               Compras
                              </Button>
-                             <Button size="sm" className="w-full text-[10px] h-7 bg-accent/20 text-accent hover:bg-accent/30" onClick={() => setActiveTab('comparison')}>
+                             <Button size="sm" className="flex-1 text-[10px] h-7 bg-destructive/20 text-destructive hover:bg-destructive/30" onClick={() => setActiveTab('voided')}>
+                               Anulaciones
+                             </Button>
+                             <Button size="sm" className="flex-1 text-[10px] h-7 bg-accent/20 text-accent hover:bg-accent/30" onClick={() => setActiveTab('comparison')}>
                                Conciliación
                              </Button>
                           </div>
@@ -501,6 +523,90 @@ export default function InstitutionalModule() {
                       <p className="text-sm italic">Cargue un archivo DTE para visualizar el desglose de costos.</p>
                     </div>
                   )}
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="voided">
+          {!selectedProjectId ? (
+            <div className="py-20 text-center flex flex-col items-center gap-4 bg-secondary/10 rounded-lg border border-dashed">
+              <AlertTriangle className="h-12 w-12 text-muted-foreground opacity-20" />
+              <p className="text-muted-foreground">Seleccione un proyecto para gestionar facturas anuladas.</p>
+              <Button variant="outline" onClick={() => setActiveTab('projects')}>Ir a Proyectos</Button>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-destructive"><XCircle className="h-5 w-5" /> Gestión de Documentos Anulados</CardTitle>
+                  <CardDescription>Marque documentos como inválidos o visualice el historial de anulaciones del proyecto.</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Documento a Anular</Label>
+                        <Select value={transactionToVoid} onValueChange={setTransactionToVoid}>
+                          <SelectTrigger><SelectValue placeholder="Seleccione factura/DTE" /></SelectTrigger>
+                          <SelectContent>
+                            {transactions
+                              .filter(t => t.projectId === selectedProjectId && !t.isVoided)
+                              .map(t => (
+                                <SelectItem key={t.id} value={t.id}>
+                                  {t.invoiceNumber} - ${t.totalAmount.toFixed(2)} ({t.type === 'sale' ? 'Venta' : 'Compra'})
+                                </SelectItem>
+                              ))
+                            }
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Motivo de Anulación</Label>
+                        <Textarea 
+                          placeholder="Ej. Error en digitación de montos, devolución de producto, etc." 
+                          value={voidReason}
+                          onChange={e => setVoidReason(e.target.value)}
+                        />
+                      </div>
+                      <Button variant="destructive" className="w-full" onClick={handleVoidTransaction} disabled={!transactionToVoid || !voidReason}>
+                        Marcar Documento como Anulado
+                      </Button>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-sm font-bold uppercase text-muted-foreground">Historial de Anulaciones</Label>
+                      <ScrollArea className="h-[250px] border rounded-lg bg-muted/20">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Factura #</TableHead>
+                              <TableHead>Monto</TableHead>
+                              <TableHead>Motivo</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {voidedTransactions.length > 0 ? (
+                              voidedTransactions.map(t => (
+                                <TableRow key={t.id} className="opacity-60 grayscale">
+                                  <TableCell className="font-mono text-xs">{t.invoiceNumber}</TableCell>
+                                  <TableCell className="font-bold text-xs">${t.totalAmount.toFixed(2)}</TableCell>
+                                  <TableCell className="text-[10px] italic">{t.voidReason}</TableCell>
+                                </TableRow>
+                              ))
+                            ) : (
+                              <TableRow>
+                                <TableCell colSpan={3} className="text-center py-10 text-muted-foreground italic text-xs">
+                                  No hay documentos anulados en este proyecto.
+                                </TableCell>
+                              </TableRow>
+                            )}
+                          </TableBody>
+                        </Table>
+                      </ScrollArea>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
             </div>
