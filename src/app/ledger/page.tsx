@@ -1,8 +1,9 @@
+
 "use client"
 
 import * as React from "react"
 import { AppLayout } from "@/components/layout/AppLayout"
-import { useLedgerStore } from "@/lib/store"
+import { useLedgerStore, type Transaction, type Project } from "@/lib/store"
 import { 
   Table, 
   TableBody, 
@@ -13,12 +14,26 @@ import {
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Trash2, TrendingUp, TrendingDown, ArrowRightLeft, FileText, Loader2, XCircle } from "lucide-react"
+import { 
+  Trash2, 
+  TrendingUp, 
+  TrendingDown, 
+  FileSpreadsheet, 
+  Loader2, 
+  XCircle, 
+  Briefcase, 
+  ChevronDown, 
+  ChevronRight,
+  Calculator,
+  Receipt,
+  ArrowRightLeft
+} from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 
 export default function LedgerPage() {
-  const { transactions, deleteTransaction } = useLedgerStore()
+  const { transactions, projects, deleteTransaction } = useLedgerStore()
   const [mounted, setMounted] = React.useState(false)
 
   React.useEffect(() => {
@@ -35,110 +50,222 @@ export default function LedgerPage() {
     )
   }
 
+  // Agrupar transacciones por proyecto
+  const groupedData = projects.map(project => {
+    const projectTransactions = transactions.filter(t => t.projectId === project.id)
+    const validTransactions = projectTransactions.filter(t => !t.isVoided)
+    
+    const totalPurchases = validTransactions.filter(t => t.type === 'purchase').reduce((acc, t) => acc + t.totalAmount, 0)
+    const totalSales = validTransactions.filter(t => t.type === 'sale').reduce((acc, t) => acc + t.totalAmount, 0)
+    const totalGain = validTransactions.filter(t => t.type === 'sale').reduce((acc, t) => acc + t.gain, 0)
+
+    return {
+      project,
+      transactions: projectTransactions,
+      stats: {
+        totalPurchases,
+        totalSales,
+        totalGain,
+        deviation: totalSales - project.targetSaleAmount
+      }
+    }
+  })
+
+  // Transacciones sin proyecto
+  const orphanTransactions = transactions.filter(t => !t.projectId)
+
+  const renderTransactionTable = (txs: Transaction[]) => (
+    <Table>
+      <TableHeader>
+        <TableRow className="bg-muted/50">
+          <TableHead className="w-[120px]">Tipo/Estado</TableHead>
+          <TableHead>Factura #</TableHead>
+          <TableHead>Entidad</TableHead>
+          <TableHead>Fecha</TableHead>
+          <TableHead className="text-right">Monto Total</TableHead>
+          <TableHead className="text-right">Utilidad/Costo</TableHead>
+          <TableHead className="text-right">Acciones</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {txs.length > 0 ? (
+          [...txs].reverse().map((t) => (
+            <TableRow key={t.id} className={cn("group", t.isVoided && "bg-muted/30 grayscale opacity-60")}>
+              <TableCell>
+                {t.isVoided ? (
+                  <Badge variant="outline" className="text-muted-foreground border-muted-foreground/30 bg-muted/50 gap-1">
+                    <XCircle className="h-3 w-3" /> Anulada
+                  </Badge>
+                ) : t.type === 'purchase' ? (
+                  <Badge variant="outline" className="text-destructive border-destructive/30 bg-destructive/5 gap-1">
+                    <TrendingDown className="h-3 w-3" /> Compra
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-primary border-primary/30 bg-primary/5 gap-1">
+                    <TrendingUp className="h-3 w-3" /> Venta
+                  </Badge>
+                )}
+              </TableCell>
+              <TableCell className="font-mono text-[11px]">{t.invoiceNumber}</TableCell>
+              <TableCell className="font-medium text-xs">{t.entityName}</TableCell>
+              <TableCell className="text-muted-foreground text-[11px] whitespace-nowrap">
+                {new Date(t.issueDate).toLocaleDateString()}
+              </TableCell>
+              <TableCell className="text-right font-bold text-xs">
+                <span className={t.isVoided ? 'line-through' : ''}>
+                  ${t.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                </span>
+              </TableCell>
+              <TableCell className="text-right">
+                 <div className="flex flex-col items-end gap-0.5">
+                    <span className={cn(
+                      t.type === 'sale' && !t.isVoided ? 'text-primary font-bold text-xs' : 'text-muted-foreground text-[10px]',
+                      t.isVoided && 'line-through'
+                    )}>
+                      {t.type === 'sale' ? `+$${t.gain.toFixed(2)}` : `Costo: $${t.costBasis.toFixed(2)}`}
+                    </span>
+                    {t.isVoided && (
+                      <span className="text-[9px] text-destructive uppercase font-bold max-w-[120px] truncate" title={t.voidReason}>
+                        Motivo: {t.voidReason}
+                      </span>
+                    )}
+                 </div>
+              </TableCell>
+              <TableCell className="text-right">
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="h-8 w-8 text-destructive hover:bg-destructive/10"
+                  onClick={() => deleteTransaction(t.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </TableCell>
+            </TableRow>
+          ))
+        ) : (
+          <TableRow>
+            <TableCell colSpan={7} className="h-20 text-center text-muted-foreground italic text-xs">
+              No hay movimientos registrados para este grupo.
+            </TableCell>
+          </TableRow>
+        )}
+      </TableBody>
+    </Table>
+  )
+
   return (
     <AppLayout>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-lg font-medium">Historial de Transacciones</h3>
-            <p className="text-sm text-muted-foreground">Registro completo de todos los flujos institucionales y actividad de ventas.</p>
+            <h3 className="text-2xl font-bold font-headline tracking-tight">Libro Mayor Consolidado</h3>
+            <p className="text-sm text-muted-foreground">Control financiero detallado por proyectos institucionales y ventas generales.</p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" className="gap-2">
-              <FileText className="h-4 w-4" /> Exportar CSV
-            </Button>
-          </div>
+          <Button variant="outline" className="gap-2 bg-white shadow-sm border-slate-200">
+            <FileSpreadsheet className="h-4 w-4 text-green-600" /> Exportar Libro Completo
+          </Button>
         </div>
 
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-[100px]">Tipo/Estado</TableHead>
-                  <TableHead>Factura #</TableHead>
-                  <TableHead>Entidad</TableHead>
-                  <TableHead>Fecha</TableHead>
-                  <TableHead className="text-right">Cantidad</TableHead>
-                  <TableHead className="text-right">Ganancia/Costo</TableHead>
-                  <TableHead className="text-right">Acciones</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {transactions.length > 0 ? (
-                  [...transactions].reverse().map((t) => (
-                    <TableRow key={t.id} className={cn("group", t.isVoided && "bg-muted/30 grayscale opacity-60")}>
-                      <TableCell>
-                        {t.isVoided ? (
-                          <Badge variant="outline" className="text-muted-foreground border-muted-foreground/30 bg-muted/50 gap-1">
-                            <XCircle className="h-3 w-3" /> Anulada
-                          </Badge>
-                        ) : t.type === 'purchase' ? (
-                          <Badge variant="outline" className="text-destructive border-destructive/30 bg-destructive/5 gap-1">
-                            <TrendingDown className="h-3 w-3" /> Compra
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-primary border-primary/30 bg-primary/5 gap-1">
-                            <TrendingUp className="h-3 w-3" /> Venta
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">{t.invoiceNumber}</TableCell>
-                      <TableCell className="font-medium">{t.entityName}</TableCell>
-                      <TableCell className="text-muted-foreground text-xs whitespace-nowrap">
-                        {new Date(t.issueDate).toLocaleDateString()}
-                      </TableCell>
-                      <TableCell className="text-right font-bold text-sm">
-                        <span className={t.isVoided ? 'line-through' : ''}>
-                          ${t.totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                         <div className="flex flex-col items-end gap-1">
-                            <span className={cn(
-                              t.type === 'sale' && !t.isVoided ? 'text-primary font-bold' : 'text-muted-foreground text-xs',
-                              t.isVoided && 'line-through'
-                            )}>
-                              {t.type === 'sale' ? `+$${t.gain.toFixed(2)}` : `Costo: $${t.costBasis.toFixed(2)}`}
-                            </span>
-                            {t.type === 'sale' && !t.isVoided && (
-                              <span className="text-[10px] text-muted-foreground">
-                                ({((t.gain / t.totalAmount) * 100).toFixed(1)}% Margen)
-                              </span>
-                            )}
-                            {t.isVoided && (
-                              <span className="text-[9px] text-destructive uppercase font-bold max-w-[100px] truncate" title={t.voidReason}>
-                                Razón: {t.voidReason}
-                              </span>
-                            )}
-                         </div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          className="opacity-0 group-hover:opacity-100 text-destructive hover:bg-destructive/10 transition-opacity"
-                          onClick={() => deleteTransaction(t.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow>
-                    <TableCell colSpan={7} className="h-32 text-center">
-                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
-                        <ArrowRightLeft className="h-8 w-8 opacity-20" />
-                        <span>No se han registrado transacciones en el libro todavía.</span>
+        <div className="space-y-4">
+          <Accordion type="multiple" className="space-y-4">
+            {groupedData.map(({ project, transactions: txs, stats }) => (
+              <AccordionItem 
+                key={project.id} 
+                value={project.id}
+                className="border rounded-xl bg-white shadow-sm overflow-hidden"
+              >
+                <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-slate-50 transition-all">
+                  <div className="flex flex-1 items-center justify-between text-left pr-4">
+                    <div className="flex items-center gap-4">
+                      <div className="h-10 w-10 rounded-lg bg-blue-50 flex items-center justify-center">
+                        <Briefcase className="h-5 w-5 text-blue-600" />
                       </div>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-slate-900">{project.name}</h4>
+                          <Badge variant="outline" className="font-mono text-[10px] bg-white">{project.purchaseOrder}</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground">{project.customerName}</p>
+                      </div>
+                    </div>
+
+                    <div className="hidden md:flex items-center gap-8">
+                      <div className="text-right">
+                        <p className="text-[10px] uppercase text-muted-foreground font-bold leading-none mb-1">Costos Reales</p>
+                        <p className="text-sm font-bold text-destructive">${stats.totalPurchases.toLocaleString()}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] uppercase text-muted-foreground font-bold leading-none mb-1">Venta Real</p>
+                        <p className="text-sm font-bold text-primary">${stats.totalSales.toLocaleString()}</p>
+                      </div>
+                      <div className="text-right border-l pl-8">
+                        <p className="text-[10px] uppercase text-muted-foreground font-bold leading-none mb-1">Utilidad Neta</p>
+                        <p className="text-sm font-black text-blue-600">${stats.totalGain.toLocaleString()}</p>
+                      </div>
+                    </div>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="border-t">
+                  <div className="p-0">
+                    <div className="bg-slate-50/50 p-4 border-b flex items-center justify-between">
+                       <div className="flex gap-4">
+                          <div className="flex flex-col">
+                             <span className="text-[10px] uppercase text-muted-foreground font-bold">Objetivo OC</span>
+                             <span className="text-sm font-medium">${project.targetSaleAmount.toLocaleString()}</span>
+                          </div>
+                          <div className="flex flex-col">
+                             <span className="text-[10px] uppercase text-muted-foreground font-bold">Desviación</span>
+                             <span className={cn(
+                               "text-sm font-bold",
+                               Math.abs(stats.deviation) < 1 ? "text-green-600" : "text-orange-600"
+                             )}>
+                                ${stats.deviation.toFixed(2)}
+                             </span>
+                          </div>
+                       </div>
+                       <Button size="sm" variant="outline" className="h-8 text-xs gap-2">
+                          <FileSpreadsheet className="h-3 w-3" /> Exportar Proyecto (Excel)
+                       </Button>
+                    </div>
+                    {renderTransactionTable(txs)}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            ))}
+
+            {orphanTransactions.length > 0 && (
+              <AccordionItem value="orphans" className="border rounded-xl bg-white shadow-sm overflow-hidden">
+                <AccordionTrigger className="px-6 py-4 hover:no-underline hover:bg-slate-50">
+                  <div className="flex flex-1 items-center gap-4">
+                    <div className="h-10 w-10 rounded-lg bg-slate-100 flex items-center justify-center">
+                      <ArrowRightLeft className="h-5 w-5 text-slate-500" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-900">Ventas Generales / Sin Proyecto</h4>
+                      <p className="text-xs text-muted-foreground">Transacciones manuales o ventas de mostrador.</p>
+                    </div>
+                  </div>
+                </AccordionTrigger>
+                <AccordionContent className="border-t">
+                  {renderTransactionTable(orphanTransactions)}
+                </AccordionContent>
+              </AccordionItem>
+            )}
+          </Accordion>
+
+          {transactions.length === 0 && (
+            <Card className="border-dashed py-20 bg-transparent shadow-none">
+              <CardContent className="flex flex-col items-center justify-center text-muted-foreground gap-3">
+                 <Receipt className="h-12 w-12 opacity-20" />
+                 <p className="italic">No hay registros financieros en el sistema.</p>
+                 <Button variant="outline" size="sm" asChild>
+                    <a href="/institutional">Ir a Módulo Institucional</a>
+                 </Button>
+              </CardContent>
+            </Card>
+          )}
+        </div>
       </div>
     </AppLayout>
   )
