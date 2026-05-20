@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useLedgerStore } from "@/lib/store"
 
 const navItems = [
   { label: "Panel de Control", icon: LayoutDashboard, href: "/" },
@@ -33,6 +34,7 @@ const navItems = [
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const isMobile = useIsMobile()
+  const { themeColor } = useLedgerStore()
   const [isCollapsed, setIsCollapsed] = React.useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false)
 
@@ -47,6 +49,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       default: return "Tecnicolor Institucional";
     }
   }
+
+  const themeClass = themeColor === 'blue' ? '' : `theme-${themeColor}`;
 
   const NavContent = () => (
     <nav className="flex-1 space-y-1 p-4">
@@ -73,7 +77,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <div className="flex min-h-screen bg-background font-body text-foreground">
+    <div className={cn("flex min-h-screen bg-background font-body text-foreground", themeClass)}>
       {/* Sidebar Desktop */}
       {!isMobile && (
         <aside 
@@ -85,8 +89,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex h-20 items-center justify-between px-6 border-b">
             {!isCollapsed && (
               <div className="flex items-center gap-3">
-                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-200">
-                  <Palette className="h-5 w-5 text-white" />
+                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20">
+                  <Palette className="h-5 w-5 text-primary-foreground" />
                 </div>
                 <div className="flex flex-col leading-none">
                   <span className="font-headline font-bold text-lg tracking-tight text-foreground">Tecnicolor</span>
@@ -95,8 +99,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
               </div>
             )}
             {isCollapsed && (
-              <div className="h-9 w-9 mx-auto rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-blue-200">
-                  <Palette className="h-5 w-5 text-white" />
+              <div className="h-9 w-9 mx-auto rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20">
+                  <Palette className="h-5 w-5 text-primary-foreground" />
               </div>
             )}
             <Button 
@@ -125,8 +129,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 </SheetTrigger>
                 <SheetContent side="left" className="w-72 p-0">
                   <div className="h-20 flex items-center gap-3 px-6 border-b">
-                    <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-blue-600 to-cyan-500 flex items-center justify-center shadow-lg">
-                      <Palette className="h-5 w-5 text-white" />
+                    <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg">
+                      <Palette className="h-5 w-5 text-primary-foreground" />
                     </div>
                     <SheetTitle className="font-headline font-bold text-lg">Tecnicolor</SheetTitle>
                   </div>

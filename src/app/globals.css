@@ -1,11 +1,10 @@
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    /* Light Theme - Pinturas Tecnicolor */
+    /* Base Colors - Blue (Institucional) */
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
     --card: 0 0% 100%;
@@ -26,14 +25,19 @@
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
     --radius: 0.75rem;
-    --sidebar-background: 210 40% 98%;
-    --sidebar-foreground: 222.2 47.4% 11.2%;
-    --sidebar-primary: 221.2 83.2% 53.3%;
-    --sidebar-primary-foreground: 210 40% 98%;
-    --sidebar-accent: 210 40% 96.1%;
-    --sidebar-accent-foreground: 221.2 83.2% 53.3%;
-    --sidebar-border: 214.3 31.8% 91.4%;
-    --sidebar-ring: 221.2 83.2% 53.3%;
+  }
+
+  /* Theme Variants */
+  .theme-orange {
+    --primary: 24.6 95% 53.1%;
+    --accent: 38 92% 50%;
+    --ring: 24.6 95% 53.1%;
+  }
+
+  .theme-green {
+    --primary: 142.1 76.2% 36.3%;
+    --accent: 160 84% 39%;
+    --ring: 142.1 76.2% 36.3%;
   }
 
   .dark {
@@ -56,14 +60,16 @@
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 224.3 76.3% 48%;
-    --sidebar-background: 222.2 84% 4.9%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 217.2 91.2% 59.8%;
-    --sidebar-primary-foreground: 222.2 47.4% 11.2%;
-    --sidebar-accent: 217.2 32.6% 17.5%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 217.2 32.6% 17.5%;
-    --sidebar-ring: 224.3 76.3% 48%;
+  }
+
+  .dark.theme-orange {
+    --primary: 20.5 90.2% 48.2%;
+    --accent: 31.6 89.1% 45.9%;
+  }
+
+  .dark.theme-green {
+    --primary: 142.1 70.6% 45.3%;
+    --accent: 158 64% 52%;
   }
 }
 
