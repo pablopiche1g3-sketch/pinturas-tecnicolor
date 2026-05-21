@@ -68,13 +68,17 @@ const aiJsonKeyMapperPrompt = ai.definePrompt({
 
 export async function aiJsonKeyMapper(input: AiJsonKeyMapperInput): Promise<AiJsonKeyMapperOutput> {
   try {
+    if (!input.invoiceJsonString) {
+      throw new Error('El JSON de entrada está vacío.');
+    }
     const { output } = await aiJsonKeyMapperPrompt(input);
     if (!output) {
       throw new Error('El modelo de IA no pudo extraer datos. Verifique el formato del JSON.');
     }
     return output;
   } catch (error: any) {
-    console.error('Genkit Error:', error);
-    throw new Error(error.message || 'Error interno del servidor al procesar la IA.');
+    console.error('Error en Genkit (aiJsonKeyMapper):', error);
+    // Lanzamos un error descriptivo que el cliente pueda atrapar
+    throw new Error(error.message || 'Error de comunicación con el servicio de IA de Google.');
   }
 }

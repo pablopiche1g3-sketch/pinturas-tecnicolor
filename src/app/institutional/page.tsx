@@ -172,6 +172,8 @@ export default function InstitutionalModule() {
     try {
       setIsProcessing(true)
       const result = await aiJsonKeyMapper({ invoiceJsonString: rawData })
+      if (!result) throw new Error("No se obtuvieron resultados de la IA.")
+      
       setMappedData(result)
       
       if (activeTab === 'voided') {
@@ -183,9 +185,14 @@ export default function InstitutionalModule() {
         }
       }
 
-      toast({ title: "Documento Analizado", description: `Tipo de DTE: ${result.documentType || 'Desconocido'}` })
+      toast({ title: "Documento Analizado", description: `Tipo de DTE: ${result.documentType || 'Detectado'}` })
     } catch (error: any) {
-      toast({ title: "Error de IA", description: error.message || "No se pudo leer el archivo DTE V3.", variant: "destructive" })
+      console.error("Client Process Error:", error)
+      toast({ 
+        title: "Error de IA", 
+        description: error.message || "Error al procesar el DTE. Verifique su conexión y API Key.", 
+        variant: "destructive" 
+      })
     } finally {
       setIsProcessing(false)
     }
@@ -461,7 +468,7 @@ export default function InstitutionalModule() {
                       <CardTitle className="text-sm font-bold text-foreground truncate">{p.name}</CardTitle>
                       <div className="flex flex-col items-end gap-1">
                         <Badge variant="outline" className="text-[9px] uppercase font-mono shrink-0">{p.purchaseOrder}</Badge>
-                        {p.status === 'completed' && <Badge className="text-[8px] bg-green-500 border-none">ENTREGADO</Badge>}
+                        {p.status === 'completed' && <Badge className="text-[8px] bg-green-500 border-none text-white">ENTREGADO</Badge>}
                       </div>
                     </div>
                     <CardDescription className="text-xs truncate">{p.customerName}</CardDescription>
@@ -494,7 +501,7 @@ export default function InstitutionalModule() {
                       onClick={(e) => openEditProject(e, p)}
                       title="Editar Proyecto"
                     >
-                      <Pencil className="h-4 w-4" />
+                      <Pencil className="h-4 w-4 text-foreground" />
                     </Button>
                     <Button 
                       variant="ghost" 
@@ -584,7 +591,7 @@ export default function InstitutionalModule() {
                                   </td>
                                   <td className="p-2 text-right font-bold">{it.quantity}</td>
                                   <td className="p-2 text-center">
-                                    {isExpected ? <Badge className="text-[8px] bg-green-500 border-none">AUTORIZADO</Badge> : <Badge variant="destructive" className="text-[8px] border-none">FUERA DE OC</Badge>}
+                                    {isExpected ? <Badge className="text-[8px] bg-green-500 border-none text-white">AUTORIZADO</Badge> : <Badge variant="destructive" className="text-[8px] border-none text-white">FUERA DE OC</Badge>}
                                   </td>
                                 </tr>
                               )
@@ -595,7 +602,7 @@ export default function InstitutionalModule() {
                       <div className="space-y-1 bg-muted/50 p-3 rounded-lg border">
                         <div className="flex justify-between text-[10px]">
                           <span className="text-muted-foreground">IVA (13%):</span>
-                          <span className="font-bold">${mappedData.taxAmount?.toFixed(2)}</span>
+                          <span className="font-bold text-foreground">${mappedData.taxAmount?.toFixed(2)}</span>
                         </div>
                         {mappedData.perceptionAmount && (
                            <div className="flex justify-between text-[10px] text-primary">
@@ -604,7 +611,7 @@ export default function InstitutionalModule() {
                            </div>
                         )}
                         <div className="flex justify-between items-center pt-2 mt-2 border-t">
-                          <span className="text-xs font-black uppercase">TOTAL DTE:</span>
+                          <span className="text-xs font-black uppercase text-foreground">TOTAL DTE:</span>
                           <span className="text-lg font-black text-foreground">${mappedData.totalAmount?.toFixed(2)}</span>
                         </div>
                       </div>
@@ -657,8 +664,8 @@ export default function InstitutionalModule() {
                       <p className="font-bold text-destructive">
                         {mappedData.documentType === '07' ? 'Nota de Crédito Detectada' : 'Documento para Anulación'}
                       </p>
-                      <p>DTE # {mappedData.invoiceNumber}</p>
-                      <p>Monto: ${mappedData.totalAmount?.toFixed(2)}</p>
+                      <p className="text-foreground">DTE # {mappedData.invoiceNumber}</p>
+                      <p className="text-foreground">Monto: ${mappedData.totalAmount?.toFixed(2)}</p>
                     </div>
                   )}
 
@@ -685,15 +692,15 @@ export default function InstitutionalModule() {
                     transactions.filter(t => t.isVoided).map(t => (
                       <div key={t.id} className="p-3 border-b text-[10px] flex justify-between items-start bg-muted/30 mb-2 rounded">
                         <div className="space-y-1 overflow-hidden pr-2">
-                          <p className="font-bold truncate">{t.invoiceNumber}</p>
+                          <p className="font-bold truncate text-foreground">{t.invoiceNumber}</p>
                           <p className="text-muted-foreground truncate">{t.entityName}</p>
                           <p className="italic text-destructive font-medium break-words">Motivo: {t.voidReason}</p>
                         </div>
-                        <span className="font-mono font-bold shrink-0">${t.totalAmount.toFixed(2)}</span>
+                        <span className="font-mono font-bold shrink-0 text-foreground">${t.totalAmount.toFixed(2)}</span>
                       </div>
                     ))
                   ) : (
-                    <div className="py-20 text-center opacity-30 italic text-xs">No hay anulaciones registradas.</div>
+                    <div className="py-20 text-center opacity-30 italic text-xs text-foreground">No hay anulaciones registradas.</div>
                   )}
                 </ScrollArea>
               </CardContent>
@@ -703,7 +710,7 @@ export default function InstitutionalModule() {
 
         <TabsContent value="comparison">
           {!selectedProjectId ? (
-             <div className="py-20 text-center border-2 border-dashed rounded-lg opacity-40 px-4">Seleccione un proyecto para conciliar.</div>
+             <div className="py-20 text-center border-2 border-dashed rounded-lg opacity-40 px-4 text-foreground">Seleccione un proyecto para conciliar.</div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <Card>
@@ -726,7 +733,7 @@ export default function InstitutionalModule() {
                   
                   <div className="flex items-center justify-between bg-muted/50 p-4 rounded-xl border border-border">
                     <div className="space-y-0.5">
-                      <Label className="text-xs">Aplicar Retención IVA 1%</Label>
+                      <Label className="text-xs text-foreground">Aplicar Retención IVA 1%</Label>
                       <p className="text-[9px] text-muted-foreground">Normativa Hacienda (Manual)</p>
                     </div>
                     <Switch checked={applyRetention} onCheckedChange={setApplyRetention} />
@@ -745,9 +752,9 @@ export default function InstitutionalModule() {
                   {mappedData ? (
                     <div className="space-y-6">
                       <div className="p-4 bg-muted rounded-xl space-y-3">
-                        <div className="flex justify-between text-xs"><span>Venta Emitida:</span><span className="font-bold">${mappedData.totalAmount?.toFixed(2)}</span></div>
+                        <div className="flex justify-between text-xs text-foreground"><span>Venta Emitida:</span><span className="font-bold">${mappedData.totalAmount?.toFixed(2)}</span></div>
                         <div className="flex justify-between text-xs text-muted-foreground"><span>Objetivo OC:</span><span>${currentProject?.targetSaleAmount.toFixed(2)}</span></div>
-                        <div className="flex justify-between text-sm border-t pt-3 font-black">
+                        <div className="flex justify-between text-sm border-t pt-3 font-black text-foreground">
                           <span>Diferencia:</span>
                           <span className={cn(Math.abs((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)) < 1 ? "text-green-500" : "text-amber-500")}>
                             ${((mappedData.totalAmount || 0) - (currentProject?.targetSaleAmount || 0)).toFixed(2)}
@@ -762,7 +769,7 @@ export default function InstitutionalModule() {
                             const found = mappedData.items?.some(it => it.code === ep.code || it.description?.toLowerCase().includes(ep.description.toLowerCase()));
                             return (
                               <div key={ep.code} className="flex items-center justify-between text-[10px] p-2 bg-muted/50 rounded">
-                                  <div className="flex items-center gap-2 overflow-hidden">
+                                  <div className="flex items-center gap-2 overflow-hidden text-foreground">
                                     {found ? <CheckCircle2 className="h-3 w-3 text-green-500 shrink-0" /> : <XCircle className="h-3 w-3 text-muted-foreground shrink-0" />}
                                     <span className="font-mono text-primary shrink-0">{ep.code}</span>
                                     <span className="truncate">{ep.description}</span>
@@ -776,7 +783,7 @@ export default function InstitutionalModule() {
                       
                       <Button className="w-full bg-primary" onClick={handleSaveFinalInvoice}>Cerrar Proyecto y Guardar</Button>
                     </div>
-                  ) : <div className="py-20 text-center opacity-40 italic text-xs px-4">Cargue el DTE de venta para auditar contra la OC pactada.</div>}
+                  ) : <div className="py-20 text-center opacity-40 italic text-xs px-4 text-foreground">Cargue el DTE de venta para auditar contra la OC pactada.</div>}
                 </CardContent>
               </Card>
             </div>
