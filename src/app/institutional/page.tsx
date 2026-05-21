@@ -19,7 +19,7 @@ import {
 } from "@/components/ui/dialog"
 import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput, type AiActionResponse } from "@/ai/flows/ai-json-key-mapper"
-import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2 } from "lucide-react"
+import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, History, MousePointer2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -33,6 +33,7 @@ export default function InstitutionalModule() {
   
   const [mounted, setMounted] = React.useState(false)
   const [activeTab, setActiveTab] = React.useState('projects')
+  const [purchaseMode, setPurchaseMode] = React.useState<'ai' | 'manual'>('ai')
   const [selectedProjectId, setSelectedProjectId] = React.useState<string>('')
   const [isProjectDialogOpen, setIsProjectDialogOpen] = React.useState(false)
   const [editingProject, setEditingProject] = React.useState<Project | null>(null)
@@ -49,6 +50,23 @@ export default function InstitutionalModule() {
     description: '',
     quantity: 1,
     unitPrice: 0
+  })
+
+  // Manual Purchase Form State
+  const [manualPurchase, setManualPurchase] = React.useState({
+    codigoGeneracion: '',
+    numeroControl: '',
+    issueDate: new Date().toISOString().split('T')[0],
+    documentType: '03',
+    supplierId: ''
+  })
+  const [manualItems, setManualItems] = React.useState<TransactionItem[]>([])
+  const [tempManualItem, setTempManualItem] = React.useState<TransactionItem>({
+    code: '',
+    description: '',
+    quantity: 1,
+    unitPrice: 0,
+    lineTotal: 0
   })
 
   const [jsonInput, setJsonInput] = React.useState('')
@@ -291,6 +309,7 @@ export default function InstitutionalModule() {
 
     addTransaction({
       invoiceNumber: mappedData.invoiceNumber || `DTE-${Date.now()}`,
+      numeroControl: (mappedData as any).numeroControl, // Asumimos que viene del JSON si está disponible
       issueDate: mappedData.issueDate || new Date().toISOString(),
       entityId: selectedSupplierId,
       entityName: supplier?.name || '',
@@ -310,6 +329,47 @@ export default function InstitutionalModule() {
     setMappedData(null)
     setJsonInput('')
     toast({ title: "Compra Guardada", description: "Movimiento registrado con éxito." })
+  }
+
+  // Manual Purchase Methods
+  const handleAddManualItem = () => {
+    if (!tempManualItem.description || tempManualItem.quantity <= 0) return
+    const lineTotal = tempManualItem.quantity * tempManualItem.unitPrice
+    setManualItems([...manualItems, { ...tempManualItem, lineTotal }])
+    setTempManualItem({ code: '', description: '', quantity: 1, unitPrice: 0, lineTotal: 0 })
+  }
+
+  const handleSaveManualPurchase = () => {
+    if (!manualPurchase.codigoGeneracion || !manualPurchase.supplierId || !selectedProjectId) {
+      toast({ title: "Faltan datos", description: "Complete los campos obligatorios del DTE.", variant: "destructive" })
+      return
+    }
+
+    const supplier = suppliers.find(s => s.id === manualPurchase.supplierId)
+    const subtotal = manualItems.reduce((acc, curr) => acc + curr.lineTotal, 0)
+    const tax = subtotal * 0.13
+    const total = subtotal + tax
+
+    addTransaction({
+      invoiceNumber: manualPurchase.codigoGeneracion,
+      numeroControl: manualPurchase.numeroControl,
+      issueDate: manualPurchase.issueDate,
+      entityId: manualPurchase.supplierId,
+      entityName: supplier?.name || '',
+      projectId: selectedProjectId,
+      type: 'purchase',
+      documentType: manualPurchase.documentType,
+      items: manualItems,
+      subtotal,
+      taxAmount: tax,
+      totalAmount: total,
+      costBasis: total,
+      gain: 0
+    })
+
+    setManualItems([])
+    setManualPurchase({ ...manualPurchase, codigoGeneracion: '', numeroControl: '' })
+    toast({ title: "Compra Manual Guardada", description: "El DTE ha sido registrado exitosamente." })
   }
 
   const handleSaveFinalInvoice = () => {
@@ -541,88 +601,192 @@ export default function InstitutionalModule() {
                <p className="text-muted-foreground text-sm">Seleccione un proyecto para registrar facturas o Créditos Fiscales DTE V3.</p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              <Card>
-                <CardHeader><CardTitle className="text-lg">Importar Compra / CCF</CardTitle></CardHeader>
-                <CardContent className="space-y-6">
-                  <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
-                    <SelectTrigger><SelectValue placeholder="Seleccionar Proveedor" /></SelectTrigger>
-                    <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-                  </Select>
+            <div className="space-y-6">
+              <div className="flex justify-center">
+                <Tabs value={purchaseMode} onValueChange={(v: any) => setPurchaseMode(v)} className="w-full max-w-md">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="ai" className="gap-2"><Upload className="h-3 w-3" /> Carga JSON (IA)</TabsTrigger>
+                    <TabsTrigger value="manual" className="gap-2"><MousePointer2 className="h-3 w-3" /> Registro Manual</TabsTrigger>
+                  </TabsList>
+                </Tabs>
+              </div>
 
-                  <div 
-                    className={cn("border-2 border-dashed rounded-xl p-6 md:p-8 flex flex-col items-center justify-center gap-4 cursor-pointer", isDragging ? "bg-primary/5 border-primary" : "border-border")}
-                    onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
-                    onDragLeave={() => setIsDragging(false)}
-                    onDrop={handleDrop}
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileUpload} />
-                    <Upload className="h-10 w-10 text-muted-foreground" />
-                    <div className="text-center px-2">
-                      <p className="text-sm font-bold text-foreground">Arrastrar Factura o CCF V3</p>
-                      <p className="text-[10px] text-muted-foreground uppercase mt-1">Soporta Códigos 01 y 03 de Hacienda</p>
-                    </div>
-                  </div>
-                  <Button className="w-full h-12 bg-primary hover:bg-primary/90" onClick={() => handleProcessData()} disabled={isProcessing || !jsonInput}>
-                    {isProcessing ? <Loader2 className="animate-spin mr-2" /> : null}
-                    {isProcessing ? "Procesando..." : "Validar contra OC"}
-                  </Button>
-                </CardContent>
-              </Card>
+              {purchaseMode === 'ai' ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <Card>
+                    <CardHeader><CardTitle className="text-lg">Importar Compra / CCF</CardTitle></CardHeader>
+                    <CardContent className="space-y-6">
+                      <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
+                        <SelectTrigger><SelectValue placeholder="Seleccionar Proveedor" /></SelectTrigger>
+                        <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                      </Select>
 
-              <Card>
-                <CardHeader><CardTitle className="text-lg">Validación de Suministros</CardTitle></CardHeader>
-                <CardContent>
-                  {mappedData ? (
-                    <div className="space-y-4">
-                      <div className="flex items-center gap-2 mb-2">
-                        <Badge variant="secondary" className="bg-primary/10 text-primary uppercase text-[10px]">
-                           DTE TIPO: {mappedData.documentType === '03' ? 'CRÉDITO FISCAL' : 'FACTURA'}
-                        </Badge>
-                      </div>
-                      <div className="border rounded-lg overflow-x-auto">
-                        <table className="w-full text-[10px]">
-                          <thead className="bg-muted"><tr><th className="p-2 text-left">Código/Item</th><th className="p-2 text-right">Cant.</th><th className="p-2 text-center">Estado OC</th></tr></thead>
-                          <tbody className="divide-y">
-                            {mappedData.items?.map((it, idx) => {
-                              const isExpected = currentProject?.expectedProducts.some(ep => ep.code === it.code || it.description?.toLowerCase().includes(ep.description.toLowerCase()));
-                              return (
-                                <tr key={idx} className={cn("hover:bg-muted/30 transition-colors", !isExpected && "bg-destructive/5")}>
-                                  <td className="p-2 min-w-[120px]">
-                                    <span className="font-mono text-primary font-bold">{it.code}</span> - <span className="text-foreground">{it.description}</span>
-                                  </td>
-                                  <td className="p-2 text-right font-bold text-foreground">{it.quantity}</td>
-                                  <td className="p-2 text-center">
-                                    {isExpected ? <Badge className="text-[8px] bg-green-500 border-none text-white font-bold">AUTORIZADO</Badge> : <Badge variant="destructive" className="text-[8px] border-none text-white font-bold">FUERA DE OC</Badge>}
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      <div className="space-y-1 bg-muted/50 p-3 rounded-lg border">
-                        <div className="flex justify-between text-[10px]">
-                          <span className="text-muted-foreground">IVA (13%):</span>
-                          <span className="font-bold text-foreground">${mappedData.taxAmount?.toFixed(2)}</span>
-                        </div>
-                        {mappedData.perceptionAmount ? (
-                           <div className="flex justify-between text-[10px] text-primary">
-                             <span>IVA Percibido (1%):</span>
-                             <span className="font-bold">+${mappedData.perceptionAmount.toFixed(2)}</span>
-                           </div>
-                        ) : null}
-                        <div className="flex justify-between items-center pt-2 mt-2 border-t">
-                          <span className="text-xs font-black uppercase text-foreground">TOTAL DTE:</span>
-                          <span className="text-lg font-black text-foreground">${mappedData.totalAmount?.toFixed(2)}</span>
+                      <div 
+                        className={cn("border-2 border-dashed rounded-xl p-6 md:p-8 flex flex-col items-center justify-center gap-4 cursor-pointer", isDragging ? "bg-primary/5 border-primary" : "border-border")}
+                        onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                        onDragLeave={() => setIsDragging(false)}
+                        onDrop={handleDrop}
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        <input type="file" ref={fileInputRef} className="hidden" accept=".json" onChange={handleFileUpload} />
+                        <Upload className="h-10 w-10 text-muted-foreground" />
+                        <div className="text-center px-2">
+                          <p className="text-sm font-bold text-foreground">Arrastrar Factura o CCF V3</p>
+                          <p className="text-[10px] text-muted-foreground uppercase mt-1">Soporta Códigos 01 y 03 de Hacienda</p>
                         </div>
                       </div>
-                      <Button className="w-full bg-primary" onClick={handleSavePurchase}>Confirmar Carga</Button>
-                    </div>
-                  ) : <div className="py-20 text-center text-muted-foreground italic text-xs px-4">Cargue el JSON DTE para validar los ítems de ingreso.</div>}
-                </CardContent>
-              </Card>
+                      <Button className="w-full h-12 bg-primary hover:bg-primary/90" onClick={() => handleProcessData()} disabled={isProcessing || !jsonInput}>
+                        {isProcessing ? <Loader2 className="animate-spin mr-2" /> : null}
+                        {isProcessing ? "Procesando..." : "Validar contra OC"}
+                      </Button>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader><CardTitle className="text-lg">Validación de Suministros</CardTitle></CardHeader>
+                    <CardContent>
+                      {mappedData ? (
+                        <div className="space-y-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <Badge variant="secondary" className="bg-primary/10 text-primary uppercase text-[10px]">
+                               DTE TIPO: {mappedData.documentType === '03' ? 'CRÉDITO FISCAL' : 'FACTURA'}
+                            </Badge>
+                          </div>
+                          <div className="border rounded-lg overflow-x-auto">
+                            <table className="w-full text-[10px]">
+                              <thead className="bg-muted"><tr><th className="p-2 text-left">Código/Item</th><th className="p-2 text-right">Cant.</th><th className="p-2 text-center">Estado OC</th></tr></thead>
+                              <tbody className="divide-y">
+                                {mappedData.items?.map((it, idx) => {
+                                  const isExpected = currentProject?.expectedProducts.some(ep => ep.code === it.code || it.description?.toLowerCase().includes(ep.description.toLowerCase()));
+                                  return (
+                                    <tr key={idx} className={cn("hover:bg-muted/30 transition-colors", !isExpected && "bg-destructive/5")}>
+                                      <td className="p-2 min-w-[120px]">
+                                        <span className="font-mono text-primary font-bold">{it.code}</span> - <span className="text-foreground">{it.description}</span>
+                                      </td>
+                                      <td className="p-2 text-right font-bold text-foreground">{it.quantity}</td>
+                                      <td className="p-2 text-center">
+                                        {isExpected ? <Badge className="text-[8px] bg-green-500 border-none text-white font-bold">AUTORIZADO</Badge> : <Badge variant="destructive" className="text-[8px] border-none text-white font-bold">FUERA DE OC</Badge>}
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="space-y-1 bg-muted/50 p-3 rounded-lg border">
+                            <div className="flex justify-between text-[10px]">
+                              <span className="text-muted-foreground">IVA (13%):</span>
+                              <span className="font-bold text-foreground">${mappedData.taxAmount?.toFixed(2)}</span>
+                            </div>
+                            <div className="flex justify-between items-center pt-2 mt-2 border-t">
+                              <span className="text-xs font-black uppercase text-foreground">TOTAL DTE:</span>
+                              <span className="text-lg font-black text-foreground">${mappedData.totalAmount?.toFixed(2)}</span>
+                            </div>
+                          </div>
+                          <Button className="w-full bg-primary" onClick={handleSavePurchase}>Confirmar Carga</Button>
+                        </div>
+                      ) : <div className="py-20 text-center text-muted-foreground italic text-xs px-4">Cargue el JSON DTE para validar los ítems de ingreso.</div>}
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <Card>
+                    <CardHeader><CardTitle className="text-lg">Ingreso Manual DTE V3</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Código de Generación (UUID)</Label>
+                          <Input 
+                            value={manualPurchase.codigoGeneracion} 
+                            onChange={e => setManualPurchase({...manualPurchase, codigoGeneracion: e.target.value})} 
+                            placeholder="5D850719-32A7..."
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Número de Control</Label>
+                          <Input 
+                            value={manualPurchase.numeroControl} 
+                            onChange={e => setManualPurchase({...manualPurchase, numeroControl: e.target.value})} 
+                            placeholder="DTE-03-S001P001..."
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Fecha de Emisión</Label>
+                          <Input type="date" value={manualPurchase.issueDate} onChange={e => setManualPurchase({...manualPurchase, issueDate: e.target.value})} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Tipo DTE</Label>
+                          <Select value={manualPurchase.documentType} onValueChange={v => setManualPurchase({...manualPurchase, documentType: v})}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="01">Factura (01)</SelectItem>
+                              <SelectItem value="03">Crédito Fiscal (03)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Proveedor</Label>
+                        <Select value={manualPurchase.supplierId} onValueChange={v => setManualPurchase({...manualPurchase, supplierId: v})}>
+                          <SelectTrigger><SelectValue placeholder="Seleccionar Proveedor" /></SelectTrigger>
+                          <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="border p-4 rounded-xl space-y-3 bg-muted/20">
+                        <h4 className="text-xs font-bold uppercase text-muted-foreground">Añadir Ítem</h4>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Input placeholder="Cód. Hacienda" className="text-xs" value={tempManualItem.code} onChange={e => setTempManualItem({...tempManualItem, code: e.target.value})} />
+                          <Input placeholder="Cant." type="number" className="text-xs" value={tempManualItem.quantity} onChange={e => setTempManualItem({...tempManualItem, quantity: Number(e.target.value)})} />
+                          <Input placeholder="Descripción" className="col-span-2 text-xs" value={tempManualItem.description} onChange={e => setTempManualItem({...tempManualItem, description: e.target.value})} />
+                          <Input placeholder="Precio Unit. ($)" type="number" className="col-span-2 text-xs" value={tempManualItem.unitPrice} onChange={e => setTempManualItem({...tempManualItem, unitPrice: Number(e.target.value)})} />
+                        </div>
+                        <Button variant="outline" size="sm" className="w-full text-xs h-8" onClick={handleAddManualItem}>Añadir a Factura</Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Resumen de Registro</CardTitle>
+                      <CardDescription>Detalle de ítems cargados manualmente.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <ScrollArea className="h-[250px] border rounded-lg p-2 bg-muted/5">
+                        {manualItems.length > 0 ? (
+                          manualItems.map((it, idx) => (
+                            <div key={idx} className="flex justify-between items-center text-[10px] py-2 border-b">
+                              <div className="flex flex-col">
+                                <span className="font-bold text-foreground">{it.description}</span>
+                                <span className="text-muted-foreground">Cód: {it.code || 'N/A'} (x{it.quantity})</span>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-bold">${it.lineTotal.toFixed(2)}</span>
+                                <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => setManualItems(manualItems.filter((_, i) => i !== idx))}><Trash2 className="h-3 w-3" /></Button>
+                              </div>
+                            </div>
+                          ))
+                        ) : <div className="h-full flex items-center justify-center text-xs text-muted-foreground italic">No hay ítems registrados.</div>}
+                      </ScrollArea>
+                      
+                      <div className="space-y-1 bg-primary/5 p-4 rounded-xl border border-primary/20">
+                         <div className="flex justify-between text-xs"><span>Subtotal:</span><span className="font-bold">${manualItems.reduce((acc, c) => acc + c.lineTotal, 0).toFixed(2)}</span></div>
+                         <div className="flex justify-between text-xs"><span>IVA (13%):</span><span className="font-bold">${(manualItems.reduce((acc, c) => acc + c.lineTotal, 0) * 0.13).toFixed(2)}</span></div>
+                         <div className="flex justify-between text-lg font-black pt-2 border-t mt-2"><span>TOTAL:</span><span>${(manualItems.reduce((acc, c) => acc + c.lineTotal, 0) * 1.13).toFixed(2)}</span></div>
+                      </div>
+                      
+                      <Button className="w-full h-12 bg-primary" onClick={handleSaveManualPurchase} disabled={manualItems.length === 0}>
+                        Registrar Compra Manual
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
             </div>
           )}
         </TabsContent>

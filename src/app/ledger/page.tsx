@@ -87,7 +87,7 @@ export default function LedgerPage() {
       <TableHeader>
         <TableRow className="bg-muted/50">
           <TableHead className="w-[120px]">Tipo/Estado</TableHead>
-          <TableHead>DTE #</TableHead>
+          <TableHead>Identificación DTE</TableHead>
           <TableHead>Entidad</TableHead>
           <TableHead>Fecha</TableHead>
           <TableHead className="text-right">Monto Total</TableHead>
@@ -117,7 +117,18 @@ export default function LedgerPage() {
                   <Badge variant="secondary" className="text-[8px] h-4 w-fit bg-muted">{getDocTypeBadge(t.documentType)}</Badge>
                 </div>
               </TableCell>
-              <TableCell className="font-mono text-[10px] max-w-[150px] truncate" title={t.invoiceNumber}>{t.invoiceNumber}</TableCell>
+              <TableCell>
+                <div className="flex flex-col gap-0.5 max-w-[200px]">
+                  <span className="font-mono text-[9px] font-bold text-foreground truncate" title={t.invoiceNumber}>
+                    Gen: {t.invoiceNumber}
+                  </span>
+                  {t.numeroControl && (
+                    <span className="font-mono text-[8px] text-muted-foreground truncate" title={t.numeroControl}>
+                      Ctrl: {t.numeroControl}
+                    </span>
+                  )}
+                </div>
+              </TableCell>
               <TableCell className="font-medium text-xs">{t.entityName}</TableCell>
               <TableCell className="text-muted-foreground text-[10px] whitespace-nowrap">
                 {new Date(t.issueDate).toLocaleDateString()}

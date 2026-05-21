@@ -49,7 +49,8 @@ export interface TransactionItem {
 
 export interface Transaction {
   id: string;
-  invoiceNumber: string;
+  invoiceNumber: string; // codigoGeneracion
+  numeroControl?: string; // Nuevo campo DTE
   issueDate: string;
   entityId: string;
   entityName: string;
