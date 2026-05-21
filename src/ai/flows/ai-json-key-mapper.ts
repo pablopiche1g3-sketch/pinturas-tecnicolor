@@ -35,10 +35,6 @@ const AiJsonKeyMapperOutputSchema = z.object({
 }).describe('Estructura estandarizada compatible con DTE V3 El Salvador.');
 export type AiJsonKeyMapperOutput = z.infer<typeof AiJsonKeyMapperOutputSchema>;
 
-export async function aiJsonKeyMapper(input: AiJsonKeyMapperInput): Promise<AiJsonKeyMapperOutput> {
-  return aiJsonKeyMapperFlow(input);
-}
-
 const aiJsonKeyMapperPrompt = ai.definePrompt({
   name: 'aiJsonKeyMapperPrompt',
   input: { schema: AiJsonKeyMapperInputSchema },
@@ -70,17 +66,15 @@ const aiJsonKeyMapperPrompt = ai.definePrompt({
   {{{invoiceJsonString}}}`,
 });
 
-const aiJsonKeyMapperFlow = ai.defineFlow(
-  {
-    name: 'aiJsonKeyMapperFlow',
-    inputSchema: AiJsonKeyMapperInputSchema,
-    outputSchema: AiJsonKeyMapperOutputSchema,
-  },
-  async (input) => {
+export async function aiJsonKeyMapper(input: AiJsonKeyMapperInput): Promise<AiJsonKeyMapperOutput> {
+  try {
     const { output } = await aiJsonKeyMapperPrompt(input);
     if (!output) {
-      throw new Error('El modelo de IA no pudo extraer datos del DTE. Verifique que el archivo JSON sea un DTE V3 válido.');
+      throw new Error('El modelo de IA no pudo extraer datos. Verifique el formato del JSON.');
     }
     return output;
+  } catch (error: any) {
+    console.error('Genkit Error:', error);
+    throw new Error(error.message || 'Error interno del servidor al procesar la IA.');
   }
-);
+}
