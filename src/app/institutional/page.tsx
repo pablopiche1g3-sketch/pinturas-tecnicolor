@@ -483,30 +483,33 @@ export default function InstitutionalModule() {
                   <CardFooter className="p-2 pt-0 border-t flex justify-between gap-1">
                     <Button 
                       variant="ghost" 
-                      size="sm" 
-                      className="h-8 text-[10px] gap-1 flex-1 hover:bg-accent"
+                      size="icon" 
+                      className="h-8 w-8 hover:bg-accent"
                       onClick={(e) => openEditProject(e, p)}
+                      title="Editar Proyecto"
                     >
-                      <Pencil className="h-3 w-3" /> Editar
+                      <Pencil className="h-4 w-4" />
                     </Button>
                     <Button 
                       variant="ghost" 
-                      size="sm" 
+                      size="icon" 
                       className={cn(
-                        "h-8 text-[10px] gap-1 flex-1",
+                        "h-8 w-8",
                         p.status === 'completed' ? "text-primary hover:bg-primary/10" : "text-muted-foreground hover:bg-accent"
                       )}
                       onClick={(e) => toggleProjectStatus(e, p)}
+                      title={p.status === 'completed' ? 'Reactivar Proyecto' : 'Entregar Proyecto'}
                     >
-                      <CheckCircle className="h-3 w-3" /> {p.status === 'completed' ? 'Reactivar' : 'Entregar'}
+                      <CheckCircle className="h-4 w-4" />
                     </Button>
                     <Button 
                       variant="ghost" 
-                      size="sm" 
-                      className="h-8 text-[10px] gap-1 flex-1 text-destructive hover:bg-destructive/10"
+                      size="icon" 
+                      className="h-8 w-8 text-destructive hover:bg-destructive/10"
                       onClick={(e) => handleDeleteProject(e, p.id)}
+                      title="Eliminar Proyecto"
                     >
-                      <Trash2 className="h-3 w-3" /> Borrar
+                      <Trash2 className="h-4 w-4" />
                     </Button>
                   </CardFooter>
                 </Card>
