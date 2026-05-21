@@ -18,8 +18,8 @@ import {
   DialogFooter
 } from "@/components/ui/dialog"
 import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project } from "@/lib/store"
-import { aiJsonKeyMapper, type AiJsonKeyMapperOutput } from "@/ai/flows/ai-json-key-mapper"
-import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, ArrowRight, CheckCircle2, FileText, Pencil, CheckCircle } from "lucide-react"
+import { aiJsonKeyMapper, type AiJsonKeyMapperOutput, type AiActionResponse } from "@/ai/flows/ai-json-key-mapper"
+import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -171,9 +171,13 @@ export default function InstitutionalModule() {
     }
     try {
       setIsProcessing(true)
-      const result = await aiJsonKeyMapper({ invoiceJsonString: rawData })
-      if (!result) throw new Error("No se obtuvieron resultados de la IA.")
+      const response: AiActionResponse = await aiJsonKeyMapper({ invoiceJsonString: rawData })
       
+      if (!response.success) {
+        throw new Error(response.error || "Error desconocido en el servicio de IA.");
+      }
+      
+      const result = response.data!;
       setMappedData(result)
       
       if (activeTab === 'voided') {
@@ -190,7 +194,7 @@ export default function InstitutionalModule() {
       console.error("Client Process Error:", error)
       toast({ 
         title: "Error de IA", 
-        description: error.message || "Error al procesar el DTE. Verifique su conexión y API Key.", 
+        description: error.message || "Error al procesar el DTE. Verifique su API Key.", 
         variant: "destructive" 
       })
     } finally {
@@ -313,8 +317,7 @@ export default function InstitutionalModule() {
     
     const subtotal = mappedData.subtotal || 0
     const tax = mappedData.taxAmount || 0
-    const retention = applyRetention ? subtotal * 0.01 : (mappedData.retentionAmount || 0)
-    const total = (mappedData.totalAmount || (subtotal + tax)) - (applyRetention ? retention : 0)
+    const total = mappedData.totalAmount || (subtotal + tax)
 
     const finalItems = (mappedData.items || []).map(i => ({
       code: i.code,
@@ -335,7 +338,7 @@ export default function InstitutionalModule() {
       items: finalItems,
       subtotal: subtotal,
       taxAmount: tax,
-      retentionAmount: retention,
+      retentionAmount: mappedData.retentionAmount,
       perceptionAmount: mappedData.perceptionAmount,
       totalAmount: total,
       costBasis: projectCosts,
@@ -482,8 +485,8 @@ export default function InstitutionalModule() {
                       {p.expectedProducts.slice(0, 2).map(ep => (
                         <div key={ep.code} className="space-y-1">
                           <div className="flex justify-between text-[9px]">
-                            <span className="truncate max-w-[150px]">{ep.description}</span>
-                            <span>{getProductProgress(ep.code, p.id).toFixed(0)}%</span>
+                            <span className="truncate max-w-[150px] font-medium text-foreground">{ep.description}</span>
+                            <span className="text-muted-foreground">{getProductProgress(ep.code, p.id).toFixed(0)}%</span>
                           </div>
                           <Progress value={getProductProgress(ep.code, p.id)} className="h-1" />
                         </div>
@@ -585,13 +588,13 @@ export default function InstitutionalModule() {
                             {mappedData.items?.map((it, idx) => {
                               const isExpected = currentProject?.expectedProducts.some(ep => ep.code === it.code || it.description?.toLowerCase().includes(ep.description.toLowerCase()));
                               return (
-                                <tr key={idx} className={!isExpected ? "bg-destructive/5" : ""}>
+                                <tr key={idx} className={cn("hover:bg-muted/30 transition-colors", !isExpected && "bg-destructive/5")}>
                                   <td className="p-2 min-w-[120px]">
-                                    <span className="font-mono text-primary">{it.code}</span> - {it.description}
+                                    <span className="font-mono text-primary font-bold">{it.code}</span> - <span className="text-foreground">{it.description}</span>
                                   </td>
-                                  <td className="p-2 text-right font-bold">{it.quantity}</td>
+                                  <td className="p-2 text-right font-bold text-foreground">{it.quantity}</td>
                                   <td className="p-2 text-center">
-                                    {isExpected ? <Badge className="text-[8px] bg-green-500 border-none text-white">AUTORIZADO</Badge> : <Badge variant="destructive" className="text-[8px] border-none text-white">FUERA DE OC</Badge>}
+                                    {isExpected ? <Badge className="text-[8px] bg-green-500 border-none text-white font-bold">AUTORIZADO</Badge> : <Badge variant="destructive" className="text-[8px] border-none text-white font-bold">FUERA DE OC</Badge>}
                                   </td>
                                 </tr>
                               )
@@ -604,12 +607,12 @@ export default function InstitutionalModule() {
                           <span className="text-muted-foreground">IVA (13%):</span>
                           <span className="font-bold text-foreground">${mappedData.taxAmount?.toFixed(2)}</span>
                         </div>
-                        {mappedData.perceptionAmount && (
+                        {mappedData.perceptionAmount ? (
                            <div className="flex justify-between text-[10px] text-primary">
                              <span>IVA Percibido (1%):</span>
                              <span className="font-bold">+${mappedData.perceptionAmount.toFixed(2)}</span>
                            </div>
-                        )}
+                        ) : null}
                         <div className="flex justify-between items-center pt-2 mt-2 border-t">
                           <span className="text-xs font-black uppercase text-foreground">TOTAL DTE:</span>
                           <span className="text-lg font-black text-foreground">${mappedData.totalAmount?.toFixed(2)}</span>
@@ -650,7 +653,7 @@ export default function InstitutionalModule() {
                         {transactions.filter(t => !t.isVoided).map(t => (
                           <SelectItem key={t.id} value={t.id}>
                             <div className="flex flex-col text-[10px] text-left">
-                              <span className="font-bold">{t.invoiceNumber}</span>
+                              <span className="font-bold text-foreground">{t.invoiceNumber}</span>
                               <span className="text-muted-foreground">${t.totalAmount.toFixed(2)} - {t.entityName}</span>
                             </div>
                           </SelectItem>
@@ -665,7 +668,7 @@ export default function InstitutionalModule() {
                         {mappedData.documentType === '07' ? 'Nota de Crédito Detectada' : 'Documento para Anulación'}
                       </p>
                       <p className="text-foreground">DTE # {mappedData.invoiceNumber}</p>
-                      <p className="text-foreground">Monto: ${mappedData.totalAmount?.toFixed(2)}</p>
+                      <p className="text-foreground font-bold">Monto: ${mappedData.totalAmount?.toFixed(2)}</p>
                     </div>
                   )}
 
@@ -694,7 +697,7 @@ export default function InstitutionalModule() {
                         <div className="space-y-1 overflow-hidden pr-2">
                           <p className="font-bold truncate text-foreground">{t.invoiceNumber}</p>
                           <p className="text-muted-foreground truncate">{t.entityName}</p>
-                          <p className="italic text-destructive font-medium break-words">Motivo: {t.voidReason}</p>
+                          <p className="italic text-destructive font-bold break-words">Motivo: {t.voidReason}</p>
                         </div>
                         <span className="font-mono font-bold shrink-0 text-foreground">${t.totalAmount.toFixed(2)}</span>
                       </div>

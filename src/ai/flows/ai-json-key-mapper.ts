@@ -35,6 +35,13 @@ const AiJsonKeyMapperOutputSchema = z.object({
 }).describe('Estructura estandarizada compatible con DTE V3 El Salvador.');
 export type AiJsonKeyMapperOutput = z.infer<typeof AiJsonKeyMapperOutputSchema>;
 
+// Tipo para la respuesta segura desde el servidor
+export type AiActionResponse = {
+  success: boolean;
+  data?: AiJsonKeyMapperOutput;
+  error?: string;
+};
+
 const aiJsonKeyMapperPrompt = ai.definePrompt({
   name: 'aiJsonKeyMapperPrompt',
   input: { schema: AiJsonKeyMapperInputSchema },
@@ -66,19 +73,36 @@ const aiJsonKeyMapperPrompt = ai.definePrompt({
   {{{invoiceJsonString}}}`,
 });
 
-export async function aiJsonKeyMapper(input: AiJsonKeyMapperInput): Promise<AiJsonKeyMapperOutput> {
+/**
+ * Función que envuelve la llamada a la IA con manejo de errores seguro para el cliente.
+ */
+export async function aiJsonKeyMapper(input: AiJsonKeyMapperInput): Promise<AiActionResponse> {
   try {
-    if (!input.invoiceJsonString) {
-      throw new Error('El JSON de entrada está vacío.');
+    // Verificación explícita de la API Key en el servidor
+    const apiKey = process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return { 
+        success: false, 
+        error: 'Falta la API Key de Google (GOOGLE_GENAI_API_KEY). Por favor configure las variables de entorno.' 
+      };
     }
+
+    if (!input.invoiceJsonString || input.invoiceJsonString.trim() === '') {
+      return { success: false, error: 'El contenido del archivo JSON está vacío.' };
+    }
+
     const { output } = await aiJsonKeyMapperPrompt(input);
+    
     if (!output) {
-      throw new Error('El modelo de IA no pudo extraer datos. Verifique el formato del JSON.');
+      return { success: false, error: 'La IA no pudo procesar este archivo. Asegúrese de que sea un DTE V3 válido.' };
     }
-    return output;
+
+    return { success: true, data: output };
   } catch (error: any) {
-    console.error('Error en Genkit (aiJsonKeyMapper):', error);
-    // Lanzamos un error descriptivo que el cliente pueda atrapar
-    throw new Error(error.message || 'Error de comunicación con el servicio de IA de Google.');
+    console.error('Error crítico en aiJsonKeyMapper:', error);
+    return { 
+      success: false, 
+      error: error.message || 'Error inesperado al conectar con el servicio de IA. Verifique su conexión.' 
+    };
   }
 }
