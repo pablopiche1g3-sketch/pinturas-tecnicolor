@@ -45,9 +45,7 @@ const aiJsonKeyMapperPrompt = ai.definePrompt({
   output: { schema: AiJsonKeyMapperOutputSchema },
   prompt: `Eres un experto en la normativa de Facturación Electrónica (DTE) de El Salvador, específicamente en la Versión 3.
   
-  Tu objetivo es extraer los datos financieros de un JSON DTE salvadoreño y mapearlos a nuestro esquema. 
-  
-  Reglas de mapeo para DTE V3 (Basado en la estructura de Hacienda):
+  Analiza el siguiente JSON y extrae los datos financieros exactos siguiendo estas reglas estrictas de Hacienda:
   - "invoiceNumber": Usa "identificacion.codigoGeneracion". Si no existe, usa "identificacion.numeroControl".
   - "issueDate": Usa "identificacion.fecEmi".
   - "documentType": Usa "identificacion.tipoDte" (01=Factura, 03=CCF, 07=Nota Crédito).
@@ -59,14 +57,14 @@ const aiJsonKeyMapperPrompt = ai.definePrompt({
     - "quantity": "cuerpoDocumento[].cantidad".
     - "unitPrice": "cuerpoDocumento[].precioUni".
     - "lineTotal": "cuerpoDocumento[].ventaGravada".
-  - "subtotal": Usa "resumen.totalGravada" o "resumen.subTotal".
+  - "subtotal": Usa "resumen.subTotal" o "resumen.totalGravada".
   - "taxAmount": Busca en "resumen.tributos" el objeto donde "codigo" sea "20" y extrae su "valor".
-  - "retentionAmount": Usa "resumen.ivaRete1".
-  - "perceptionAmount": Usa "resumen.ivaPerci1".
+  - "retentionAmount": Usa "resumen.ivaRete1" (si existe y es mayor a 0).
+  - "perceptionAmount": Usa "resumen.ivaPerci1" (si existe y es mayor a 0).
   - "totalAmount": Usa "resumen.totalPagar".
   - "relatedDocumentNumber": Si el tipoDte es "07", busca en "documentoRelacionado" el primer "codigoGeneracion".
   
-  Asegúrate de manejar los números como flotantes. Ignora la firma electrónica y concéntrate en la estructura.
+  Asegúrate de manejar todos los números como valores flotantes. Ignora la firma electrónica y concéntrate en los datos de negocio.
   
   Documento JSON a procesar:
   {{{invoiceJsonString}}}`,
@@ -81,7 +79,7 @@ const aiJsonKeyMapperFlow = ai.defineFlow(
   async (input) => {
     const { output } = await aiJsonKeyMapperPrompt(input);
     if (!output) {
-      throw new Error('No se pudo procesar el DTE. El formato no es válido o está incompleto.');
+      throw new Error('El modelo de IA no pudo extraer datos del DTE. Verifique que el archivo JSON sea un DTE V3 válido.');
     }
     return output;
   }

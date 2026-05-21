@@ -165,7 +165,10 @@ export default function InstitutionalModule() {
 
   const handleProcessData = async (content?: string) => {
     const rawData = content || jsonInput
-    if (!rawData.trim()) return
+    if (!rawData.trim()) {
+       toast({ title: "Sin datos", description: "Por favor cargue un archivo JSON válido.", variant: "destructive" })
+       return
+    }
     try {
       setIsProcessing(true)
       const result = await aiJsonKeyMapper({ invoiceJsonString: rawData })
@@ -181,8 +184,8 @@ export default function InstitutionalModule() {
       }
 
       toast({ title: "Documento Analizado", description: `Tipo de DTE: ${result.documentType || 'Desconocido'}` })
-    } catch (error) {
-      toast({ title: "Error", description: "No se pudo leer el archivo DTE V3.", variant: "destructive" })
+    } catch (error: any) {
+      toast({ title: "Error de IA", description: error.message || "No se pudo leer el archivo DTE V3.", variant: "destructive" })
     } finally {
       setIsProcessing(false)
     }
@@ -196,6 +199,9 @@ export default function InstitutionalModule() {
         const content = event.target?.result as string
         setJsonInput(content)
         handleProcessData(content)
+      }
+      reader.onerror = () => {
+        toast({ title: "Error de lectura", description: "No se pudo leer el archivo físico.", variant: "destructive" })
       }
       reader.readAsText(file)
     }
@@ -248,7 +254,7 @@ export default function InstitutionalModule() {
 
     if (orphanItems.length > 0) {
       toast({
-        title: "Productos no autorizados",
+        title: "Productos fuera de OC",
         description: `${orphanItems.length} productos enviados a Inventario Global.`,
         variant: "destructive"
       })
@@ -270,7 +276,7 @@ export default function InstitutionalModule() {
 
     const subtotal = validItems.reduce((acc, curr) => acc + curr.lineTotal, 0)
     const tax = mappedData.taxAmount || (subtotal * 0.13)
-    const total = mappedData.totalAmount || (subtotal + tax)
+    const total = mappedData.totalAmount || (subtotal + tax + (mappedData.perceptionAmount || 0) - (mappedData.retentionAmount || 0))
 
     addTransaction({
       invoiceNumber: mappedData.invoiceNumber || `DTE-${Date.now()}`,
@@ -591,6 +597,12 @@ export default function InstitutionalModule() {
                           <span className="text-muted-foreground">IVA (13%):</span>
                           <span className="font-bold">${mappedData.taxAmount?.toFixed(2)}</span>
                         </div>
+                        {mappedData.perceptionAmount && (
+                           <div className="flex justify-between text-[10px] text-primary">
+                             <span>IVA Percibido (1%):</span>
+                             <span className="font-bold">+${mappedData.perceptionAmount.toFixed(2)}</span>
+                           </div>
+                        )}
                         <div className="flex justify-between items-center pt-2 mt-2 border-t">
                           <span className="text-xs font-black uppercase">TOTAL DTE:</span>
                           <span className="text-lg font-black text-foreground">${mappedData.totalAmount?.toFixed(2)}</span>
