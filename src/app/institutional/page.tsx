@@ -23,7 +23,7 @@ import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCir
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { ScrollArea } from "@/components/area"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Progress } from "@/components/ui/progress"
 import { Switch } from "@/components/ui/switch"
 
