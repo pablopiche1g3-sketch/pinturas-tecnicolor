@@ -77,6 +77,7 @@ interface LedgerStore {
   addEntity: (entity: Omit<Entity, 'id' | 'createdAt'>) => void;
   deleteEntity: (id: string) => void;
   addProject: (project: Omit<Project, 'id' | 'createdAt'>) => void;
+  updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
   addTransaction: (transaction: Omit<Transaction, 'id'>) => void;
   voidTransaction: (id: string, reason: string, relatedDoc?: string) => void;
@@ -114,6 +115,9 @@ export const useLedgerStore = create<LedgerStore>()(
             createdAt: new Date().toISOString()
           }
         ]
+      })),
+      updateProject: (id, updates) => set((state) => ({
+        projects: state.projects.map(p => p.id === id ? { ...p, ...updates } : p)
       })),
       deleteProject: (id) => set((state) => ({
         projects: state.projects.filter((p) => p.id !== id),

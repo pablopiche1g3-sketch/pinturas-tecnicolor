@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { AppLayout } from "@/components/layout/AppLayout"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Label } from "@/components/ui/label"
@@ -17,24 +17,25 @@ import {
   DialogTrigger,
   DialogFooter
 } from "@/components/ui/dialog"
-import { useLedgerStore, type ProjectProduct, type TransactionItem } from "@/lib/store"
+import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput } from "@/ai/flows/ai-json-key-mapper"
-import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, ArrowRight, CheckCircle2, FileText } from "lucide-react"
+import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, ArrowRight, CheckCircle2, FileText, Pencil, CheckCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { ScrollArea } from "@/components/area"
 import { Progress } from "@/components/ui/progress"
 import { Switch } from "@/components/ui/switch"
 
 export default function InstitutionalModule() {
-  const { entities, projects, transactions, addProject, addTransaction, voidTransaction, addToInventory } = useLedgerStore()
+  const { entities, projects, transactions, addProject, updateProject, deleteProject, addTransaction, voidTransaction, addToInventory } = useLedgerStore()
   const { toast } = useToast()
   
   const [mounted, setMounted] = React.useState(false)
   const [activeTab, setActiveTab] = React.useState('projects')
   const [selectedProjectId, setSelectedProjectId] = React.useState<string>('')
   const [isProjectDialogOpen, setIsProjectDialogOpen] = React.useState(false)
+  const [editingProject, setEditingProject] = React.useState<Project | null>(null)
   
   const [newProject, setNewProject] = React.useState({
     name: '',
@@ -75,15 +76,16 @@ export default function InstitutionalModule() {
   
   const projectCosts = projectTransactions.filter(t => t.type === 'purchase').reduce((acc, curr) => acc + curr.totalAmount, 0)
 
-  const getProductProgress = (productCode: string) => {
-    if (!selectedProjectId) return 0
-    const received = projectTransactions
+  const getProductProgress = (productCode: string, projectId: string) => {
+    const project = projects.find(p => p.id === projectId)
+    const txs = transactions.filter(t => t.projectId === projectId && !t.isVoided)
+    const received = txs
       .filter(t => t.type === 'purchase')
       .flatMap(t => t.items)
       .filter(i => i.code === productCode)
       .reduce((acc, curr) => acc + curr.quantity, 0)
     
-    const expected = currentProject?.expectedProducts.find(p => p.code === productCode)?.quantity || 1
+    const expected = project?.expectedProducts.find(p => p.code === productCode)?.quantity || 1
     return Math.min((received / expected) * 100, 100)
   }
 
@@ -93,25 +95,72 @@ export default function InstitutionalModule() {
     setTempProduct({ code: '', description: '', quantity: 1, unitPrice: 0 })
   }
 
-  const handleCreateProject = () => {
+  const handleCreateOrUpdateProject = () => {
     if (!newProject.name || !newProject.customerId || !newProject.purchaseOrder) {
       toast({ title: "Datos incompletos", description: "Rellene todos los campos del proyecto.", variant: "destructive" })
       return
     }
     const customer = customers.find(c => c.id === newProject.customerId)
-    addProject({
-      name: newProject.name,
-      purchaseOrder: newProject.purchaseOrder,
-      targetSaleAmount: newProject.targetSaleAmount,
-      customerId: newProject.customerId,
-      customerName: customer?.name || 'Cliente Desconocido',
-      expectedProducts: newProjectProducts,
-      status: 'active'
-    })
+    
+    if (editingProject) {
+      updateProject(editingProject.id, {
+        name: newProject.name,
+        purchaseOrder: newProject.purchaseOrder,
+        targetSaleAmount: newProject.targetSaleAmount,
+        customerId: newProject.customerId,
+        customerName: customer?.name || 'Cliente Desconocido',
+        expectedProducts: newProjectProducts,
+      })
+      toast({ title: "Proyecto Actualizado", description: "Cambios guardados exitosamente." })
+    } else {
+      addProject({
+        name: newProject.name,
+        purchaseOrder: newProject.purchaseOrder,
+        targetSaleAmount: newProject.targetSaleAmount,
+        customerId: newProject.customerId,
+        customerName: customer?.name || 'Cliente Desconocido',
+        expectedProducts: newProjectProducts,
+        status: 'active'
+      })
+      toast({ title: "Proyecto Creado", description: "El proyecto se ha registrado exitosamente." })
+    }
+
     setNewProject({ name: '', purchaseOrder: '', targetSaleAmount: 0, customerId: '' })
     setNewProjectProducts([])
+    setEditingProject(null)
     setIsProjectDialogOpen(false)
-    toast({ title: "Proyecto Creado", description: "El proyecto se ha registrado exitosamente." })
+  }
+
+  const openEditProject = (e: React.MouseEvent, project: Project) => {
+    e.stopPropagation()
+    setEditingProject(project)
+    setNewProject({
+      name: project.name,
+      purchaseOrder: project.purchaseOrder,
+      targetSaleAmount: project.targetSaleAmount,
+      customerId: project.customerId
+    })
+    setNewProjectProducts(project.expectedProducts)
+    setIsProjectDialogOpen(true)
+  }
+
+  const toggleProjectStatus = (e: React.MouseEvent, project: Project) => {
+    e.stopPropagation()
+    const newStatus = project.status === 'active' ? 'completed' : 'active'
+    updateProject(project.id, { status: newStatus })
+    toast({ 
+      title: newStatus === 'completed' ? "Proyecto Entregado" : "Proyecto Reactivado", 
+      description: `El estado del proyecto ha sido actualizado.` 
+    })
+  }
+
+  const handleDeleteProject = (e: React.MouseEvent, id: string) => {
+    e.stopPropagation()
+    if (confirm("¿Estás seguro de eliminar este proyecto? Se borrarán todas sus transacciones vinculadas.")) {
+      deleteProject(id)
+      if (selectedProjectId === id) setSelectedProjectId('')
+      toast({ title: "Proyecto Eliminado", variant: "destructive" })
+    }
   }
 
   const handleProcessData = async (content?: string) => {
@@ -320,7 +369,14 @@ export default function InstitutionalModule() {
                 <p className="text-sm text-muted-foreground">Gestione presupuestos y suministros autorizados.</p>
               </div>
               
-              <Dialog open={isProjectDialogOpen} onOpenChange={setIsProjectDialogOpen}>
+              <Dialog open={isProjectDialogOpen} onOpenChange={(open) => {
+                setIsProjectDialogOpen(open)
+                if (!open) {
+                  setEditingProject(null)
+                  setNewProject({ name: '', purchaseOrder: '', targetSaleAmount: 0, customerId: '' })
+                  setNewProjectProducts([])
+                }
+              }}>
                 <DialogTrigger asChild>
                   <Button className="gap-2 bg-primary hover:bg-primary/90 w-full sm:w-auto">
                     <Plus className="h-4 w-4" /> Nuevo Proyecto
@@ -328,7 +384,7 @@ export default function InstitutionalModule() {
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[700px] w-[95vw] max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
-                    <DialogTitle>Configurar Proyecto y OC</DialogTitle>
+                    <DialogTitle>{editingProject ? 'Editar Proyecto' : 'Configurar Proyecto y OC'}</DialogTitle>
                     <CardDescription>Defina los productos esperados para el control de inventario.</CardDescription>
                   </DialogHeader>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 py-4">
@@ -375,7 +431,9 @@ export default function InstitutionalModule() {
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button className="w-full bg-primary" onClick={handleCreateProject}>Guardar Proyecto</Button>
+                    <Button className="w-full bg-primary" onClick={handleCreateOrUpdateProject}>
+                      {editingProject ? 'Guardar Cambios' : 'Guardar Proyecto'}
+                    </Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -385,17 +443,24 @@ export default function InstitutionalModule() {
               {projects.map(p => (
                 <Card 
                   key={p.id} 
-                  className={cn("cursor-pointer border-2 transition-all", selectedProjectId === p.id ? "border-primary bg-primary/5" : "hover:border-primary/50")}
+                  className={cn(
+                    "cursor-pointer border-2 transition-all flex flex-col", 
+                    selectedProjectId === p.id ? "border-primary bg-primary/5" : "hover:border-primary/50",
+                    p.status === 'completed' && "opacity-80 grayscale-[0.5]"
+                  )}
                   onClick={() => setSelectedProjectId(p.id)}
                 >
-                  <CardHeader className="p-4">
+                  <CardHeader className="p-4 pb-2">
                     <div className="flex justify-between items-start gap-2">
                       <CardTitle className="text-sm font-bold text-foreground truncate">{p.name}</CardTitle>
-                      <Badge variant="outline" className="text-[9px] uppercase font-mono shrink-0">{p.purchaseOrder}</Badge>
+                      <div className="flex flex-col items-end gap-1">
+                        <Badge variant="outline" className="text-[9px] uppercase font-mono shrink-0">{p.purchaseOrder}</Badge>
+                        {p.status === 'completed' && <Badge className="text-[8px] bg-green-500 border-none">ENTREGADO</Badge>}
+                      </div>
                     </div>
                     <CardDescription className="text-xs truncate">{p.customerName}</CardDescription>
                   </CardHeader>
-                  <CardContent className="p-4 pt-0 space-y-4">
+                  <CardContent className="p-4 pt-0 space-y-4 flex-1">
                     <div className="space-y-2">
                       <div className="flex justify-between text-[10px] font-bold uppercase text-muted-foreground">
                         <span>Suministros</span>
@@ -405,9 +470,9 @@ export default function InstitutionalModule() {
                         <div key={ep.code} className="space-y-1">
                           <div className="flex justify-between text-[9px]">
                             <span className="truncate max-w-[150px]">{ep.description}</span>
-                            <span>{getProductProgress(ep.code).toFixed(0)}%</span>
+                            <span>{getProductProgress(ep.code, p.id).toFixed(0)}%</span>
                           </div>
-                          <Progress value={getProductProgress(ep.code)} className="h-1" />
+                          <Progress value={getProductProgress(ep.code, p.id)} className="h-1" />
                         </div>
                       ))}
                       {p.expectedProducts.length > 2 && (
@@ -415,6 +480,35 @@ export default function InstitutionalModule() {
                       )}
                     </div>
                   </CardContent>
+                  <CardFooter className="p-2 pt-0 border-t flex justify-between gap-1">
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-8 text-[10px] gap-1 flex-1 hover:bg-accent"
+                      onClick={(e) => openEditProject(e, p)}
+                    >
+                      <Pencil className="h-3 w-3" /> Editar
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className={cn(
+                        "h-8 text-[10px] gap-1 flex-1",
+                        p.status === 'completed' ? "text-primary hover:bg-primary/10" : "text-muted-foreground hover:bg-accent"
+                      )}
+                      onClick={(e) => toggleProjectStatus(e, p)}
+                    >
+                      <CheckCircle className="h-3 w-3" /> {p.status === 'completed' ? 'Reactivar' : 'Entregar'}
+                    </Button>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      className="h-8 text-[10px] gap-1 flex-1 text-destructive hover:bg-destructive/10"
+                      onClick={(e) => handleDeleteProject(e, p.id)}
+                    >
+                      <Trash2 className="h-3 w-3" /> Borrar
+                    </Button>
+                  </CardFooter>
                 </Card>
               ))}
             </div>
