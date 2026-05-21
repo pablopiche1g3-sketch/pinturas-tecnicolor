@@ -17,6 +17,15 @@ export interface ProjectProduct {
   unitPrice: number;
 }
 
+export interface ProjectDocument {
+  id: string;
+  name: string;
+  type: string;
+  size: number;
+  data: string; // Base64 string for storage in this prototype
+  createdAt: string;
+}
+
 export interface InventoryItem {
   id: string;
   code: string;
@@ -35,6 +44,7 @@ export interface Project {
   customerId: string;
   customerName: string;
   expectedProducts: ProjectProduct[];
+  documents: ProjectDocument[];
   createdAt: string;
   status: 'active' | 'completed';
 }
@@ -77,7 +87,7 @@ interface LedgerStore {
   inventory: InventoryItem[];
   addEntity: (entity: Omit<Entity, 'id' | 'createdAt'>) => void;
   deleteEntity: (id: string) => void;
-  addProject: (project: Omit<Project, 'id' | 'createdAt'>) => void;
+  addProject: (project: Omit<Project, 'id' | 'createdAt' | 'documents'>) => void;
   updateProject: (id: string, updates: Partial<Project>) => void;
   deleteProject: (id: string) => void;
   addTransaction: (transaction: Omit<Transaction, 'id'>) => void;
@@ -85,6 +95,8 @@ interface LedgerStore {
   deleteTransaction: (id: string) => void;
   addToInventory: (items: Omit<InventoryItem, 'id' | 'dateAdded'>[]) => void;
   removeFromInventory: (id: string) => void;
+  addDocumentToProject: (projectId: string, document: Omit<ProjectDocument, 'id' | 'createdAt'>) => void;
+  deleteDocumentFromProject: (projectId: string, documentId: string) => void;
 }
 
 export const useLedgerStore = create<LedgerStore>()(
@@ -113,6 +125,7 @@ export const useLedgerStore = create<LedgerStore>()(
           {
             ...project,
             id: Math.random().toString(36).substring(2, 9),
+            documents: [],
             createdAt: new Date().toISOString()
           }
         ]
@@ -155,9 +168,28 @@ export const useLedgerStore = create<LedgerStore>()(
       removeFromInventory: (id) => set((state) => ({
         inventory: state.inventory.filter(i => i.id !== id)
       })),
+      addDocumentToProject: (projectId, document) => set((state) => ({
+        projects: state.projects.map(p => p.id === projectId ? {
+          ...p,
+          documents: [
+            ...p.documents,
+            {
+              ...document,
+              id: Math.random().toString(36).substring(2, 9),
+              createdAt: new Date().toISOString()
+            }
+          ]
+        } : p)
+      })),
+      deleteDocumentFromProject: (projectId, documentId) => set((state) => ({
+        projects: state.projects.map(p => p.id === projectId ? {
+          ...p,
+          documents: p.documents.filter(d => d.id !== documentId)
+        } : p)
+      })),
     }),
     {
-      name: 'tecnicolor-ledger-store-v5',
+      name: 'tecnicolor-ledger-store-v6',
     }
   )
 );
