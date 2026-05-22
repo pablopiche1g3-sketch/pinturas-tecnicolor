@@ -50,7 +50,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const db = useFirestore()
   const { initListeners } = useLedgerStore()
 
-  // Initialize Firebase listeners even if not logged in (will work with public data or locally)
+  // Sincronización en tiempo real con Firestore
   React.useEffect(() => {
     if (db) {
       const unsub = initListeners(db)
@@ -58,14 +58,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [db, initListeners])
 
-  // REMOVED: Redirect to login logic
-  /*
+  // Verificación de autenticación obligatoria
   React.useEffect(() => {
     if (!loading && !user && pathname !== "/login") {
       router.push("/login")
     }
   }, [user, loading, pathname, router])
-  */
 
   const handleLogout = async () => {
     if (auth) {
@@ -74,7 +72,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Fallback admin logic or custom email check
+  // Lógica de administrador (basada en el correo que solicitaste)
   const isAdmin = user?.email === 'pablopiche0399@gmail.com'
 
   const getPageTitle = (path: string) => {
@@ -90,9 +88,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Still show a loader for initial initialization if desired, 
-  // but we won't block the app if there's no user.
-  if (loading && !user && pathname === "/") {
+  // No mostrar nada mientras se verifica la sesión inicial
+  if (loading && !user && pathname !== "/login") {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -100,7 +97,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     )
   }
 
-  // Skip layout for login page if the user navigates there explicitly
+  // No aplicar el layout en la página de login
   if (pathname === "/login") {
     return <>{children}</>
   }
@@ -246,10 +243,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2 md:gap-4">
             <div className="hidden sm:flex flex-col items-end">
               <span className="text-xs font-bold text-foreground truncate max-w-[150px]">
-                {user ? user.email : 'Acceso Invitado'}
+                {user ? user.email : 'Sin Identificar'}
               </span>
               <span className="text-[10px] text-muted-foreground">
-                {user ? (isAdmin ? 'Administrador' : 'Editor') : 'Sin Identificar'}
+                {user ? (isAdmin ? 'Administrador' : 'Editor') : 'Acceso Restringido'}
               </span>
             </div>
             <ThemeToggle />
