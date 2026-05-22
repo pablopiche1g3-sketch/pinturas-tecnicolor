@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -8,9 +9,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Trash2, PackageSearch, Package } from "lucide-react"
+import { useFirestore } from "@/firebase"
 
 export default function InventoryPage() {
   const { inventory, removeFromInventory } = useLedgerStore()
+  const db = useFirestore()
   const [mounted, setMounted] = React.useState(false)
 
   React.useEffect(() => {
@@ -62,7 +65,7 @@ export default function InventoryPage() {
                           variant="ghost" 
                           size="icon" 
                           className="text-destructive"
-                          onClick={() => removeFromInventory(item.id)}
+                          onClick={() => removeFromInventory(db, item.id)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>

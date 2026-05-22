@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -24,9 +25,11 @@ import {
 } from "@/components/ui/dialog"
 import { Plus, Trash2, Mail, Phone, Truck, Loader2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
+import { useFirestore } from "@/firebase"
 
 export default function SuppliersPage() {
   const { entities, addEntity, deleteEntity } = useLedgerStore()
+  const db = useFirestore()
   const [isOpen, setIsOpen] = React.useState(false)
   const [mounted, setMounted] = React.useState(false)
   const [formData, setFormData] = React.useState({
@@ -44,7 +47,7 @@ export default function SuppliersPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!formData.name) return
-    addEntity({
+    addEntity(db, {
       name: formData.name,
       email: formData.email,
       phone: formData.phone,
@@ -154,7 +157,7 @@ export default function SuppliersPage() {
                           variant="ghost" 
                           size="icon" 
                           className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => deleteEntity(s.id)}
+                          onClick={() => deleteEntity(db, s.id)}
                         >
                           <Trash2 className="h-4 w-4" />
                         </Button>

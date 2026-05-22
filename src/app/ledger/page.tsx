@@ -29,9 +29,11 @@ import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
 import { useToast } from "@/hooks/use-toast"
+import { useFirestore } from "@/firebase"
 
 export default function LedgerPage() {
   const { transactions, projects, deleteTransaction } = useLedgerStore()
+  const db = useFirestore()
   const [mounted, setMounted] = React.useState(false)
   const { toast } = useToast()
 
@@ -188,7 +190,7 @@ export default function LedgerPage() {
                   className="h-8 w-8 text-destructive hover:bg-destructive/10"
                   onClick={() => {
                     if (confirm("¿Eliminar este registro permanentemente?")) {
-                      deleteTransaction(t.id)
+                      deleteTransaction(db, t.id)
                     }
                   }}
                 >
