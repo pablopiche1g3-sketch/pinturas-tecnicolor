@@ -3,7 +3,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { usePathname, useRouter } from "next/navigation"
+import { usePathname } from "next/navigation"
 import { 
   LayoutDashboard, 
   Users, 
@@ -15,18 +15,14 @@ import {
   Palette,
   Package,
   Menu,
-  LogOut,
-  Loader2,
-  ShieldCheck,
-  User as UserIcon
+  ShieldCheck
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useUser, useAuth, useFirestore } from "@/firebase"
-import { signOut } from "firebase/auth"
+import { useFirestore } from "@/firebase"
 import { useLedgerStore } from "@/lib/store"
 
 const navItems = [
@@ -40,13 +36,10 @@ const navItems = [
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
-  const router = useRouter()
   const isMobile = useIsMobile()
   const [isCollapsed, setIsCollapsed] = React.useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false)
   
-  const { user, loading } = useUser()
-  const auth = useAuth()
   const db = useFirestore()
   const { initListeners } = useLedgerStore()
 
@@ -58,16 +51,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [db, initListeners])
 
-  const handleLogout = async () => {
-    if (auth) {
-      await signOut(auth)
-      router.push("/login")
-    }
-  }
-
-  // Lógica de administrador (basada en el correo que solicitaste)
-  const isAdmin = user?.email === 'pablopiche0399@gmail.com' || !user // En modo sin login, permitimos funciones de admin
-
   const getPageTitle = (path: string) => {
     switch (path) {
       case "/": return "Panel de Control";
@@ -76,14 +59,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       case "/suppliers": return "Directorio de Proveedores";
       case "/customers": return "Directorio de Clientes";
       case "/ledger": return "Libro de Transacciones";
-      case "/login": return "Acceso";
       default: return "Tecnicolor Institucional";
     }
-  }
-
-  // No aplicar el layout en la página de login si el usuario decide ir ahí
-  if (pathname === "/login") {
-    return <>{children}</>
   }
 
   const NavContent = () => (
@@ -147,31 +124,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
           <NavContent />
           <div className="p-4 border-t mt-auto">
-            {isAdmin && !isCollapsed && (
+            {!isCollapsed && (
               <div className="px-4 py-2 mb-2 rounded-lg bg-primary/5 border border-primary/20 flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-primary" />
-                <span className="text-[10px] font-bold uppercase text-primary">Modo Gestión Total</span>
+                <span className="text-[10px] font-bold uppercase text-primary">Modo Gestión Libre</span>
               </div>
-            )}
-            {user ? (
-              <Button 
-                variant="ghost" 
-                className={cn("w-full gap-3 justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10", isCollapsed && "px-2")}
-                onClick={handleLogout}
-              >
-                <LogOut className="h-5 w-5" />
-                {(!isCollapsed || isMobile) && <span>Cerrar Sesión</span>}
-              </Button>
-            ) : (
-              <Link href="/login">
-                <Button 
-                  variant="ghost" 
-                  className={cn("w-full gap-3 justify-start text-muted-foreground hover:text-primary hover:bg-primary/10", isCollapsed && "px-2")}
-                >
-                  <UserIcon className="h-5 w-5" />
-                  {(!isCollapsed || isMobile) && <span>Iniciar Sesión</span>}
-                </Button>
-              </Link>
             )}
           </div>
         </aside>
@@ -195,28 +152,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     <SheetTitle className="font-headline font-bold text-lg">Tecnicolor</SheetTitle>
                   </div>
                   <NavContent />
-                  <div className="p-4 border-t">
-                    {user ? (
-                      <Button 
-                        variant="ghost" 
-                        className="w-full gap-3 justify-start text-muted-foreground hover:text-destructive"
-                        onClick={handleLogout}
-                      >
-                        <LogOut className="h-5 w-5" />
-                        <span>Cerrar Sesión</span>
-                      </Button>
-                    ) : (
-                      <Link href="/login" onClick={() => setIsMobileMenuOpen(false)}>
-                        <Button 
-                          variant="ghost" 
-                          className="w-full gap-3 justify-start text-muted-foreground hover:text-primary"
-                        >
-                          <UserIcon className="h-5 w-5" />
-                          <span>Iniciar Sesión</span>
-                        </Button>
-                      </Link>
-                    )}
-                  </div>
                 </SheetContent>
               </Sheet>
             )}
@@ -225,14 +160,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </h2>
           </div>
           <div className="flex items-center gap-2 md:gap-4">
-            <div className="hidden sm:flex flex-col items-end">
-              <span className="text-xs font-bold text-foreground truncate max-w-[150px]">
-                {user ? user.email : 'Acceso Libre'}
-              </span>
-              <span className="text-[10px] text-muted-foreground">
-                {user ? (user.email === 'pablopiche0399@gmail.com' ? 'Administrador' : 'Editor') : 'Sin Restricciones'}
-              </span>
-            </div>
             <ThemeToggle />
           </div>
         </header>
