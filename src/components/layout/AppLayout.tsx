@@ -58,13 +58,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }, [db, initListeners])
 
-  // Verificación de autenticación obligatoria
-  React.useEffect(() => {
-    if (!loading && !user && pathname !== "/login") {
-      router.push("/login")
-    }
-  }, [user, loading, pathname, router])
-
   const handleLogout = async () => {
     if (auth) {
       await signOut(auth)
@@ -73,7 +66,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   // Lógica de administrador (basada en el correo que solicitaste)
-  const isAdmin = user?.email === 'pablopiche0399@gmail.com'
+  const isAdmin = user?.email === 'pablopiche0399@gmail.com' || !user // En modo sin login, permitimos funciones de admin
 
   const getPageTitle = (path: string) => {
     switch (path) {
@@ -88,16 +81,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // No mostrar nada mientras se verifica la sesión inicial
-  if (loading && !user && pathname !== "/login") {
-    return (
-      <div className="flex h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
-  }
-
-  // No aplicar el layout en la página de login
+  // No aplicar el layout en la página de login si el usuario decide ir ahí
   if (pathname === "/login") {
     return <>{children}</>
   }
@@ -166,7 +150,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             {isAdmin && !isCollapsed && (
               <div className="px-4 py-2 mb-2 rounded-lg bg-primary/5 border border-primary/20 flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-primary" />
-                <span className="text-[10px] font-bold uppercase text-primary">Modo Administrador</span>
+                <span className="text-[10px] font-bold uppercase text-primary">Modo Gestión Total</span>
               </div>
             )}
             {user ? (
@@ -243,10 +227,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2 md:gap-4">
             <div className="hidden sm:flex flex-col items-end">
               <span className="text-xs font-bold text-foreground truncate max-w-[150px]">
-                {user ? user.email : 'Sin Identificar'}
+                {user ? user.email : 'Acceso Libre'}
               </span>
               <span className="text-[10px] text-muted-foreground">
-                {user ? (isAdmin ? 'Administrador' : 'Editor') : 'Acceso Restringido'}
+                {user ? (user.email === 'pablopiche0399@gmail.com' ? 'Administrador' : 'Editor') : 'Sin Restricciones'}
               </span>
             </div>
             <ThemeToggle />
