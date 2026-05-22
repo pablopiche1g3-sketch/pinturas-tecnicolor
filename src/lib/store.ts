@@ -1,5 +1,18 @@
+
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { 
+  collection, 
+  doc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  onSnapshot, 
+  query, 
+  where,
+  Timestamp,
+  Firestore,
+  addDoc
+} from 'firebase/firestore';
 
 export interface Entity {
   id: string;
@@ -22,7 +35,7 @@ export interface ProjectDocument {
   name: string;
   type: string;
   size: number;
-  data: string; // Base64 string for storage in this prototype
+  data: string;
   createdAt: string;
 }
 
@@ -59,14 +72,14 @@ export interface TransactionItem {
 
 export interface Transaction {
   id: string;
-  invoiceNumber: string; // codigoGeneracion
-  numeroControl?: string; // Nuevo campo DTE
+  invoiceNumber: string;
+  numeroControl?: string;
   issueDate: string;
   entityId: string;
   entityName: string;
   projectId?: string;
   type: 'purchase' | 'sale';
-  documentType: '01' | '03' | '07' | string; // 01: Factura, 03: CCF, 07: Nota Crédito
+  documentType: '01' | '03' | '07' | string;
   items: TransactionItem[];
   subtotal: number;
   taxAmount: number;
@@ -80,116 +93,147 @@ export interface Transaction {
   relatedDocumentNumber?: string;
 }
 
-interface LedgerStore {
+interface LedgerState {
   entities: Entity[];
   projects: Project[];
   transactions: Transaction[];
   inventory: InventoryItem[];
-  addEntity: (entity: Omit<Entity, 'id' | 'createdAt'>) => void;
-  deleteEntity: (id: string) => void;
-  addProject: (project: Omit<Project, 'id' | 'createdAt' | 'documents'>) => void;
-  updateProject: (id: string, updates: Partial<Project>) => void;
-  deleteProject: (id: string) => void;
-  addTransaction: (transaction: Omit<Transaction, 'id'>) => void;
-  voidTransaction: (id: string, reason: string, relatedDoc?: string) => void;
-  deleteTransaction: (id: string) => void;
-  addToInventory: (items: Omit<InventoryItem, 'id' | 'dateAdded'>[]) => void;
-  removeFromInventory: (id: string) => void;
-  addDocumentToProject: (projectId: string, document: Omit<ProjectDocument, 'id' | 'createdAt'>) => void;
-  deleteDocumentFromProject: (projectId: string, documentId: string) => void;
+  loading: boolean;
 }
 
-export const useLedgerStore = create<LedgerStore>()(
-  persist(
-    (set) => ({
-      entities: [],
-      projects: [],
-      transactions: [],
-      inventory: [],
-      addEntity: (entity) => set((state) => ({
-        entities: [
-          ...state.entities,
-          {
-            ...entity,
-            id: Math.random().toString(36).substring(2, 9),
-            createdAt: new Date().toISOString()
-          }
-        ]
-      })),
-      deleteEntity: (id) => set((state) => ({
-        entities: state.entities.filter((e) => e.id !== id)
-      })),
-      addProject: (project) => set((state) => ({
-        projects: [
-          ...state.projects,
-          {
-            ...project,
-            id: Math.random().toString(36).substring(2, 9),
-            documents: [],
-            createdAt: new Date().toISOString()
-          }
-        ]
-      })),
-      updateProject: (id, updates) => set((state) => ({
-        projects: state.projects.map(p => p.id === id ? { ...p, ...updates } : p)
-      })),
-      deleteProject: (id) => set((state) => ({
-        projects: state.projects.filter((p) => p.id !== id),
-        transactions: state.transactions.filter((t) => t.projectId !== id)
-      })),
-      addTransaction: (transaction) => set((state) => ({
-        transactions: [
-          ...state.transactions,
-          {
-            ...transaction,
-            id: Math.random().toString(36).substring(2, 9),
-            isVoided: false
-          }
-        ]
-      })),
-      voidTransaction: (id, reason, relatedDoc) => set((state) => ({
-        transactions: state.transactions.map((t) => 
-          t.id === id ? { ...t, isVoided: true, voidReason: reason, relatedDocumentNumber: relatedDoc } : t
-        )
-      })),
-      deleteTransaction: (id) => set((state) => ({
-        transactions: state.transactions.filter((t) => t.id !== id)
-      })),
-      addToInventory: (items) => set((state) => ({
-        inventory: [
-          ...state.inventory,
-          ...items.map(i => ({
-            ...i,
-            id: Math.random().toString(36).substring(2, 9),
-            dateAdded: new Date().toISOString()
-          }))
-        ]
-      })),
-      removeFromInventory: (id) => set((state) => ({
-        inventory: state.inventory.filter(i => i.id !== id)
-      })),
-      addDocumentToProject: (projectId, document) => set((state) => ({
-        projects: state.projects.map(p => p.id === projectId ? {
-          ...p,
-          documents: [
-            ...p.documents,
-            {
-              ...document,
-              id: Math.random().toString(36).substring(2, 9),
-              createdAt: new Date().toISOString()
-            }
-          ]
-        } : p)
-      })),
-      deleteDocumentFromProject: (projectId, documentId) => set((state) => ({
-        projects: state.projects.map(p => p.id === projectId ? {
-          ...p,
-          documents: p.documents.filter(d => d.id !== documentId)
-        } : p)
-      })),
-    }),
-    {
-      name: 'tecnicolor-ledger-store-v6',
-    }
-  )
-);
+interface LedgerActions {
+  initListeners: (db: Firestore) => () => void;
+  addEntity: (db: Firestore, entity: Omit<Entity, 'id' | 'createdAt'>) => void;
+  deleteEntity: (db: Firestore, id: string) => void;
+  addProject: (db: Firestore, project: Omit<Project, 'id' | 'createdAt' | 'documents'>) => void;
+  updateProject: (db: Firestore, id: string, updates: Partial<Project>) => void;
+  deleteProject: (db: Firestore, id: string) => void;
+  addTransaction: (db: Firestore, transaction: Omit<Transaction, 'id'>) => void;
+  voidTransaction: (db: Firestore, id: string, reason: string, relatedDoc?: string) => void;
+  deleteTransaction: (db: Firestore, id: string) => void;
+  addToInventory: (db: Firestore, items: Omit<InventoryItem, 'id' | 'dateAdded'>[]) => void;
+  removeFromInventory: (db: Firestore, id: string) => void;
+  addDocumentToProject: (db: Firestore, projectId: string, document: Omit<ProjectDocument, 'id' | 'createdAt'>) => void;
+  deleteDocumentFromProject: (db: Firestore, projectId: string, documentId: string) => void;
+}
+
+export const useLedgerStore = create<LedgerState & LedgerActions>((set, get) => ({
+  entities: [],
+  projects: [],
+  transactions: [],
+  inventory: [],
+  loading: true,
+
+  initListeners: (db: Firestore) => {
+    const unsubEntities = onSnapshot(collection(db, 'entities'), (snapshot) => {
+      const entities = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Entity));
+      set({ entities });
+    });
+
+    const unsubProjects = onSnapshot(collection(db, 'projects'), (snapshot) => {
+      const projects = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Project));
+      set({ projects });
+    });
+
+    const unsubTransactions = onSnapshot(collection(db, 'transactions'), (snapshot) => {
+      const transactions = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Transaction));
+      set({ transactions });
+    });
+
+    const unsubInventory = onSnapshot(collection(db, 'inventory'), (snapshot) => {
+      const inventory = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as InventoryItem));
+      set({ inventory, loading: false });
+    });
+
+    return () => {
+      unsubEntities();
+      unsubProjects();
+      unsubTransactions();
+      unsubInventory();
+    };
+  },
+
+  addEntity: (db, entity) => {
+    addDoc(collection(db, 'entities'), {
+      ...entity,
+      createdAt: new Date().toISOString()
+    });
+  },
+
+  deleteEntity: (db, id) => {
+    deleteDoc(doc(db, 'entities', id));
+  },
+
+  addProject: (db, project) => {
+    addDoc(collection(db, 'projects'), {
+      ...project,
+      documents: [],
+      createdAt: new Date().toISOString()
+    });
+  },
+
+  updateProject: (db, id, updates) => {
+    updateDoc(doc(db, 'projects', id), updates);
+  },
+
+  deleteProject: (db, id) => {
+    deleteDoc(doc(db, 'projects', id));
+    // Note: In production you might want to delete sub-transactions too
+  },
+
+  addTransaction: (db, transaction) => {
+    addDoc(collection(db, 'transactions'), {
+      ...transaction,
+      isVoided: false
+    });
+  },
+
+  voidTransaction: (db, id, reason, relatedDoc) => {
+    updateDoc(doc(db, 'transactions', id), {
+      isVoided: true,
+      voidReason: reason,
+      relatedDocumentNumber: relatedDoc
+    });
+  },
+
+  deleteTransaction: (db, id) => {
+    deleteDoc(doc(db, 'transactions', id));
+  },
+
+  addToInventory: (db, items) => {
+    items.forEach(item => {
+      addDoc(collection(db, 'inventory'), {
+        ...item,
+        dateAdded: new Date().toISOString()
+      });
+    });
+  },
+
+  removeFromInventory: (db, id) => {
+    deleteDoc(doc(db, 'inventory', id));
+  },
+
+  addDocumentToProject: (db, projectId, document) => {
+    const project = get().projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    const newDoc = {
+      ...document,
+      id: Math.random().toString(36).substring(2, 9),
+      createdAt: new Date().toISOString()
+    };
+
+    updateDoc(doc(db, 'projects', projectId), {
+      documents: [...project.documents, newDoc]
+    });
+  },
+
+  deleteDocumentFromProject: (db, projectId, documentId) => {
+    const project = get().projects.find(p => p.id === projectId);
+    if (!project) return;
+
+    updateDoc(doc(db, 'projects', projectId), {
+      documents: project.documents.filter(d => d.id !== documentId)
+    });
+  },
+}));

@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -25,13 +26,14 @@ import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Progress } from "@/components/ui/progress"
-import { Switch } from "@/components/ui/switch"
+import { useFirestore } from "@/firebase"
 
 export default function InstitutionalModule() {
   const { 
     entities, projects, transactions, addProject, updateProject, deleteProject, 
     addTransaction, voidTransaction, addToInventory, addDocumentToProject, deleteDocumentFromProject 
   } = useLedgerStore()
+  const db = useFirestore()
   const { toast } = useToast()
   
   const [mounted, setMounted] = React.useState(false)
@@ -81,7 +83,6 @@ export default function InstitutionalModule() {
   const [mappedData, setMappedData] = React.useState<AiJsonKeyMapperOutput | null>(null)
   const [selectedSupplierId, setSelectedSupplierId] = React.useState('')
   const [isDragging, setIsDragging] = React.useState(false)
-  const [applyRetention, setApplyRetention] = React.useState(false)
 
   const [voidReason, setVoidReason] = React.useState('')
   const [transactionToVoid, setTransactionToVoid] = React.useState<string>('')
@@ -128,7 +129,7 @@ export default function InstitutionalModule() {
     const customer = customers.find(c => c.id === newProject.customerId)
     
     if (editingProject) {
-      updateProject(editingProject.id, {
+      updateProject(db, editingProject.id, {
         name: newProject.name,
         purchaseOrder: newProject.purchaseOrder,
         targetSaleAmount: newProject.targetSaleAmount,
@@ -138,7 +139,7 @@ export default function InstitutionalModule() {
       })
       toast({ title: "Proyecto Actualizado", description: "Cambios guardados exitosamente." })
     } else {
-      addProject({
+      addProject(db, {
         name: newProject.name,
         purchaseOrder: newProject.purchaseOrder,
         targetSaleAmount: newProject.targetSaleAmount,
@@ -172,7 +173,7 @@ export default function InstitutionalModule() {
   const toggleProjectStatus = (e: React.MouseEvent, project: Project) => {
     e.stopPropagation()
     const newStatus = project.status === 'active' ? 'completed' : 'active'
-    updateProject(project.id, { status: newStatus })
+    updateProject(db, project.id, { status: newStatus })
     toast({ 
       title: newStatus === 'completed' ? "Proyecto Entregado" : "Proyecto Reactivado", 
       description: `El estado del proyecto ha sido actualizado.` 
@@ -182,7 +183,7 @@ export default function InstitutionalModule() {
   const handleDeleteProject = (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
     if (confirm("¿Estás seguro de eliminar este proyecto? Se borrarán todas sus transacciones vinculadas.")) {
-      deleteProject(id)
+      deleteProject(db, id)
       if (selectedProjectId === id) setSelectedProjectId('')
       toast({ title: "Proyecto Eliminado", variant: "destructive" })
     }
@@ -202,7 +203,7 @@ export default function InstitutionalModule() {
     const reader = new FileReader()
     reader.onload = (event) => {
       const base64Data = event.target?.result as string
-      addDocumentToProject(editingProject.id, {
+      addDocumentToProject(db, editingProject.id, {
         name: file.name,
         type: file.type,
         size: file.size,
@@ -317,7 +318,7 @@ export default function InstitutionalModule() {
     })
 
     if (orphanItems.length > 0) {
-      addToInventory(orphanItems.map(oi => ({
+      addToInventory(db, orphanItems.map(oi => ({
         code: oi.code || 'S/C',
         description: oi.description,
         quantity: oi.quantity,
@@ -332,7 +333,7 @@ export default function InstitutionalModule() {
       const tax = mappedData.taxAmount || (subtotal * 0.13)
       const total = mappedData.totalAmount || (subtotal + tax)
 
-      addTransaction({
+      addTransaction(db, {
         invoiceNumber: mappedData.invoiceNumber || `DTE-${Date.now()}`,
         numeroControl: (mappedData as any).numeroControl,
         issueDate: mappedData.issueDate || new Date().toISOString(),
@@ -371,7 +372,7 @@ export default function InstitutionalModule() {
     const tax = subtotal * 0.13
     const total = subtotal + tax
 
-    addTransaction({
+    addTransaction(db, {
       invoiceNumber: manualPurchase.codigoGeneracion,
       numeroControl: manualPurchase.numeroControl,
       issueDate: manualPurchase.issueDate,
@@ -393,7 +394,7 @@ export default function InstitutionalModule() {
 
   const handleSaveFinalInvoice = () => {
     if (!mappedData || !selectedProjectId || !currentProject) return
-    addTransaction({
+    addTransaction(db, {
       invoiceNumber: mappedData.invoiceNumber || `INV-${Date.now()}`,
       issueDate: mappedData.issueDate || new Date().toISOString(),
       entityId: currentProject.customerId,
@@ -414,7 +415,7 @@ export default function InstitutionalModule() {
 
   const handleVoidTransaction = () => {
     if (!transactionToVoid) return
-    voidTransaction(transactionToVoid, voidReason, mappedData?.invoiceNumber)
+    voidTransaction(db, transactionToVoid, voidReason, mappedData?.invoiceNumber)
     setTransactionToVoid(''); setVoidReason(''); setMappedData(null)
     toast({ title: "Anulación Registrada" })
   }
@@ -543,7 +544,7 @@ export default function InstitutionalModule() {
                                   <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDownloadDoc(doc)}>
                                     <Download className="h-3 w-3" />
                                   </Button>
-                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteDocumentFromProject(editingProject.id, doc.id)}>
+                                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteDocumentFromProject(db, editingProject.id, doc.id)}>
                                     <Trash2 className="h-3 w-3" />
                                   </Button>
                                 </div>
@@ -632,7 +633,6 @@ export default function InstitutionalModule() {
         </TabsContent>
 
         <TabsContent value="purchases">
-          {/* Contenido de Compras (IA / Manual) similar al anterior pero con mejoras visuales */}
           {!selectedProjectId ? (
             <div className="py-20 text-center border-2 border-dashed rounded-lg opacity-40 flex flex-col items-center gap-4 px-4">
                <Package className="h-10 w-10 text-muted-foreground" />
@@ -715,7 +715,6 @@ export default function InstitutionalModule() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                  {/* Manual Purchase UI... (se mantiene igual pero con estilos corregidos para dark mode) */}
                   <Card>
                     <CardHeader><CardTitle className="text-lg">Ingreso Manual</CardTitle></CardHeader>
                     <CardContent className="space-y-4">
@@ -758,7 +757,6 @@ export default function InstitutionalModule() {
         </TabsContent>
 
         <TabsContent value="voided">
-           {/* Anulaciones UI... */}
            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <Card>
                 <CardHeader><CardTitle className="text-lg">Anular Transacción</CardTitle></CardHeader>
@@ -803,7 +801,6 @@ export default function InstitutionalModule() {
         </TabsContent>
 
         <TabsContent value="comparison">
-           {/* Conciliación UI... */}
            {!selectedProjectId ? (
              <div className="py-20 text-center border-2 border-dashed rounded-lg opacity-40 px-4">Seleccione un proyecto.</div>
            ) : (

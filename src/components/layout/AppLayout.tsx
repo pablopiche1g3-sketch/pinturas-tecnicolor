@@ -16,15 +16,17 @@ import {
   Package,
   Menu,
   LogOut,
-  Loader2
+  Loader2,
+  ShieldCheck
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useUser, useAuth } from "@/firebase"
+import { useUser, useAuth, useFirestore } from "@/firebase"
 import { signOut } from "firebase/auth"
+import { useLedgerStore } from "@/lib/store"
 
 const navItems = [
   { label: "Panel de Control", icon: LayoutDashboard, href: "/" },
@@ -44,6 +46,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   
   const { user, loading } = useUser()
   const auth = useAuth()
+  const db = useFirestore()
+  const { initListeners } = useLedgerStore()
+
+  // Initialize Firebase listeners
+  React.useEffect(() => {
+    if (user && db) {
+      const unsub = initListeners(db)
+      return () => unsub()
+    }
+  }, [user, db, initListeners])
 
   React.useEffect(() => {
     if (!loading && !user && pathname !== "/login") {
@@ -57,6 +69,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       router.push("/login")
     }
   }
+
+  const isAdmin = user?.email === 'pablopiche0399@gmail.com'
 
   const getPageTitle = (path: string) => {
     switch (path) {
@@ -146,6 +160,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
           <NavContent />
           <div className="p-4 border-t mt-auto">
+            {isAdmin && !isCollapsed && (
+              <div className="px-4 py-2 mb-2 rounded-lg bg-primary/5 border border-primary/20 flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-primary" />
+                <span className="text-[10px] font-bold uppercase text-primary">Modo Administrador</span>
+              </div>
+            )}
             <Button 
               variant="ghost" 
               className={cn("w-full gap-3 justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10", isCollapsed && "px-2")}
@@ -196,7 +216,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="flex items-center gap-2 md:gap-4">
             <div className="hidden sm:flex flex-col items-end">
               <span className="text-xs font-bold text-foreground truncate max-w-[150px]">{user.email}</span>
-              <span className="text-[10px] text-muted-foreground">Sesión Activa</span>
+              <span className="text-[10px] text-muted-foreground">{isAdmin ? 'Administrador' : 'Editor'}</span>
             </div>
             <ThemeToggle />
           </div>
