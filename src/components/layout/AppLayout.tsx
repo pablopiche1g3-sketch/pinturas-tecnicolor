@@ -1,8 +1,9 @@
+
 "use client"
 
 import * as React from "react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { 
   LayoutDashboard, 
   Users, 
@@ -13,13 +14,17 @@ import {
   ChevronRight,
   Palette,
   Package,
-  Menu
+  Menu,
+  LogOut,
+  Loader2
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { ThemeToggle } from "@/components/ThemeToggle"
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useUser, useAuth } from "@/firebase"
+import { signOut } from "firebase/auth"
 
 const navItems = [
   { label: "Panel de Control", icon: LayoutDashboard, href: "/" },
@@ -32,9 +37,26 @@ const navItems = [
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
   const isMobile = useIsMobile()
   const [isCollapsed, setIsCollapsed] = React.useState(false)
   const [isMobileMenuOpen, setIsMobileMenuOpen] = React.useState(false)
+  
+  const { user, loading } = useUser()
+  const auth = useAuth()
+
+  React.useEffect(() => {
+    if (!loading && !user && pathname !== "/login") {
+      router.push("/login")
+    }
+  }, [user, loading, pathname, router])
+
+  const handleLogout = async () => {
+    if (auth) {
+      await signOut(auth)
+      router.push("/login")
+    }
+  }
 
   const getPageTitle = (path: string) => {
     switch (path) {
@@ -44,9 +66,24 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       case "/suppliers": return "Directorio de Proveedores";
       case "/customers": return "Directorio de Clientes";
       case "/ledger": return "Libro de Transacciones";
+      case "/login": return "Acceso";
       default: return "Tecnicolor Institucional";
     }
   }
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  if (!user && pathname === "/login") {
+    return <>{children}</>
+  }
+
+  if (!user) return null
 
   const NavContent = () => (
     <nav className="flex-1 space-y-1 p-4">
@@ -74,7 +111,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-background font-body text-foreground">
-      {/* Sidebar Desktop */}
       {!isMobile && (
         <aside 
           className={cn(
@@ -109,10 +145,19 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </Button>
           </div>
           <NavContent />
+          <div className="p-4 border-t mt-auto">
+            <Button 
+              variant="ghost" 
+              className={cn("w-full gap-3 justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10", isCollapsed && "px-2")}
+              onClick={handleLogout}
+            >
+              <LogOut className="h-5 w-5" />
+              {(!isCollapsed || isMobile) && <span>Cerrar Sesión</span>}
+            </Button>
+          </div>
         </aside>
       )}
 
-      {/* Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b bg-background/80 px-4 md:px-8 backdrop-blur-md">
           <div className="flex items-center gap-4">
@@ -131,6 +176,16 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     <SheetTitle className="font-headline font-bold text-lg">Tecnicolor</SheetTitle>
                   </div>
                   <NavContent />
+                  <div className="p-4 border-t">
+                    <Button 
+                      variant="ghost" 
+                      className="w-full gap-3 justify-start text-muted-foreground hover:text-destructive"
+                      onClick={handleLogout}
+                    >
+                      <LogOut className="h-5 w-5" />
+                      <span>Cerrar Sesión</span>
+                    </Button>
+                  </div>
                 </SheetContent>
               </Sheet>
             )}
@@ -139,6 +194,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             </h2>
           </div>
           <div className="flex items-center gap-2 md:gap-4">
+            <div className="hidden sm:flex flex-col items-end">
+              <span className="text-xs font-bold text-foreground truncate max-w-[150px]">{user.email}</span>
+              <span className="text-[10px] text-muted-foreground">Sesión Activa</span>
+            </div>
             <ThemeToggle />
           </div>
         </header>

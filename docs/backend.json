@@ -1,0 +1,60 @@
+
+{
+  "entities": {
+    "Project": {
+      "title": "Proyecto",
+      "description": "Un proyecto institucional con presupuesto y suministros definidos.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "purchaseOrder": { "type": "string" },
+        "targetSaleAmount": { "type": "number" },
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "completed"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "purchaseOrder", "customerId"]
+    },
+    "Transaction": {
+      "title": "Transacción",
+      "description": "Un movimiento financiero (Compra o Venta) vinculado a un proyecto.",
+      "type": "object",
+      "properties": {
+        "invoiceNumber": { "type": "string" },
+        "numeroControl": { "type": "string" },
+        "issueDate": { "type": "string", "format": "date" },
+        "type": { "type": "string", "enum": ["purchase", "sale"] },
+        "totalAmount": { "type": "number" },
+        "projectId": { "type": "string" },
+        "isVoided": { "type": "boolean" }
+      }
+    },
+    "AppUser": {
+      "title": "Usuario",
+      "description": "Usuarios con acceso autorizado al sistema.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "format": "email" },
+        "role": { "type": "string", "enum": ["admin", "editor"] }
+      }
+    }
+  },
+  "auth": {
+    "providers": ["password"]
+  },
+  "firestore": {
+    "/projects/{projectId}": {
+      "schema": "#/backend/entities/Project",
+      "description": "Colección de proyectos institucionales."
+    },
+    "/transactions/{transactionId}": {
+      "schema": "#/backend/entities/Transaction",
+      "description": "Historial de transacciones financieras."
+    },
+    "/users/{userId}": {
+      "schema": "#/backend/entities/AppUser",
+      "description": "Perfiles de usuarios autorizados."
+    }
+  }
+}
