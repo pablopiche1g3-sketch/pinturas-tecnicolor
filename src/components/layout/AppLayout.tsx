@@ -43,7 +43,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const db = useFirestore()
   const { initListeners } = useLedgerStore()
 
-  // Sincronización en tiempo real con Firestore
+  // Sincronización en tiempo real con Firestore sin requerir Auth
   React.useEffect(() => {
     if (db) {
       const unsub = initListeners(db)
@@ -127,7 +127,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             {!isCollapsed && (
               <div className="px-4 py-2 mb-2 rounded-lg bg-primary/5 border border-primary/20 flex items-center gap-2">
                 <ShieldCheck className="h-4 w-4 text-primary" />
-                <span className="text-[10px] font-bold uppercase text-primary">Modo Gestión Libre</span>
+                <span className="text-[10px] font-bold uppercase text-primary">Acceso Libre Habilitado</span>
               </div>
             )}
           </div>
