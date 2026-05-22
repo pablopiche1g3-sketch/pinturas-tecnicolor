@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -21,35 +22,22 @@ import {
   Loader2, 
   XCircle, 
   Briefcase, 
-  ChevronDown, 
-  ChevronRight,
-  Calculator,
-  Receipt,
   ArrowRightLeft,
-  FileText
+  Receipt
 } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { useToast } from "@/hooks/use-toast"
 
 export default function LedgerPage() {
   const { transactions, projects, deleteTransaction } = useLedgerStore()
   const [mounted, setMounted] = React.useState(false)
+  const { toast } = useToast()
 
   React.useEffect(() => {
     setMounted(true)
   }, [])
-
-  if (!mounted) {
-    return (
-      <AppLayout>
-        <div className="flex h-[60vh] items-center justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-        </div>
-      </AppLayout>
-    )
-  }
 
   const getDocTypeBadge = (type: string) => {
     switch(type) {
@@ -58,6 +46,45 @@ export default function LedgerPage() {
       case '07': return 'NC';
       default: return 'DTE';
     }
+  }
+
+  const exportToCSV = (txs: Transaction[], filename: string) => {
+    if (txs.length === 0) {
+      toast({ title: "Sin datos", description: "No hay transacciones para exportar.", variant: "destructive" })
+      return
+    }
+
+    const headers = ["Fecha", "Proyecto", "Tipo Movimiento", "Tipo DTE", "No. Generación", "No. Control", "Entidad", "Subtotal", "IVA (13%)", "Total", "Utilidad/Costo", "Estado"];
+    
+    const rows = txs.map(t => {
+      const projectName = projects.find(p => p.id === t.projectId)?.name || "Venta General";
+      return [
+        new Date(t.issueDate).toLocaleDateString(),
+        `"${projectName}"`,
+        t.type === 'purchase' ? 'Compra' : 'Venta',
+        getDocTypeBadge(t.documentType),
+        t.invoiceNumber,
+        t.numeroControl || "N/A",
+        `"${t.entityName}"`,
+        t.subtotal.toFixed(2),
+        t.taxAmount.toFixed(2),
+        t.totalAmount.toFixed(2),
+        t.type === 'sale' ? t.gain.toFixed(2) : t.costBasis.toFixed(2),
+        t.isVoided ? `Anulada (${t.voidReason})` : 'Válida'
+      ].join(",");
+    });
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `${filename}_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    toast({ title: "Exportación exitosa", description: "El archivo se ha descargado correctamente." })
   }
 
   const groupedData = projects.map(project => {
@@ -159,7 +186,11 @@ export default function LedgerPage() {
                   variant="ghost" 
                   size="icon" 
                   className="h-8 w-8 text-destructive hover:bg-destructive/10"
-                  onClick={() => deleteTransaction(t.id)}
+                  onClick={() => {
+                    if (confirm("¿Eliminar este registro permanentemente?")) {
+                      deleteTransaction(t.id)
+                    }
+                  }}
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -177,15 +208,27 @@ export default function LedgerPage() {
     </Table>
   )
 
+  if (!mounted) return (
+    <AppLayout>
+      <div className="flex h-[60vh] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    </AppLayout>
+  )
+
   return (
     <AppLayout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
             <h3 className="text-2xl font-bold font-headline tracking-tight text-foreground">Libro Mayor Consolidado</h3>
             <p className="text-sm text-muted-foreground">Control financiero detallado por proyectos (FAC, CCF, NC).</p>
           </div>
-          <Button variant="outline" className="gap-2 bg-card shadow-sm">
+          <Button 
+            variant="outline" 
+            className="gap-2 bg-card shadow-sm w-full sm:w-auto"
+            onClick={() => exportToCSV(transactions, "Libro_Mayor_Completo")}
+          >
             <FileSpreadsheet className="h-4 w-4 text-green-600" /> Exportar Libro Completo
           </Button>
         </div>
@@ -247,8 +290,13 @@ export default function LedgerPage() {
                              </span>
                           </div>
                        </div>
-                       <Button size="sm" variant="outline" className="h-8 text-xs gap-2">
-                          <FileSpreadsheet className="h-3 w-3" /> Exportar Proyecto (Excel)
+                       <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="h-8 text-xs gap-2"
+                        onClick={() => exportToCSV(txs, `Proyecto_${project.name.replace(/\s+/g, '_')}`)}
+                       >
+                          <FileSpreadsheet className="h-3 w-3" /> Exportar Proyecto (CSV)
                        </Button>
                     </div>
                     {renderTransactionTable(txs)}
@@ -271,6 +319,16 @@ export default function LedgerPage() {
                   </div>
                 </AccordionTrigger>
                 <AccordionContent className="border-t">
+                  <div className="bg-muted/30 p-4 border-b flex justify-end">
+                    <Button 
+                      size="sm" 
+                      variant="outline" 
+                      className="h-8 text-xs gap-2"
+                      onClick={() => exportToCSV(orphanTransactions, "Ventas_Generales")}
+                    >
+                      <FileSpreadsheet className="h-3 w-3" /> Exportar Ventas (CSV)
+                    </Button>
+                  </div>
                   {renderTransactionTable(orphanTransactions)}
                 </AccordionContent>
               </AccordionItem>
@@ -281,7 +339,7 @@ export default function LedgerPage() {
             <Card className="border-dashed py-20 bg-transparent shadow-none">
               <CardContent className="flex flex-col items-center justify-center text-muted-foreground gap-3">
                  <Receipt className="h-12 w-12 opacity-20" />
-                 <p className="italic">No hay registros financieros en el sistema.</p>
+                 <p className="italic text-sm">No hay registros financieros en el sistema.</p>
                  <Button variant="outline" size="sm" asChild>
                     <a href="/institutional">Ir a Módulo Institucional</a>
                  </Button>
