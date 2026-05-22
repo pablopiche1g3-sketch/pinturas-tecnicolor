@@ -10,14 +10,15 @@ import {
   Truck, 
   Zap, 
   History, 
-  ChevronLeft,
+  ChevronLeft, 
   ChevronRight,
   Palette,
   Package,
   Menu,
   LogOut,
   Loader2,
-  ShieldCheck
+  ShieldCheck,
+  User as UserIcon
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -49,19 +50,22 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const db = useFirestore()
   const { initListeners } = useLedgerStore()
 
-  // Initialize Firebase listeners
+  // Initialize Firebase listeners even if not logged in (will work with public data or locally)
   React.useEffect(() => {
-    if (user && db) {
+    if (db) {
       const unsub = initListeners(db)
       return () => unsub()
     }
-  }, [user, db, initListeners])
+  }, [db, initListeners])
 
+  // REMOVED: Redirect to login logic
+  /*
   React.useEffect(() => {
     if (!loading && !user && pathname !== "/login") {
       router.push("/login")
     }
   }, [user, loading, pathname, router])
+  */
 
   const handleLogout = async () => {
     if (auth) {
@@ -70,6 +74,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Fallback admin logic or custom email check
   const isAdmin = user?.email === 'pablopiche0399@gmail.com'
 
   const getPageTitle = (path: string) => {
@@ -85,7 +90,9 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     }
   }
 
-  if (loading) {
+  // Still show a loader for initial initialization if desired, 
+  // but we won't block the app if there's no user.
+  if (loading && !user && pathname === "/") {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -93,11 +100,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     )
   }
 
-  if (!user && pathname === "/login") {
+  // Skip layout for login page if the user navigates there explicitly
+  if (pathname === "/login") {
     return <>{children}</>
   }
-
-  if (!user) return null
 
   const NavContent = () => (
     <nav className="flex-1 space-y-1 p-4">
@@ -166,14 +172,26 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 <span className="text-[10px] font-bold uppercase text-primary">Modo Administrador</span>
               </div>
             )}
-            <Button 
-              variant="ghost" 
-              className={cn("w-full gap-3 justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10", isCollapsed && "px-2")}
-              onClick={handleLogout}
-            >
-              <LogOut className="h-5 w-5" />
-              {(!isCollapsed || isMobile) && <span>Cerrar Sesión</span>}
-            </Button>
+            {user ? (
+              <Button 
+                variant="ghost" 
+                className={cn("w-full gap-3 justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10", isCollapsed && "px-2")}
+                onClick={handleLogout}
+              >
+                <LogOut className="h-5 w-5" />
+                {(!isCollapsed || isMobile) && <span>Cerrar Sesión</span>}
+              </Button>
+            ) : (
+              <Link href="/login">
+                <Button 
+                  variant="ghost" 
+                  className={cn("w-full gap-3 justify-start text-muted-foreground hover:text-primary hover:bg-primary/10", isCollapsed && "px-2")}
+                >
+                  <UserIcon className="h-5 w-5" />
+                  {(!isCollapsed || isMobile) && <span>Iniciar Sesión</span>}
+                </Button>
+              </Link>
+            )}
           </div>
         </aside>
       )}
@@ -197,14 +215,26 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   </div>
                   <NavContent />
                   <div className="p-4 border-t">
-                    <Button 
-                      variant="ghost" 
-                      className="w-full gap-3 justify-start text-muted-foreground hover:text-destructive"
-                      onClick={handleLogout}
-                    >
-                      <LogOut className="h-5 w-5" />
-                      <span>Cerrar Sesión</span>
-                    </Button>
+                    {user ? (
+                      <Button 
+                        variant="ghost" 
+                        className="w-full gap-3 justify-start text-muted-foreground hover:text-destructive"
+                        onClick={handleLogout}
+                      >
+                        <LogOut className="h-5 w-5" />
+                        <span>Cerrar Sesión</span>
+                      </Button>
+                    ) : (
+                      <Link href="/login" onClick={() => setIsMobileMenuOpen(false)}>
+                        <Button 
+                          variant="ghost" 
+                          className="w-full gap-3 justify-start text-muted-foreground hover:text-primary"
+                        >
+                          <UserIcon className="h-5 w-5" />
+                          <span>Iniciar Sesión</span>
+                        </Button>
+                      </Link>
+                    )}
                   </div>
                 </SheetContent>
               </Sheet>
@@ -215,8 +245,12 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
           <div className="flex items-center gap-2 md:gap-4">
             <div className="hidden sm:flex flex-col items-end">
-              <span className="text-xs font-bold text-foreground truncate max-w-[150px]">{user.email}</span>
-              <span className="text-[10px] text-muted-foreground">{isAdmin ? 'Administrador' : 'Editor'}</span>
+              <span className="text-xs font-bold text-foreground truncate max-w-[150px]">
+                {user ? user.email : 'Acceso Invitado'}
+              </span>
+              <span className="text-[10px] text-muted-foreground">
+                {user ? (isAdmin ? 'Administrador' : 'Editor') : 'Sin Identificar'}
+              </span>
             </div>
             <ThemeToggle />
           </div>
