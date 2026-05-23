@@ -3,6 +3,7 @@ import './globals.css';
 import { Toaster } from "@/components/ui/toaster"
 import { ThemeProvider } from "@/components/theme-provider"
 import { FirebaseClientProvider } from "@/firebase/client-provider"
+import { AuthGuard } from "@/components/auth/AuthGuard"
 
 export const metadata: Metadata = {
   title: 'Pinturas Tecnicolor Institucional | Gestión Financiera',
@@ -29,7 +30,9 @@ export default function RootLayout({
             enableSystem
             disableTransitionOnChange
           >
-            {children}
+            <AuthGuard>
+              {children}
+            </AuthGuard>
             <Toaster />
           </ThemeProvider>
         </FirebaseClientProvider>
