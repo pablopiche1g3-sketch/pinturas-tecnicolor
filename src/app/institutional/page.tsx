@@ -340,7 +340,7 @@ export default function InstitutionalModule() {
 
       addTransaction(db, {
         invoiceNumber: mappedData.invoiceNumber || `DTE-${Date.now()}`,
-        numeroControl: (mappedData as any).numeroControl,
+        numeroControl: (mappedData as any).numeroControl || '',
         issueDate: mappedData.issueDate || new Date().toISOString(),
         entityId: selectedSupplierId,
         entityName: supplier?.name || '',
