@@ -295,7 +295,12 @@ export default function InstitutionalModule() {
   }
 
   const handleSavePurchase = () => {
-    if (!mappedData || !selectedSupplierId || !selectedProjectId || !currentProject) return
+    if (!mappedData || !selectedProjectId || !currentProject) return
+    if (!selectedSupplierId) {
+      toast({ title: "Falta proveedor", description: "Por favor, seleccione el proveedor antes de confirmar el ingreso.", variant: "destructive" })
+      return
+    }
+
     const supplier = suppliers.find(s => s.id === selectedSupplierId)
     const rawItems = mappedData.items || []
     const validItems: TransactionItem[] = []
