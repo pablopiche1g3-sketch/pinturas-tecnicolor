@@ -44,6 +44,7 @@ export type AiActionResponse = {
 
 const aiJsonKeyMapperPrompt = ai.definePrompt({
   name: 'aiJsonKeyMapperPrompt',
+  model: 'googleai/gemini-2.5-flash',
   input: { schema: AiJsonKeyMapperInputSchema },
   output: { schema: AiJsonKeyMapperOutputSchema },
   prompt: `Eres un experto en la normativa de Facturación Electrónica (DTE) de El Salvador, específicamente en la Versión 3.
