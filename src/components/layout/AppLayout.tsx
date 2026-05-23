@@ -125,10 +125,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           <NavContent />
           <div className="p-4 border-t mt-auto">
             {!isCollapsed && (
-              <div className="px-4 py-2 mb-2 rounded-lg bg-primary/5 border border-primary/20 flex items-center gap-2">
-                <ShieldCheck className="h-4 w-4 text-primary" />
-                <span className="text-[10px] font-bold uppercase text-primary">Acceso Libre Habilitado</span>
-              </div>
+              <Button 
+                variant="outline" 
+                className="w-full flex items-center gap-2 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                onClick={async () => {
+                  const { getAuth, signOut } = await import('firebase/auth');
+                  const auth = getAuth();
+                  await signOut(auth);
+                }}
+              >
+                <ShieldCheck className="h-4 w-4" />
+                <span className="text-xs font-bold uppercase">Cerrar Sesión</span>
+              </Button>
             )}
           </div>
         </aside>
