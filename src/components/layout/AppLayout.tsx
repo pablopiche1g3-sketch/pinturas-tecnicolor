@@ -12,7 +12,6 @@ import {
   History, 
   ChevronLeft, 
   ChevronRight,
-  ChevronRight,
   Palette,
   Package,
   Menu,

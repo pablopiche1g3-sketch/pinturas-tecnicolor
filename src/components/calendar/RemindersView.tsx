@@ -29,7 +29,14 @@ export function RemindersView() {
   const db = useFirestore()
   const { toast } = useToast()
   
-  const [date, setDate] = React.useState<Date | undefined>(new Date())
+  const [date, setDate] = React.useState<Date | undefined>()
+  const [mounted, setMounted] = React.useState(false)
+
+  React.useEffect(() => {
+    setDate(new Date())
+    setMounted(true)
+  }, [])
+
   const [isReminderOpen, setIsReminderOpen] = React.useState(false)
   const [newReminder, setNewReminder] = React.useState({
     projectId: '',
@@ -72,6 +79,8 @@ export function RemindersView() {
     addNote(db, newNoteContent.trim())
     setNewNoteContent('')
   }
+
+  if (!mounted) return null
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
