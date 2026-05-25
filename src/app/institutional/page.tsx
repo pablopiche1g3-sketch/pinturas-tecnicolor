@@ -38,7 +38,7 @@ export default function InstitutionalModule() {
   
   const [mounted, setMounted] = React.useState(false)
   const [activeTab, setActiveTab] = React.useState('projects')
-  const [purchaseMode, setPurchaseMode] = React.useState<'ai' | 'manual'>('ai')
+  const [purchaseMode, setPurchaseMode] = React.useState<'ai' | 'manual' | 'internal'>('ai')
   const [selectedProjectId, setSelectedProjectId] = React.useState<string>('')
   const [isProjectDialogOpen, setIsProjectDialogOpen] = React.useState(false)
   const [editingProject, setEditingProject] = React.useState<Project | null>(null)
@@ -404,6 +404,33 @@ export default function InstitutionalModule() {
     toast({ title: "Compra Manual Guardada" })
   }
 
+  const handleSaveInternalTransfer = () => {
+    if (!selectedProjectId) return
+    const subtotal = manualItems.reduce((acc, curr) => acc + curr.lineTotal, 0)
+    // Para traslados internos puede que no aplique el IVA extra, pero si quieren cargarlo como costo real del inventario, lo mantenemos sin IVA extra o lo incluimos. Lo dejaremos como costo directo.
+    // Usaremos el subtotal como costo final para simplificar (o si quieren 13%, se puede dejar, pero usualmente traslados son costo directo).
+    const total = subtotal
+
+    addTransaction(db, {
+      invoiceNumber: `TRASLADO-${Date.now()}`,
+      numeroControl: '',
+      issueDate: new Date().toISOString(),
+      entityId: 'internal_transfer',
+      entityName: 'Traslado Tienda Matriz',
+      projectId: selectedProjectId,
+      type: 'purchase',
+      documentType: 'internal', // Marcador especial
+      items: manualItems,
+      subtotal,
+      taxAmount: 0, // Sin IVA extra contable
+      totalAmount: total,
+      costBasis: total,
+      gain: 0
+    })
+    setManualItems([])
+    toast({ title: "Traslado Interno Registrado", description: "Costo añadido al proyecto." })
+  }
+
   const handleSaveInvoice = (closeProject: boolean) => {
     if (!mappedData || !selectedProjectId || !currentProject) return
     addTransaction(db, {
@@ -659,9 +686,10 @@ export default function InstitutionalModule() {
             <div className="space-y-6">
               <div className="flex justify-center">
                 <Tabs value={purchaseMode} onValueChange={(v: any) => setPurchaseMode(v)} className="w-full max-w-md">
-                  <TabsList className="grid w-full grid-cols-2">
-                    <TabsTrigger value="ai" className="gap-2"><Upload className="h-3 w-3" /> Carga JSON (IA)</TabsTrigger>
-                    <TabsTrigger value="manual" className="gap-2"><Pencil className="h-3 w-3" /> Registro Manual</TabsTrigger>
+                  <TabsList className="grid w-full grid-cols-3">
+                    <TabsTrigger value="ai" className="gap-2"><Upload className="h-3 w-3" /> Carga JSON</TabsTrigger>
+                    <TabsTrigger value="manual" className="gap-2"><Pencil className="h-3 w-3" /> Manual</TabsTrigger>
+                    <TabsTrigger value="internal" className="gap-2"><Package className="h-3 w-3" /> Tienda Matriz</TabsTrigger>
                   </TabsList>
                 </Tabs>
               </div>
@@ -768,7 +796,40 @@ export default function InstitutionalModule() {
                     </CardContent>
                   </Card>
                 </div>
-              )}
+              ) : purchaseMode === 'internal' ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2"><Package className="h-5 w-5 text-primary"/> Traslado desde Tienda Matriz</CardTitle>
+                      <CardDescription>Añada productos que se tomaron del inventario de la tienda matriz sin necesidad de orden de compra o proveedor.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                       <div className="border p-4 rounded-lg bg-muted/20 space-y-3">
+                          <div className="grid grid-cols-2 gap-2">
+                             <Input placeholder="Descripción del producto" className="col-span-2" value={tempManualItem.description} onChange={e => setTempManualItem({...tempManualItem, description: e.target.value})} />
+                             <Input type="number" placeholder="Cant." value={tempManualItem.quantity} onChange={e => setTempManualItem({...tempManualItem, quantity: Number(e.target.value)})} />
+                             <Input type="number" placeholder="Costo Unitario ($)" value={tempManualItem.unitPrice} onChange={e => setTempManualItem({...tempManualItem, unitPrice: Number(e.target.value)})} />
+                          </div>
+                          <Button variant="outline" size="sm" className="w-full" onClick={handleAddManualItem}>Añadir al Traslado</Button>
+                       </div>
+                       <Button className="w-full bg-primary" onClick={handleSaveInternalTransfer} disabled={manualItems.length === 0}>Confirmar Ingreso al Proyecto</Button>
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader><CardTitle className="text-lg">Resumen del Traslado</CardTitle></CardHeader>
+                    <CardContent>
+                       <ScrollArea className="h-[250px] border rounded-lg p-2">
+                          {manualItems.map((it, idx) => (
+                            <div key={idx} className="flex justify-between p-2 border-b text-[10px]">
+                               <span>{it.description} (x{it.quantity})</span>
+                               <span className="font-bold">${it.lineTotal.toFixed(2)}</span>
+                            </div>
+                          ))}
+                       </ScrollArea>
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : null}
             </div>
           )}
         </TabsContent>
