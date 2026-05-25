@@ -194,32 +194,22 @@ export default function InstitutionalModule() {
     const projectTxs = transactions.filter(t => t.projectId === p.id && t.type === 'purchase' && !t.isVoided)
     const allPurchasedItems = projectTxs.flatMap(t => t.items)
 
-    let csvContent = "Código;Descripción;Cant. Venta;Precio Venta;Total Venta;Cant. Comprada;Costo Promedio;Total Costo;Ganancia ($);Margen (%)\n"
+    let csvContent = "Descripción del producto;Costo de compra;Costo de venta\n"
     
-    let sumTotalSale = 0
-    let sumTotalCost = 0
-
     p.expectedProducts.forEach(ep => {
       const purchased = allPurchasedItems.filter(i => i.code === ep.code || (i.description && ep.description && i.description.toLowerCase().includes(ep.description.toLowerCase())))
       const qtyPurchased = purchased.reduce((acc, curr) => acc + curr.quantity, 0)
       const totalCost = purchased.reduce((acc, curr) => acc + curr.lineTotal, 0)
       const avgCost = qtyPurchased > 0 ? totalCost / qtyPurchased : 0
       
-      const totalSale = ep.quantity * (ep.unitPrice || 0)
-      const gain = totalSale - totalCost
-      const margin = totalSale > 0 ? (gain / totalSale) * 100 : 0
-      
-      sumTotalSale += totalSale
-      sumTotalCost += totalCost
-
-      csvContent += `"${ep.code || 'S/C'}";"${ep.description}";${ep.quantity};${(ep.unitPrice || 0).toFixed(2).replace('.', ',')};${totalSale.toFixed(2).replace('.', ',')};${qtyPurchased};${avgCost.toFixed(2).replace('.', ',')};${totalCost.toFixed(2).replace('.', ',')};${gain.toFixed(2).replace('.', ',')};${margin.toFixed(2).replace('.', ',')}%\n`
+      csvContent += `"${ep.description}";${avgCost.toFixed(2).replace('.', ',')};${(ep.unitPrice || 0).toFixed(2).replace('.', ',')}\n`
     })
 
     const unmatched = allPurchasedItems.filter(i => !p.expectedProducts.some(ep => ep.code === i.code || (i.description && ep.description && i.description.toLowerCase().includes(ep.description.toLowerCase()))))
     
     const groupedUnmatched = unmatched.reduce((acc, curr) => {
       const key = curr.code || curr.description || 'unknown'
-      if (!acc[key]) acc[key] = { code: curr.code, description: curr.description, qty: 0, totalCost: 0 }
+      if (!acc[key]) acc[key] = { description: curr.description, qty: 0, totalCost: 0 }
       acc[key].qty += curr.quantity
       acc[key].totalCost += curr.lineTotal
       return acc
@@ -227,15 +217,8 @@ export default function InstitutionalModule() {
 
     Object.values(groupedUnmatched).forEach((u: any) => {
       const avgCost = u.qty > 0 ? u.totalCost / u.qty : 0
-      const gain = 0 - u.totalCost 
-      sumTotalCost += u.totalCost
-
-      csvContent += `"${u.code || 'S/C'}";"${u.description} (FUERA DE OC)";0;0,00;0,00;${u.qty};${avgCost.toFixed(2).replace('.', ',')};${u.totalCost.toFixed(2).replace('.', ',')};${gain.toFixed(2).replace('.', ',')};N/A\n`
+      csvContent += `"${u.description} (Extra)";${avgCost.toFixed(2).replace('.', ',')};0,00\n`
     })
-
-    const totalGain = sumTotalSale - sumTotalCost
-    const totalMargin = sumTotalSale > 0 ? (totalGain / sumTotalSale) * 100 : 0
-    csvContent += `\n"TOTALES";"";"";"";${sumTotalSale.toFixed(2).replace('.', ',')};"";"";${sumTotalCost.toFixed(2).replace('.', ',')};${totalGain.toFixed(2).replace('.', ',')};${totalMargin.toFixed(2).replace('.', ',')}%\n`
 
     const BOM = "\uFEFF"
     const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' })
@@ -243,7 +226,7 @@ export default function InstitutionalModule() {
     link.href = URL.createObjectURL(blob)
     link.download = `rentabilidad_${p.name.replace(/\s+/g, '_')}.csv`
     link.click()
-    toast({ title: "Excel Exportado", description: "El reporte de rentabilidad se ha descargado." })
+    toast({ title: "Excel Exportado", description: "El reporte simplificado se ha descargado." })
   }
 
   // Document Management
