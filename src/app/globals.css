@@ -64,3 +64,69 @@
 .font-code {
   font-family: 'Source Code Pro', monospace;
 }
+  
+  .theme-emerald {  
+    --background: 160 50% 10%;  
+    --foreground: 160 40% 98%;  
+    --card: 160 50% 12%;  
+    --card-foreground: 160 40% 98%;  
+    --popover: 160 50% 12%;  
+    --popover-foreground: 160 40% 98%;  
+    --primary: 150 90% 45%;  
+    --primary-foreground: 160 50% 10%;  
+    --secondary: 160 30% 20%;  
+    --secondary-foreground: 160 40% 98%;  
+    --muted: 160 30% 20%;  
+    --muted-foreground: 160 20% 65%;  
+    --accent: 150 90% 45%;  
+    --accent-foreground: 160 40% 98%;  
+    --destructive: 0 62.8% 30.6%;  
+    --destructive-foreground: 160 40% 98%;  
+    --border: 160 30% 20%;  
+    --input: 160 30% 20%;  
+    --ring: 150 90% 45%;  
+  } 
+
+  .theme-rose {
+    --background: 350 40% 10%;
+    --foreground: 350 40% 98%;
+    --card: 350 40% 12%;
+    --card-foreground: 350 40% 98%;
+    --popover: 350 40% 12%;
+    --popover-foreground: 350 40% 98%;
+    --primary: 345 85% 55%;
+    --primary-foreground: 350 40% 98%;
+    --secondary: 350 30% 20%;
+    --secondary-foreground: 350 40% 98%;
+    --muted: 350 30% 20%;
+    --muted-foreground: 350 20% 65%;
+    --accent: 345 85% 55%;
+    --accent-foreground: 350 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 350 40% 98%;
+    --border: 350 30% 20%;
+    --input: 350 30% 20%;
+    --ring: 345 85% 55%;
+  }
+
+  .theme-amber {
+    --background: 25 40% 10%;
+    --foreground: 25 40% 98%;
+    --card: 25 40% 12%;
+    --card-foreground: 25 40% 98%;
+    --popover: 25 40% 12%;
+    --popover-foreground: 25 40% 98%;
+    --primary: 35 95% 55%;
+    --primary-foreground: 25 40% 10%;
+    --secondary: 25 30% 20%;
+    --secondary-foreground: 25 40% 98%;
+    --muted: 25 30% 20%;
+    --muted-foreground: 25 20% 65%;
+    --accent: 35 95% 55%;
+    --accent-foreground: 25 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 25 40% 98%;
+    --border: 25 30% 20%;
+    --input: 25 30% 20%;
+    --ring: 35 95% 55%;
+  }
