@@ -536,16 +536,17 @@ export default function InstitutionalModule() {
 
                         <div className="space-y-4">
                           <h4 className="font-bold text-xs uppercase text-muted-foreground">Productos de la OC</h4>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             <Input className="h-8 text-xs" placeholder="Código SV" value={tempProduct.code} onChange={e => setTempProduct({...tempProduct, code: e.target.value})} />
                             <Input className="h-8 text-xs" type="number" placeholder="Cantidad" value={tempProduct.quantity} onChange={e => setTempProduct({...tempProduct, quantity: Number(e.target.value)})} />
-                            <Input className="sm:col-span-2 h-8 text-xs" placeholder="Descripción del producto" value={tempProduct.description} onChange={e => setTempProduct({...tempProduct, description: e.target.value})} />
+                            <Input className="h-8 text-xs" type="number" placeholder="Precio Venta ($)" value={tempProduct.unitPrice || ''} onChange={e => setTempProduct({...tempProduct, unitPrice: Number(e.target.value)})} />
+                            <Input className="sm:col-span-3 h-8 text-xs" placeholder="Descripción del producto" value={tempProduct.description} onChange={e => setTempProduct({...tempProduct, description: e.target.value})} />
                           </div>
                           <Button variant="outline" size="sm" className="w-full h-8 text-xs" onClick={handleAddProductToProject}>Añadir Item</Button>
                           <ScrollArea className="h-[120px] rounded border bg-muted/20 p-2">
                             {newProjectProducts.map((p, idx) => (
                               <div key={idx} className="flex justify-between items-center text-[10px] py-1 border-b">
-                                <span className="truncate pr-2">{p.code} - {p.description} (x{p.quantity})</span>
+                                <span className="truncate pr-2">{p.code} - {p.description} (x{p.quantity} @ ${p.unitPrice})</span>
                                 <Button variant="ghost" size="icon" className="h-4 w-4 shrink-0" onClick={() => setNewProjectProducts(newProjectProducts.filter((_, i) => i !== idx))}><Trash2 className="h-3 w-3" /></Button>
                               </div>
                             ))}
