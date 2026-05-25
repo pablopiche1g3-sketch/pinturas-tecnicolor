@@ -3,6 +3,7 @@
 
 import * as React from "react"
 import { AppLayout } from "@/components/layout/AppLayout"
+import { RemindersView } from "@/components/calendar/RemindersView"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -20,7 +21,7 @@ import {
 } from "@/components/ui/dialog"
 import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project, type ProjectDocument } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput, type AiActionResponse } from "@/ai/flows/ai-json-key-mapper"
-import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download } from "lucide-react"
+import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Calendar as CalendarIcon } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -515,8 +516,13 @@ export default function InstitutionalModule() {
             <TabsTrigger value="purchases" className="gap-2 whitespace-nowrap"><Upload className="h-4 w-4" /> Compras DTE V3</TabsTrigger>
             <TabsTrigger value="voided" className="gap-2 whitespace-nowrap"><XCircle className="h-4 w-4" /> Anulaciones</TabsTrigger>
             <TabsTrigger value="comparison" className="gap-2 whitespace-nowrap"><Calculator className="h-4 w-4" /> Conciliación</TabsTrigger>
+            <TabsTrigger value="calendar" className="gap-2 whitespace-nowrap"><CalendarIcon className="h-4 w-4" /> Calendario y Notas</TabsTrigger>
           </TabsList>
         </div>
+
+        <TabsContent value="calendar">
+          <RemindersView />
+        </TabsContent>
 
         <TabsContent value="projects">
           <div className="space-y-6">

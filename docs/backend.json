@@ -38,6 +38,30 @@
         "email": { "type": "string", "format": "email" },
         "role": { "type": "string", "enum": ["admin", "editor"] }
       }
+    },
+    "Reminder": {
+      "title": "Recordatorio",
+      "description": "Recordatorios o eventos programados.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "date": { "type": "string", "format": "date-time" },
+        "isCompleted": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "date"]
+    },
+    "Note": {
+      "title": "Nota",
+      "description": "Nota rápida tipo bloc de notas.",
+      "type": "object",
+      "properties": {
+        "content": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["content"]
     }
   },
   "auth": {
@@ -55,6 +79,14 @@
     "/users/{userId}": {
       "schema": "#/backend/entities/AppUser",
       "description": "Perfiles de usuarios autorizados."
+    },
+    "/reminders/{reminderId}": {
+      "schema": "#/backend/entities/Reminder",
+      "description": "Colección de recordatorios."
+    },
+    "/notes/{noteId}": {
+      "schema": "#/backend/entities/Note",
+      "description": "Bloc de notas global."
     }
   }
 }

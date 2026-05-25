@@ -62,6 +62,23 @@ export interface Project {
   status: 'active' | 'completed';
 }
 
+export interface Reminder {
+  id: string;
+  projectId: string;
+  projectName?: string;
+  title: string;
+  description: string;
+  date: string;
+  isCompleted: boolean;
+  createdAt: string;
+}
+
+export interface Note {
+  id: string;
+  content: string;
+  createdAt: string;
+}
+
 export interface TransactionItem {
   code?: string;
   description: string;
@@ -98,6 +115,8 @@ interface LedgerState {
   projects: Project[];
   transactions: Transaction[];
   inventory: InventoryItem[];
+  reminders: Reminder[];
+  notes: Note[];
   loading: boolean;
 }
 
@@ -115,6 +134,11 @@ interface LedgerActions {
   removeFromInventory: (db: Firestore, id: string) => void;
   addDocumentToProject: (db: Firestore, projectId: string, document: Omit<ProjectDocument, 'id' | 'createdAt'>) => void;
   deleteDocumentFromProject: (db: Firestore, projectId: string, documentId: string) => void;
+  addReminder: (db: Firestore, reminder: Omit<Reminder, 'id' | 'createdAt' | 'isCompleted'>) => void;
+  updateReminder: (db: Firestore, id: string, updates: Partial<Reminder>) => void;
+  deleteReminder: (db: Firestore, id: string) => void;
+  addNote: (db: Firestore, content: string) => void;
+  deleteNote: (db: Firestore, id: string) => void;
 }
 
 export const useLedgerStore = create<LedgerState & LedgerActions>((set, get) => ({
@@ -122,6 +146,8 @@ export const useLedgerStore = create<LedgerState & LedgerActions>((set, get) => 
   projects: [],
   transactions: [],
   inventory: [],
+  reminders: [],
+  notes: [],
   loading: true,
 
   initListeners: (db: Firestore) => {
@@ -145,11 +171,25 @@ export const useLedgerStore = create<LedgerState & LedgerActions>((set, get) => 
       set({ inventory, loading: false });
     });
 
+    const unsubReminders = onSnapshot(collection(db, 'reminders'), (snapshot) => {
+      const reminders = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Reminder));
+      set({ reminders });
+    });
+
+    const unsubNotes = onSnapshot(collection(db, 'notes'), (snapshot) => {
+      const notes = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Note));
+      // Sort notes descending by default
+      notes.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      set({ notes });
+    });
+
     return () => {
       unsubEntities();
       unsubProjects();
       unsubTransactions();
       unsubInventory();
+      unsubReminders();
+      unsubNotes();
     };
   },
 
@@ -235,5 +275,32 @@ export const useLedgerStore = create<LedgerState & LedgerActions>((set, get) => 
     updateDoc(doc(db, 'projects', projectId), {
       documents: project.documents.filter(d => d.id !== documentId)
     });
+  },
+
+  addReminder: (db, reminder) => {
+    addDoc(collection(db, 'reminders'), {
+      ...reminder,
+      isCompleted: false,
+      createdAt: new Date().toISOString()
+    });
+  },
+
+  updateReminder: (db, id, updates) => {
+    updateDoc(doc(db, 'reminders', id), updates);
+  },
+
+  deleteReminder: (db, id) => {
+    deleteDoc(doc(db, 'reminders', id));
+  },
+
+  addNote: (db, content) => {
+    addDoc(collection(db, 'notes'), {
+      content,
+      createdAt: new Date().toISOString()
+    });
+  },
+
+  deleteNote: (db, id) => {
+    deleteDoc(doc(db, 'notes', id));
   },
 }));
