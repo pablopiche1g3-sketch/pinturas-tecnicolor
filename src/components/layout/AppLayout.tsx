@@ -12,10 +12,12 @@ import {
   History, 
   ChevronLeft, 
   ChevronRight,
+  ChevronRight,
   Palette,
   Package,
   Menu,
-  ShieldCheck
+  ShieldCheck,
+  CalendarDays
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -29,6 +31,7 @@ const navItems = [
   { label: "Panel de Control", icon: LayoutDashboard, href: "/" },
   { label: "Institucional", icon: Zap, href: "/institutional", highlight: true },
   { label: "Inventario Global", icon: Package, href: "/inventory" },
+  { label: "Calendario", icon: CalendarDays, href: "/calendar" },
   { label: "Proveedores", icon: Truck, href: "/suppliers" },
   { label: "Clientes", icon: Users, href: "/customers" },
   { label: "Libro Mayor", icon: History, href: "/ledger" },
@@ -56,6 +59,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       case "/": return "Panel de Control";
       case "/institutional": return "Gestión Institucional";
       case "/inventory": return "Inventario de Excedentes";
+      case "/calendar": return "Calendario y Notas";
       case "/suppliers": return "Directorio de Proveedores";
       case "/customers": return "Directorio de Clientes";
       case "/ledger": return "Libro de Transacciones";
