@@ -92,7 +92,25 @@ export async function aiJsonKeyMapper(input: AiJsonKeyMapperInput): Promise<AiAc
       return { success: false, error: 'El contenido del archivo JSON está vacío.' };
     }
 
-    const { output } = await aiJsonKeyMapperPrompt(input);
+    let output = null;
+    let attempts = 0;
+    const maxAttempts = 3;
+
+    while (attempts < maxAttempts) {
+      try {
+        const result = await aiJsonKeyMapperPrompt(input);
+        output = result.output;
+        break; // Exito
+      } catch (promptError: any) {
+        attempts++;
+        console.warn(`Intento ${attempts} fallido:`, promptError.message);
+        if (attempts >= maxAttempts) {
+          throw promptError;
+        }
+        // Esperar antes del siguiente intento (e.g. 1000ms, 2000ms)
+        await new Promise(resolve => setTimeout(resolve, attempts * 1000));
+      }
+    }
     
     if (!output) {
       return { success: false, error: 'La IA no pudo procesar este archivo. Asegúrese de que sea un DTE V3 válido.' };
