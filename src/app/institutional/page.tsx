@@ -269,6 +269,10 @@ export default function InstitutionalModule() {
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) {
+      if (file.type !== "application/json" && !file.name.endsWith('.json')) {
+        toast({ title: "Formato no válido", description: "Solo se permiten archivos JSON.", variant: "destructive" })
+        return
+      }
       const reader = new FileReader()
       reader.onload = (event) => {
         const content = event.target?.result as string
@@ -283,15 +287,18 @@ export default function InstitutionalModule() {
     e.preventDefault()
     setIsDragging(false)
     const file = e.dataTransfer.files?.[0]
-    if (file && (file.type === "application/json" || file.name.endsWith('.json'))) {
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        const content = event.target?.result as string
-        setJsonInput(content)
-        handleProcessData(content)
-      }
-      reader.readAsText(file)
+    if (!file) return
+    if (file.type !== "application/json" && !file.name.endsWith('.json')) {
+      toast({ title: "Formato no válido", description: "Solo se permiten archivos JSON.", variant: "destructive" })
+      return
     }
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const content = event.target?.result as string
+      setJsonInput(content)
+      handleProcessData(content)
+    }
+    reader.readAsText(file)
   }
 
   const handleSavePurchase = () => {
@@ -397,7 +404,7 @@ export default function InstitutionalModule() {
     toast({ title: "Compra Manual Guardada" })
   }
 
-  const handleSaveFinalInvoice = () => {
+  const handleSaveInvoice = (closeProject: boolean) => {
     if (!mappedData || !selectedProjectId || !currentProject) return
     addTransaction(db, {
       invoiceNumber: mappedData.invoiceNumber || `INV-${Date.now()}`,
@@ -414,8 +421,13 @@ export default function InstitutionalModule() {
       costBasis: projectCosts,
       gain: (mappedData.totalAmount || 0) - projectCosts
     })
+    
+    if (closeProject) {
+      updateProject(db, selectedProjectId, { status: 'completed' })
+    }
+    
     setMappedData(null)
-    toast({ title: "Factura Registrada" })
+    toast({ title: closeProject ? "Proyecto Cerrado y Factura Registrada" : "Factura Parcial Registrada" })
   }
 
   const handleVoidTransaction = () => {
@@ -767,7 +779,10 @@ export default function InstitutionalModule() {
                 <CardHeader><CardTitle className="text-lg">Anular Transacción</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
                   <div 
-                    className="border-2 border-dashed rounded-xl p-6 flex flex-col items-center gap-3 cursor-pointer bg-muted/50"
+                    className={cn("border-2 border-dashed rounded-xl p-6 flex flex-col items-center gap-3 cursor-pointer", isDragging ? "bg-primary/5 border-primary" : "bg-muted/50")}
+                    onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                    onDragLeave={() => setIsDragging(false)}
+                    onDrop={handleDrop}
                     onClick={() => fileInputVoidRef.current?.click()}
                   >
                     <input type="file" ref={fileInputVoidRef} className="hidden" accept=".json" onChange={handleFileUpload} />
@@ -813,7 +828,13 @@ export default function InstitutionalModule() {
                 <Card>
                    <CardHeader><CardTitle className="text-lg">Cargar Venta Emitida</CardTitle></CardHeader>
                    <CardContent className="space-y-6">
-                      <div className="border-2 border-dashed rounded-xl p-8 flex flex-col items-center gap-4 cursor-pointer" onClick={() => fileInputEmitRef.current?.click()}>
+                      <div 
+                        className={cn("border-2 border-dashed rounded-xl p-8 flex flex-col items-center gap-4 cursor-pointer", isDragging ? "bg-primary/5 border-primary" : "border-border")}
+                        onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+                        onDragLeave={() => setIsDragging(false)}
+                        onDrop={handleDrop}
+                        onClick={() => fileInputEmitRef.current?.click()}
+                      >
                         <input type="file" ref={fileInputEmitRef} className="hidden" accept=".json" onChange={handleFileUpload} />
                         <ReceiptText className="h-10 w-10 text-primary" />
                         <p className="text-sm font-bold">Arrastrar Factura de Venta</p>
@@ -830,7 +851,10 @@ export default function InstitutionalModule() {
                               <div className="flex justify-between"><span>Venta Emitida:</span><span className="font-bold">${mappedData.totalAmount?.toFixed(2)}</span></div>
                               <div className="flex justify-between"><span>Objetivo OC:</span><span>${currentProject?.targetSaleAmount.toFixed(2)}</span></div>
                            </div>
-                           <Button className="w-full bg-primary" onClick={handleSaveFinalInvoice}>Cerrar Proyecto y Guardar</Button>
+                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                             <Button variant="outline" className="w-full" onClick={() => handleSaveInvoice(false)}>Guardar Parcial</Button>
+                             <Button className="w-full bg-primary" onClick={() => handleSaveInvoice(true)}>Cerrar Proyecto y Guardar</Button>
+                           </div>
                         </div>
                       ) : <div className="py-20 text-center opacity-40 italic text-xs">Cargue el DTE de venta.</div>}
                    </CardContent>
