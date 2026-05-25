@@ -9,6 +9,14 @@ export const metadata: Metadata = {
   title: 'Pinturas Tecnicolor Institucional | Gestión Financiera',
   description: 'Sistema de gestión de proyectos y conciliación DTE para Pinturas Tecnicolor.',
   manifest: '/manifest.json',
+  icons: {
+    apple: '/icon-192x192.png',
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Tecnicolor',
+  },
 };
 
 export default function RootLayout({
