@@ -759,7 +759,7 @@ export default function InstitutionalModule() {
                     </CardContent>
                   </Card>
                 </div>
-              ) : (
+              ) : purchaseMode === 'manual' ? (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   <Card>
                     <CardHeader><CardTitle className="text-lg">Ingreso Manual</CardTitle></CardHeader>
