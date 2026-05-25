@@ -68,15 +68,15 @@ export default function LedgerPage() {
         t.invoiceNumber,
         t.numeroControl || "N/A",
         `"${t.entityName}"`,
-        t.subtotal.toFixed(2),
-        t.taxAmount.toFixed(2),
-        t.totalAmount.toFixed(2),
-        t.type === 'sale' ? t.gain.toFixed(2) : t.costBasis.toFixed(2),
+        t.subtotal.toFixed(2).replace('.', ','),
+        t.taxAmount.toFixed(2).replace('.', ','),
+        t.totalAmount.toFixed(2).replace('.', ','),
+        (t.type === 'sale' ? t.gain.toFixed(2) : t.costBasis.toFixed(2)).replace('.', ','),
         t.isVoided ? `Anulada (${t.voidReason})` : 'Válida'
-      ].join(",");
+      ].join(";");
     });
 
-    const csvContent = "\uFEFF" + [headers.join(","), ...rows].join("\n");
+    const csvContent = "\uFEFF" + [headers.join(";"), ...rows].join("\n");
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
