@@ -5,17 +5,16 @@ import { useRouter, usePathname } from "next/navigation"
 import { useUser } from "@/firebase/auth/use-user"
 import { useRemindersNotifications } from "@/hooks/use-reminders-notifications"
 
+function NotificationsRunner() {
+  useRemindersNotifications()
+  return null
+}
+
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { user, loading } = useUser()
   const router = useRouter()
   const pathname = usePathname()
   
-  // Inicializar notificaciones globales solo si hay usuario logueado
-  if (user) {
-    // eslint-disable-next-line react-hooks/rules-of-hooks
-    useRemindersNotifications()
-  }
-
   useEffect(() => {
     if (!loading && !user && pathname !== "/login") {
       router.push("/login")
@@ -36,5 +35,10 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     return null
   }
 
-  return <>{children}</>
+  return (
+    <>
+      {user && <NotificationsRunner />}
+      {children}
+    </>
+  )
 }
