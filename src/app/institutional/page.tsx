@@ -1021,9 +1021,24 @@ export default function InstitutionalModule() {
               [role="dialog"]:not(.dte-visualizer-modal) {
                 display: none !important;
               }
+              /* Hide Radix Portal overlays and sibling wrappers to prevent extra blank pages */
+              [data-radix-portal] > div:not(.dte-visualizer-modal), 
+              [data-radix-focus-guard], 
+              button[aria-label="Close"], 
+              .no-print {
+                display: none !important;
+              }
               /* Show ONLY our specific DTE modal and its content, preserving table/grid/flex displays */
               .dte-visualizer-modal, .dte-visualizer-modal * {
                 visibility: visible !important;
+              }
+              /* Force html/body to flow naturally without vh boundaries to avoid blank pages */
+              html, body {
+                height: auto !important;
+                min-height: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                background: white !important;
               }
               /* Reset only our DTE dialog positioning and force white print styles */
               .dte-visualizer-modal {
@@ -1041,7 +1056,7 @@ export default function InstitutionalModule() {
                 box-shadow: none !important;
                 background: white !important;
                 color: black !important;
-                display: block !important; /* Force block layout only on the outermost modal wrapper */
+                display: block !important;
                 overflow: visible !important;
               }
               #dte-print-area {
@@ -1060,10 +1075,6 @@ export default function InstitutionalModule() {
                 background: transparent !important;
                 color: black !important;
                 border-color: #e2e8f0 !important;
-              }
-              /* Hide Radix Close button and overlay, plus footer */
-              button[aria-label="Close"], .no-print, [data-radix-focus-guard] {
-                display: none !important;
               }
             }
           `}} />
