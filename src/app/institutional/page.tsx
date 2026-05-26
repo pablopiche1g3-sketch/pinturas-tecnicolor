@@ -1017,8 +1017,8 @@ export default function InstitutionalModule() {
               body * {
                 visibility: hidden !important;
               }
-              /* Explicitly hide any other active dialogs/modals */
-              [role="dialog"] {
+              /* Explicitly hide any other active dialogs/modals except our DTE modal */
+              [role="dialog"]:not(.dte-visualizer-modal) {
                 display: none !important;
               }
               /* Show ONLY our specific DTE modal and its content, preserving table/grid/flex displays */
@@ -1041,6 +1041,7 @@ export default function InstitutionalModule() {
                 box-shadow: none !important;
                 background: white !important;
                 color: black !important;
+                display: block !important; /* Force block layout only on the outermost modal wrapper */
               }
               #dte-print-area {
                 position: absolute !important;
