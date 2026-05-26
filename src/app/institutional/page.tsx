@@ -922,9 +922,10 @@ export default function InstitutionalModule() {
                        </Select>
                        <div className="border p-4 rounded-lg bg-muted/20 space-y-3">
                           <div className="grid grid-cols-2 gap-2">
-                             <Input placeholder="Descripción" className="col-span-2" value={tempManualItem.description} onChange={e => setTempManualItem({...tempManualItem, description: e.target.value})} />
+                             <Input placeholder="Código del producto" className="col-span-2" value={tempManualItem.code} onChange={e => setTempManualItem({...tempManualItem, code: e.target.value})} />
+                             <Input placeholder="Descripción del producto" className="col-span-2" value={tempManualItem.description} onChange={e => setTempManualItem({...tempManualItem, description: e.target.value})} />
                              <Input type="number" placeholder="Cant." value={tempManualItem.quantity} onChange={e => setTempManualItem({...tempManualItem, quantity: Number(e.target.value)})} />
-                             <Input type="number" placeholder="Precio" value={tempManualItem.unitPrice} onChange={e => setTempManualItem({...tempManualItem, unitPrice: Number(e.target.value)})} />
+                             <Input type="number" placeholder="Precio ($)" value={tempManualItem.unitPrice} onChange={e => setTempManualItem({...tempManualItem, unitPrice: Number(e.target.value)})} />
                           </div>
                           <Button variant="outline" size="sm" className="w-full" onClick={handleAddManualItem}>Añadir Item</Button>
                        </div>
@@ -937,7 +938,7 @@ export default function InstitutionalModule() {
                        <ScrollArea className="h-[250px] border rounded-lg p-2">
                           {manualItems.map((it, idx) => (
                             <div key={idx} className="flex justify-between p-2 border-b text-[10px]">
-                               <span>{it.description} (x{it.quantity})</span>
+                               <span>{it.code ? `[${it.code}] ` : ''}{it.description} (x{it.quantity})</span>
                                <span className="font-bold">${it.lineTotal.toFixed(2)}</span>
                             </div>
                           ))}
@@ -955,6 +956,7 @@ export default function InstitutionalModule() {
                     <CardContent className="space-y-4">
                        <div className="border p-4 rounded-lg bg-muted/20 space-y-3">
                           <div className="grid grid-cols-2 gap-2">
+                             <Input placeholder="Código del producto" className="col-span-2" value={tempManualItem.code} onChange={e => setTempManualItem({...tempManualItem, code: e.target.value})} />
                              <Input placeholder="Descripción del producto" className="col-span-2" value={tempManualItem.description} onChange={e => setTempManualItem({...tempManualItem, description: e.target.value})} />
                              <Input type="number" placeholder="Cant." value={tempManualItem.quantity} onChange={e => setTempManualItem({...tempManualItem, quantity: Number(e.target.value)})} />
                              <Input type="number" placeholder="Costo Unitario ($)" value={tempManualItem.unitPrice} onChange={e => setTempManualItem({...tempManualItem, unitPrice: Number(e.target.value)})} />
@@ -970,7 +972,7 @@ export default function InstitutionalModule() {
                        <ScrollArea className="h-[250px] border rounded-lg p-2">
                           {manualItems.map((it, idx) => (
                             <div key={idx} className="flex justify-between p-2 border-b text-[10px]">
-                               <span>{it.description} (x{it.quantity})</span>
+                               <span>{it.code ? `[${it.code}] ` : ''}{it.description} (x{it.quantity})</span>
                                <span className="font-bold">${it.lineTotal.toFixed(2)}</span>
                             </div>
                           ))}
