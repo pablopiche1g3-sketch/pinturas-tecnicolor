@@ -545,9 +545,10 @@ export default function InstitutionalModule() {
                   </DialogHeader>
                   
                   <Tabs defaultValue="general" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2 mb-4">
-                      <TabsTrigger value="general">Información General</TabsTrigger>
-                      <TabsTrigger value="documents">Documentos (PDF)</TabsTrigger>
+                    <TabsList className="grid w-full grid-cols-3 mb-4">
+                      <TabsTrigger value="general" className="text-xs">General</TabsTrigger>
+                      <TabsTrigger value="history" className="text-xs">Historial DTE</TabsTrigger>
+                      <TabsTrigger value="documents" className="text-xs">Docs (PDF)</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="general" className="space-y-6">
@@ -593,6 +594,39 @@ export default function InstitutionalModule() {
                           </ScrollArea>
                         </div>
                       </div>
+                    </TabsContent>
+
+                    <TabsContent value="history" className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-foreground">Historial de Facturas (JSON)</h4>
+                      </div>
+                      <ScrollArea className="h-[300px] rounded-lg border bg-muted/30 p-4">
+                        {transactions.filter(t => t.projectId === editingProject?.id).length > 0 ? (
+                          <div className="space-y-3">
+                            {transactions.filter(t => t.projectId === editingProject?.id).map((tx) => (
+                              <div key={tx.id} className="flex flex-col p-3 bg-card rounded-lg border shadow-sm group">
+                                <div className="flex justify-between items-center mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <ReceiptText className={cn("h-4 w-4", tx.type === 'purchase' ? "text-blue-500" : "text-green-500")} />
+                                    <span className="text-xs font-bold">{tx.invoiceNumber}</span>
+                                    <Badge variant="outline" className="text-[9px]">{tx.documentType === '03' ? 'CCF' : tx.documentType === '01' ? 'FAC' : 'DTE'}</Badge>
+                                  </div>
+                                  <span className="text-xs font-bold text-foreground">${tx.totalAmount.toFixed(2)}</span>
+                                </div>
+                                <div className="flex justify-between text-[10px] text-muted-foreground">
+                                  <span className="truncate max-w-[200px]">{tx.entityName}</span>
+                                  <span>{new Date(tx.issueDate).toLocaleDateString()}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="flex flex-col items-center justify-center h-full text-muted-foreground opacity-50 space-y-2 py-10">
+                            <ReceiptText className="h-10 w-10" />
+                            <p className="text-xs italic">No hay facturas procesadas en este proyecto.</p>
+                          </div>
+                        )}
+                      </ScrollArea>
                     </TabsContent>
 
                     <TabsContent value="documents" className="space-y-4">
