@@ -617,7 +617,7 @@ export default function InstitutionalModule() {
                                     <span className="text-xs font-bold">{tx.invoiceNumber}</span>
                                     <Badge variant="outline" className="text-[9px]">{tx.documentType === '03' ? 'CCF' : tx.documentType === '01' ? 'FAC' : 'DTE'}</Badge>
                                   </div>
-                                  <span className="text-xs font-bold text-foreground">${tx.totalAmount.toFixed(2)}</span>
+                                  <span className="text-xs font-bold text-foreground">${tx.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                                 </div>
                                 <div className="flex justify-between text-[10px] text-muted-foreground">
                                   <span className="truncate max-w-[200px]">{tx.entityName}</span>
@@ -1131,8 +1131,8 @@ export default function InstitutionalModule() {
                           <td className="p-2 text-gray-700">{item.quantity}</td>
                           <td className="p-2 font-mono text-[10px] text-gray-500">{item.code || 'S/C'}</td>
                           <td className="p-2 font-medium text-gray-800">{item.description}</td>
-                          <td className="p-2 text-right text-gray-700">${item.unitPrice.toFixed(2)}</td>
-                          <td className="p-2 text-right font-bold text-gray-800">${item.lineTotal.toFixed(2)}</td>
+                          <td className="p-2 text-right text-gray-700">${item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="p-2 text-right font-bold text-gray-800">${item.lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1144,27 +1144,27 @@ export default function InstitutionalModule() {
                   <div className="w-[250px] space-y-1.5 border p-3 rounded-lg bg-gray-50/50 text-[11px]">
                     <div className="flex justify-between text-gray-600">
                       <span>Subtotal:</span>
-                      <span>${viewingInvoice.subtotal.toFixed(2)}</span>
+                      <span>${viewingInvoice.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     <div className="flex justify-between text-gray-600">
                       <span>IVA (13%):</span>
-                      <span>${viewingInvoice.taxAmount.toFixed(2)}</span>
+                      <span>${viewingInvoice.taxAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     {viewingInvoice.retentionAmount && viewingInvoice.retentionAmount > 0 && (
                       <div className="flex justify-between text-gray-600">
                         <span>Retención (1%):</span>
-                        <span className="text-red-500 text-right">-${viewingInvoice.retentionAmount.toFixed(2)}</span>
+                        <span className="text-red-500 text-right">-${viewingInvoice.retentionAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                     )}
                     {viewingInvoice.perceptionAmount && viewingInvoice.perceptionAmount > 0 && (
                       <div className="flex justify-between text-gray-600">
                         <span>Percepción (1%):</span>
-                        <span className="text-green-600 text-right">+${viewingInvoice.perceptionAmount.toFixed(2)}</span>
+                        <span className="text-green-600 text-right">+${viewingInvoice.perceptionAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                     )}
                     <div className="flex justify-between text-sm font-black text-gray-900 border-t pt-1.5">
                       <span>TOTAL A PAGAR:</span>
-                      <span>${viewingInvoice.totalAmount.toFixed(2)}</span>
+                      <span>${viewingInvoice.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                   </div>
                 </div>
