@@ -705,6 +705,8 @@ export default function InstitutionalModule() {
                     p.status === 'completed' && "opacity-80 grayscale-[0.5]"
                   )}
                   onClick={() => setSelectedProjectId(p.id)}
+                  onDoubleClick={(e) => openEditProject(e, p)}
+                  title="Doble clic para abrir y ver suministros/documentos"
                 >
                   <CardHeader className="p-4 pb-2">
                     <div className="flex justify-between items-start gap-2">
@@ -1013,12 +1015,11 @@ export default function InstitutionalModule() {
         <DialogContent className="sm:max-w-[700px] w-[95vw] max-h-[90vh] overflow-y-auto bg-background text-foreground font-sans p-6 rounded-xl border border-border shadow-2xl dte-visualizer-modal">
           <style dangerouslySetInnerHTML={{__html: `
             @media print {
-              /* Completely hide the application layout and any sibling elements of the portal to collapse layout footprint */
-              .no-print-layout,
-              body > *:not([data-radix-portal]) {
+              /* Collapse the application's screen layout footprint completely during print */
+              .no-print-layout {
                 display: none !important;
               }
-              /* Hide everything else as a safety fallback */
+              /* Hide everything else by default as a safety fallback */
               body * {
                 visibility: hidden !important;
               }
@@ -1026,8 +1027,8 @@ export default function InstitutionalModule() {
               [role="dialog"]:not(.dte-visualizer-modal) {
                 display: none !important;
               }
-              /* Hide Radix Portal overlays and sibling wrappers to prevent extra blank pages */
-              [data-radix-portal] > div:not(.dte-visualizer-modal), 
+              /* Hide Radix Portal overlays and sibling elements safely without hiding our DTE positioning wrapper */
+              [data-radix-portal] [class*="bg-black"],
               [data-radix-focus-guard], 
               button[aria-label="Close"], 
               .no-print {
