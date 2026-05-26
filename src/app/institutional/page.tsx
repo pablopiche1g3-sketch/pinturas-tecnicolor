@@ -1027,7 +1027,7 @@ export default function InstitutionalModule() {
               }
               /* Reset only our DTE dialog positioning and force white print styles */
               .dte-visualizer-modal {
-                position: absolute !important;
+                position: relative !important;
                 left: 0 !important;
                 top: 0 !important;
                 transform: none !important;
@@ -1042,9 +1042,10 @@ export default function InstitutionalModule() {
                 background: white !important;
                 color: black !important;
                 display: block !important; /* Force block layout only on the outermost modal wrapper */
+                overflow: visible !important;
               }
               #dte-print-area {
-                position: absolute !important;
+                position: relative !important;
                 left: 0 !important;
                 top: 0 !important;
                 width: 100% !important;
@@ -1052,6 +1053,7 @@ export default function InstitutionalModule() {
                 padding: 0 !important;
                 background: white !important;
                 color: black !important;
+                overflow: visible !important;
               }
               /* Force all nested text and backgrounds to be optimized for white paper */
               #dte-print-area * {
