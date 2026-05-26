@@ -408,6 +408,29 @@ export default function InstitutionalModule() {
     setJsonInput('')
   }
 
+  const handleDeleteUploadedItem = (idx: number) => {
+    if (!mappedData || !mappedData.items) return
+    const updatedItems = mappedData.items.filter((_, i) => i !== idx)
+    
+    // Recalculate totals based on remaining items
+    const subtotal = updatedItems.reduce((acc, curr) => acc + (curr.lineTotal || 0), 0)
+    const tax = subtotal * 0.13
+    const total = subtotal + tax
+
+    setMappedData({
+      ...mappedData,
+      items: updatedItems,
+      subtotal,
+      taxAmount: tax,
+      totalAmount: total
+    })
+    
+    toast({
+      title: "Producto Descartado",
+      description: "El producto ha sido removido del ingreso de esta factura y no afectará el inventario ni los costos.",
+    })
+  }
+
   const handleAddManualItem = () => {
     if (!tempManualItem.description || tempManualItem.quantity <= 0) return
     const lineTotal = tempManualItem.quantity * tempManualItem.unitPrice
@@ -819,15 +842,33 @@ export default function InstitutionalModule() {
                           </Badge>
                           <ScrollArea className="h-[200px] border rounded-lg">
                             <table className="w-full text-[10px]">
-                              <thead className="bg-muted sticky top-0"><tr><th className="p-2 text-left">Item</th><th className="p-2 text-right">Cant.</th><th className="p-2 text-center">Estado</th></tr></thead>
+                              <thead className="bg-muted sticky top-0">
+                                <tr>
+                                  <th className="p-2 text-left">Item</th>
+                                  <th className="p-2 text-right">Cant.</th>
+                                  <th className="p-2 text-center">Estado</th>
+                                  <th className="p-2 text-right">Acción</th>
+                                </tr>
+                              </thead>
                               <tbody className="divide-y">
                                 {mappedData.items?.map((it, idx) => {
                                   const isExpected = currentProject?.expectedProducts.some(ep => ep.code === it.code || it.description?.toLowerCase().includes(ep.description.toLowerCase()));
                                   return (
                                     <tr key={idx} className={cn(!isExpected && "bg-destructive/5")}>
-                                      <td className="p-2">{it.description}</td>
-                                      <td className="p-2 text-right">{it.quantity}</td>
+                                      <td className="p-2 font-medium">{it.description}</td>
+                                      <td className="p-2 text-right font-semibold">{it.quantity}</td>
                                       <td className="p-2 text-center">{isExpected ? <Badge className="bg-green-500">OK</Badge> : <Badge variant="destructive">NO OC</Badge>}</td>
+                                      <td className="p-2 text-right">
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-5 w-5 text-destructive hover:bg-destructive/10"
+                                          onClick={() => handleDeleteUploadedItem(idx)}
+                                          title="Descartar producto de esta factura"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </Button>
+                                      </td>
                                     </tr>
                                   )
                                 })}
