@@ -1011,122 +1011,149 @@ export default function InstitutionalModule() {
 
       <Dialog open={viewingInvoice !== null} onOpenChange={(open) => { if (!open) setViewingInvoice(null) }}>
         <DialogContent className="sm:max-w-[700px] w-[95vw] max-h-[90vh] overflow-y-auto bg-white text-black font-sans p-6 rounded-xl border border-gray-200 shadow-2xl">
-          <DialogHeader className="border-b pb-4">
-            <div className="flex justify-between items-start">
-              <div>
-                <DialogTitle className="text-xl font-bold uppercase tracking-wider text-primary">Representación Gráfica DTE</DialogTitle>
-                <p className="text-xs text-muted-foreground">Documento Tributario Electrónico - El Salvador</p>
-              </div>
-              <div className="text-right">
-                <Badge className={cn("text-xs border-none font-bold px-2.5 py-1 text-white", viewingInvoice?.type === 'purchase' ? "bg-blue-600" : "bg-green-600")}>
-                  {viewingInvoice?.type === 'purchase' ? 'COMPRA (INGRESO)' : 'VENTA (EMITIDO)'}
-                </Badge>
-              </div>
-            </div>
-          </DialogHeader>
-
-          {viewingInvoice && (
-            <div className="space-y-6 pt-4 text-xs">
-              {/* Emisor y DTE Header */}
-              <div className="grid grid-cols-2 gap-4 border p-4 rounded-lg bg-gray-50/50">
+          <style dangerouslySetInnerHTML={{__html: `
+            @media print {
+              body * {
+                visibility: hidden !important;
+              }
+              #dte-print-area, #dte-print-area * {
+                visibility: visible !important;
+              }
+              #dte-print-area {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                margin: 0 !important;
+                padding: 10px !important;
+                background: white !important;
+                color: black !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+          `}} />
+          
+          <div id="dte-print-area">
+            <DialogHeader className="border-b pb-4">
+              <div className="flex justify-between items-start">
                 <div>
-                  <h3 className="font-bold text-sm text-gray-800">Pinturas Tecnicolor</h3>
-                  <p className="text-gray-500 text-[10px]">San Salvador, El Salvador</p>
-                  <p className="text-[10px] text-gray-400 mt-1">Giro: Venta de pinturas y acabados</p>
+                  <DialogTitle className="text-xl font-bold uppercase tracking-wider text-primary">Representación Gráfica DTE</DialogTitle>
+                  <p className="text-xs text-muted-foreground">Documento Tributario Electrónico - El Salvador</p>
                 </div>
-                <div className="border-l pl-4 flex flex-col justify-between">
+                <div className="text-right">
+                  <Badge className={cn("text-xs border-none font-bold px-2.5 py-1 text-white", viewingInvoice?.type === 'purchase' ? "bg-blue-600" : "bg-green-600")}>
+                    {viewingInvoice?.type === 'purchase' ? 'COMPRA (INGRESO)' : 'VENTA (EMITIDO)'}
+                  </Badge>
+                </div>
+              </div>
+            </DialogHeader>
+
+            {viewingInvoice && (
+              <div className="space-y-6 pt-4 text-xs">
+                {/* Emisor y DTE Header */}
+                <div className="grid grid-cols-2 gap-4 border p-4 rounded-lg bg-gray-50/50">
                   <div>
-                    <span className="font-bold uppercase text-[9px] text-gray-400 block">Tipo Documento</span>
-                    <span className="font-bold text-gray-800 text-[11px] sm:text-xs">
-                      {viewingInvoice.documentType === '03' ? 'Comprobante de Crédito Fiscal (CCF)' : viewingInvoice.documentType === '01' ? 'Factura de Consumidor Final (FAC)' : 'Documento DTE'}
-                    </span>
+                    <h3 className="font-bold text-sm text-gray-800">Pinturas Tecnicolor</h3>
+                    <p className="text-gray-500 text-[10px]">San Salvador, El Salvador</p>
+                    <p className="text-[10px] text-gray-400 mt-1">Giro: Venta de pinturas y acabados</p>
                   </div>
-                  <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div className="border-l pl-4 flex flex-col justify-between">
                     <div>
-                      <span className="font-bold uppercase text-[9px] text-gray-400 block">No. Documento</span>
-                      <span className="font-mono text-gray-700 font-bold">{viewingInvoice.invoiceNumber}</span>
+                      <span className="font-bold uppercase text-[9px] text-gray-400 block">Tipo Documento</span>
+                      <span className="font-bold text-gray-800 text-[11px] sm:text-xs">
+                        {viewingInvoice.documentType === '03' ? 'Comprobante de Crédito Fiscal (CCF)' : viewingInvoice.documentType === '01' ? 'Factura de Consumidor Final (FAC)' : 'Documento DTE'}
+                      </span>
                     </div>
-                    {viewingInvoice.numeroControl && (
+                    <div className="mt-2 grid grid-cols-2 gap-2">
                       <div>
-                        <span className="font-bold uppercase text-[9px] text-gray-400 block">No. Control</span>
-                        <span className="font-mono text-gray-700 font-bold">{viewingInvoice.numeroControl}</span>
+                        <span className="font-bold uppercase text-[9px] text-gray-400 block">No. Documento</span>
+                        <span className="font-mono text-gray-700 font-bold">{viewingInvoice.invoiceNumber}</span>
+                      </div>
+                      {viewingInvoice.numeroControl && (
+                        <div>
+                          <span className="font-bold uppercase text-[9px] text-gray-400 block">No. Control</span>
+                          <span className="font-mono text-gray-700 font-bold">{viewingInvoice.numeroControl}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Detalles de la Transacción */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <span className="font-bold uppercase text-[9px] text-gray-400 block">Entidad Asociada</span>
+                    <span className="font-bold text-sm text-gray-800">{viewingInvoice.entityName}</span>
+                    <span className="text-[10px] text-gray-500 block">ID: {viewingInvoice.entityId}</span>
+                  </div>
+                  <div>
+                    <span className="font-bold uppercase text-[9px] text-gray-400 block">Fecha de Emisión</span>
+                    <span className="font-semibold text-gray-700">{new Date(viewingInvoice.issueDate).toLocaleString()}</span>
+                  </div>
+                </div>
+
+                {/* Tabla de Items */}
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-[11px]">
+                    <thead className="bg-gray-100 border-b">
+                      <tr>
+                        <th className="p-2 text-left font-bold text-gray-600">Cant.</th>
+                        <th className="p-2 text-left font-bold text-gray-600">Código</th>
+                        <th className="p-2 text-left font-bold text-gray-600">Descripción</th>
+                        <th className="p-2 text-right font-bold text-gray-600">Precio Unit.</th>
+                        <th className="p-2 text-right font-bold text-gray-600">Subtotal</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y bg-white">
+                      {viewingInvoice.items && viewingInvoice.items.map((item: any, idx: number) => (
+                        <tr key={idx} className="hover:bg-gray-50/50">
+                          <td className="p-2 text-gray-700">{item.quantity}</td>
+                          <td className="p-2 font-mono text-[10px] text-gray-500">{item.code || 'S/C'}</td>
+                          <td className="p-2 font-medium text-gray-800">{item.description}</td>
+                          <td className="p-2 text-right text-gray-700">${item.unitPrice.toFixed(2)}</td>
+                          <td className="p-2 text-right font-bold text-gray-800">${item.lineTotal.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Totales */}
+                <div className="flex justify-end">
+                  <div className="w-[250px] space-y-1.5 border p-3 rounded-lg bg-gray-50/50 text-[11px]">
+                    <div className="flex justify-between text-gray-600">
+                      <span>Subtotal:</span>
+                      <span>${viewingInvoice.subtotal.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between text-gray-600">
+                      <span>IVA (13%):</span>
+                      <span>${viewingInvoice.taxAmount.toFixed(2)}</span>
+                    </div>
+                    {viewingInvoice.retentionAmount && viewingInvoice.retentionAmount > 0 && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>Retención (1%):</span>
+                        <span className="text-red-500 text-right">-${viewingInvoice.retentionAmount.toFixed(2)}</span>
                       </div>
                     )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Detalles de la Transacción */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <span className="font-bold uppercase text-[9px] text-gray-400 block">Entidad Asociada</span>
-                  <span className="font-bold text-sm text-gray-800">{viewingInvoice.entityName}</span>
-                  <span className="text-[10px] text-gray-500 block">ID: {viewingInvoice.entityId}</span>
-                </div>
-                <div>
-                  <span className="font-bold uppercase text-[9px] text-gray-400 block">Fecha de Emisión</span>
-                  <span className="font-semibold text-gray-700">{new Date(viewingInvoice.issueDate).toLocaleString()}</span>
-                </div>
-              </div>
-
-              {/* Tabla de Items */}
-              <div className="border rounded-lg overflow-hidden">
-                <table className="w-full text-[11px]">
-                  <thead className="bg-gray-100 border-b">
-                    <tr>
-                      <th className="p-2 text-left font-bold text-gray-600">Cant.</th>
-                      <th className="p-2 text-left font-bold text-gray-600">Código</th>
-                      <th className="p-2 text-left font-bold text-gray-600">Descripción</th>
-                      <th className="p-2 text-right font-bold text-gray-600">Precio Unit.</th>
-                      <th className="p-2 text-right font-bold text-gray-600">Subtotal</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y bg-white">
-                    {viewingInvoice.items && viewingInvoice.items.map((item: any, idx: number) => (
-                      <tr key={idx} className="hover:bg-gray-50/50">
-                        <td className="p-2 text-gray-700">{item.quantity}</td>
-                        <td className="p-2 font-mono text-[10px] text-gray-500">{item.code || 'S/C'}</td>
-                        <td className="p-2 font-medium text-gray-800">{item.description}</td>
-                        <td className="p-2 text-right text-gray-700">${item.unitPrice.toFixed(2)}</td>
-                        <td className="p-2 text-right font-bold text-gray-800">${item.lineTotal.toFixed(2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Totales */}
-              <div className="flex justify-end">
-                <div className="w-[250px] space-y-1.5 border p-3 rounded-lg bg-gray-50/50 text-[11px]">
-                  <div className="flex justify-between text-gray-600">
-                    <span>Subtotal:</span>
-                    <span>${viewingInvoice.subtotal.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-gray-600">
-                    <span>IVA (13%):</span>
-                    <span>${viewingInvoice.taxAmount.toFixed(2)}</span>
-                  </div>
-                  {viewingInvoice.retentionAmount && viewingInvoice.retentionAmount > 0 && (
-                    <div className="flex justify-between text-gray-600">
-                      <span>Retención (1%):</span>
-                      <span className="text-red-500">-${viewingInvoice.retentionAmount.toFixed(2)}</span>
+                    {viewingInvoice.perceptionAmount && viewingInvoice.perceptionAmount > 0 && (
+                      <div className="flex justify-between text-gray-600">
+                        <span>Percepción (1%):</span>
+                        <span className="text-green-600 text-right">+${viewingInvoice.perceptionAmount.toFixed(2)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between text-sm font-black text-gray-900 border-t pt-1.5">
+                      <span>TOTAL A PAGAR:</span>
+                      <span>${viewingInvoice.totalAmount.toFixed(2)}</span>
                     </div>
-                  )}
-                  {viewingInvoice.perceptionAmount && viewingInvoice.perceptionAmount > 0 && (
-                    <div className="flex justify-between text-gray-600">
-                      <span>Percepción (1%):</span>
-                      <span className="text-green-600">+${viewingInvoice.perceptionAmount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between text-sm font-black text-gray-900 border-t pt-1.5">
-                    <span>TOTAL A PAGAR:</span>
-                    <span>${viewingInvoice.totalAmount.toFixed(2)}</span>
                   </div>
                 </div>
               </div>
-            </div>
-          )}
-          <DialogFooter className="mt-4 border-t pt-4">
+            )}
+          </div>
+          
+          <DialogFooter className="mt-4 border-t pt-4 no-print">
             <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2">
               <Download className="h-3.5 w-3.5" /> Imprimir / PDF
             </Button>
