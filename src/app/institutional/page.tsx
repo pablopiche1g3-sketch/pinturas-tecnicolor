@@ -453,6 +453,36 @@ export default function InstitutionalModule() {
     })
   }
 
+  const handleUpdateUploadedItemQty = (idx: number, newQty: number) => {
+    if (!mappedData || !mappedData.items) return
+    if (newQty < 0) return
+
+    const updatedItems = mappedData.items.map((it, i) => {
+      if (i !== idx) return it
+      const qty = newQty
+      const price = it.unitPrice || 0
+      const total = qty * price
+      return {
+        ...it,
+        quantity: qty,
+        lineTotal: total
+      }
+    })
+
+    // Recalculate totals based on new quantities
+    const subtotal = updatedItems.reduce((acc, curr) => acc + (curr.lineTotal || 0), 0)
+    const tax = subtotal * 0.13
+    const total = subtotal + tax
+
+    setMappedData({
+      ...mappedData,
+      items: updatedItems,
+      subtotal,
+      taxAmount: tax,
+      totalAmount: total
+    })
+  }
+
   const handleAddManualItem = () => {
     if (!tempManualItem.description || tempManualItem.quantity <= 0) return
     const lineTotal = tempManualItem.quantity * tempManualItem.unitPrice
@@ -874,12 +904,36 @@ export default function InstitutionalModule() {
                               </thead>
                               <tbody className="divide-y">
                                 {mappedData.items?.map((it, idx) => {
-                                  const isExpected = currentProject?.expectedProducts.some(ep => ep.code === it.code || it.description?.toLowerCase().includes(ep.description.toLowerCase()));
+                                  const projectProduct = currentProject?.expectedProducts.find(ep => ep.code === it.code || (it.description && ep.description && it.description.toLowerCase().includes(ep.description.toLowerCase())));
+                                  const isExpected = !!projectProduct;
+                                  const expectedQty = projectProduct ? projectProduct.quantity : 0;
+                                  const hasExcess = isExpected && (it.quantity || 0) > expectedQty;
+                                  
                                   return (
-                                    <tr key={idx} className={cn(!isExpected && "bg-destructive/5")}>
+                                    <tr key={idx} className={cn(!isExpected && "bg-destructive/5", hasExcess && "bg-amber-500/5")}>
                                       <td className="p-2 font-medium">{it.description}</td>
-                                      <td className="p-2 text-right font-semibold">{it.quantity}</td>
-                                      <td className="p-2 text-center">{isExpected ? <Badge className="bg-green-500">OK</Badge> : <Badge variant="destructive">NO OC</Badge>}</td>
+                                      <td className="p-2 text-right">
+                                        <Input
+                                          type="number"
+                                          value={it.quantity || 0}
+                                          onChange={(e) => handleUpdateUploadedItemQty(idx, Number(e.target.value))}
+                                          className="h-6 w-16 text-right font-bold text-[10px] p-1 inline-block bg-background"
+                                          min={0}
+                                        />
+                                      </td>
+                                      <td className="p-2 text-center">
+                                        {!isExpected ? (
+                                          <Badge variant="destructive">NO OC</Badge>
+                                        ) : hasExcess ? (
+                                          <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-bold" title={`La orden de compra solicitaba ${expectedQty} unidades`}>
+                                            EXCESO ({expectedQty})
+                                          </Badge>
+                                        ) : (
+                                          <Badge className="bg-green-500 hover:bg-green-600 text-white text-[9px] font-bold" title={`La orden de compra solicitaba ${expectedQty} unidades`}>
+                                            OK ({expectedQty})
+                                          </Badge>
+                                        )}
+                                      </td>
                                       <td className="p-2 text-right">
                                         <Button
                                           variant="ghost"
