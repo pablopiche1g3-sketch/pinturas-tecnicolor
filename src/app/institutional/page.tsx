@@ -192,25 +192,40 @@ export default function InstitutionalModule() {
 
   const handleExportProject = (e: React.MouseEvent, p: Project) => {
     e.stopPropagation()
-    const projectTxs = transactions.filter(t => t.projectId === p.id && t.type === 'purchase' && !t.isVoided)
-    const allPurchasedItems = projectTxs.flatMap(t => t.items)
+    // 1. Obtener todas las compras válidas vinculadas al proyecto
+    const purchaseTxs = transactions.filter(t => t.projectId === p.id && t.type === 'purchase' && !t.isVoided)
+    const allPurchasedItems = purchaseTxs.flatMap(t => t.items)
 
-    let csvContent = "Descripción del producto;Costo de compra;Costo de venta\n"
+    // 2. Obtener todas las ventas válidas (facturas de venta DTE o manuales) vinculadas al proyecto
+    const saleTxs = transactions.filter(t => t.projectId === p.id && t.type === 'sale' && !t.isVoided)
+    const allSoldItems = saleTxs.flatMap(t => t.items)
+
+    let csvContent = "Descripción del producto;Costo de compra;Precio de venta\n"
     
     p.expectedProducts.forEach(ep => {
+      // Calcular promedio de costo de compra
       const purchased = allPurchasedItems.filter(i => i.code === ep.code || (i.description && ep.description && i.description.toLowerCase().includes(ep.description.toLowerCase())))
       const qtyPurchased = purchased.reduce((acc, curr) => acc + curr.quantity, 0)
       const totalCost = purchased.reduce((acc, curr) => acc + curr.lineTotal, 0)
       const avgCost = qtyPurchased > 0 ? totalCost / qtyPurchased : 0
       
-      csvContent += `"${ep.description}";${avgCost.toFixed(2).replace('.', ',')};${(ep.unitPrice || 0).toFixed(2).replace('.', ',')}\n`
+      // Calcular precio de venta real a partir de las facturas de venta subidas
+      const sold = allSoldItems.filter(i => i.code === ep.code || (i.description && ep.description && i.description.toLowerCase().includes(ep.description.toLowerCase())))
+      const qtySold = sold.reduce((acc, curr) => acc + curr.quantity, 0)
+      const totalSalesVal = sold.reduce((acc, curr) => acc + curr.lineTotal, 0)
+      
+      // Si ya hay facturas de venta subidas, calcula el precio real; si no, usa el precio de venta configurado en el proyecto
+      const salePrice = qtySold > 0 ? (totalSalesVal / qtySold) : (ep.unitPrice || 0)
+      
+      csvContent += `"${ep.description}";${avgCost.toFixed(2).replace('.', ',')};${salePrice.toFixed(2).replace('.', ',')}\n`
     })
 
+    // Procesar ítems que se compraron pero no estaban en la orden de compra original
     const unmatched = allPurchasedItems.filter(i => !p.expectedProducts.some(ep => ep.code === i.code || (i.description && ep.description && i.description.toLowerCase().includes(ep.description.toLowerCase()))))
     
     const groupedUnmatched = unmatched.reduce((acc, curr) => {
       const key = curr.code || curr.description || 'unknown'
-      if (!acc[key]) acc[key] = { description: curr.description, qty: 0, totalCost: 0 }
+      if (!acc[key]) acc[key] = { description: curr.description, qty: 0, totalCost: 0, code: curr.code }
       acc[key].qty += curr.quantity
       acc[key].totalCost += curr.lineTotal
       return acc
@@ -218,7 +233,14 @@ export default function InstitutionalModule() {
 
     Object.values(groupedUnmatched).forEach((u: any) => {
       const avgCost = u.qty > 0 ? u.totalCost / u.qty : 0
-      csvContent += `"${u.description} (Extra)";${avgCost.toFixed(2).replace('.', ',')};0,00\n`
+      
+      // Buscar si este producto extra también se vendió en las facturas de venta
+      const sold = allSoldItems.filter(i => i.code === u.code || (i.description && u.description && i.description.toLowerCase().includes(u.description.toLowerCase())))
+      const qtySold = sold.reduce((acc, curr) => acc + curr.quantity, 0)
+      const totalSalesVal = sold.reduce((acc, curr) => acc + curr.lineTotal, 0)
+      const salePrice = qtySold > 0 ? (totalSalesVal / qtySold) : 0
+      
+      csvContent += `"${u.description} (Extra)";${avgCost.toFixed(2).replace('.', ',')};${salePrice.toFixed(2).replace('.', ',')}\n`
     })
 
     const BOM = "\uFEFF"
@@ -227,7 +249,7 @@ export default function InstitutionalModule() {
     link.href = URL.createObjectURL(blob)
     link.download = `rentabilidad_${p.name.replace(/\s+/g, '_')}.csv`
     link.click()
-    toast({ title: "Excel Exportado", description: "El reporte simplificado se ha descargado." })
+    toast({ title: "Excel Exportado", description: "El reporte simplificado de rentabilidad se ha descargado." })
   }
 
   // Document Management
