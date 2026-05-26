@@ -1010,19 +1010,24 @@ export default function InstitutionalModule() {
       </Tabs>
 
       <Dialog open={viewingInvoice !== null} onOpenChange={(open) => { if (!open) setViewingInvoice(null) }}>
-        <DialogContent className="sm:max-w-[700px] w-[95vw] max-h-[90vh] overflow-y-auto bg-background text-foreground font-sans p-6 rounded-xl border border-border shadow-2xl">
+        <DialogContent className="sm:max-w-[700px] w-[95vw] max-h-[90vh] overflow-y-auto bg-background text-foreground font-sans p-6 rounded-xl border border-border shadow-2xl dte-visualizer-modal">
           <style dangerouslySetInnerHTML={{__html: `
             @media print {
               /* Hide everything else */
               body * {
                 visibility: hidden !important;
               }
-              /* Show dialog content and our print area */
-              [role="dialog"], [role="dialog"] *, #dte-print-area, #dte-print-area * {
-                visibility: visible !important;
-              }
-              /* Reset Shadcn UI Dialog positioning and force clean white print styles */
+              /* Explicitly hide any other active dialogs/modals */
               [role="dialog"] {
+                display: none !important;
+              }
+              /* Show ONLY our specific DTE modal and its content */
+              .dte-visualizer-modal, .dte-visualizer-modal *, #dte-print-area, #dte-print-area * {
+                visibility: visible !important;
+                display: block !important;
+              }
+              /* Reset only our DTE dialog positioning and force white print styles */
+              .dte-visualizer-modal {
                 position: absolute !important;
                 left: 0 !important;
                 top: 0 !important;
