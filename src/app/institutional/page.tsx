@@ -1021,10 +1021,9 @@ export default function InstitutionalModule() {
               [role="dialog"] {
                 display: none !important;
               }
-              /* Show ONLY our specific DTE modal and its content */
-              .dte-visualizer-modal, .dte-visualizer-modal *, #dte-print-area, #dte-print-area * {
+              /* Show ONLY our specific DTE modal and its content, preserving table/grid/flex displays */
+              .dte-visualizer-modal, .dte-visualizer-modal * {
                 visibility: visible !important;
-                display: block !important;
               }
               /* Reset only our DTE dialog positioning and force white print styles */
               .dte-visualizer-modal {
