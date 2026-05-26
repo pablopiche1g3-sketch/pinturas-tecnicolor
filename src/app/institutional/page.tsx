@@ -1013,11 +1013,29 @@ export default function InstitutionalModule() {
         <DialogContent className="sm:max-w-[700px] w-[95vw] max-h-[90vh] overflow-y-auto bg-white text-black font-sans p-6 rounded-xl border border-gray-200 shadow-2xl">
           <style dangerouslySetInnerHTML={{__html: `
             @media print {
+              /* Hide everything */
               body * {
                 visibility: hidden !important;
               }
-              #dte-print-area, #dte-print-area * {
+              /* Show dialog content container and our print area */
+              [role="dialog"], [role="dialog"] *, #dte-print-area, #dte-print-area * {
                 visibility: visible !important;
+              }
+              /* Reset Shadcn UI Dialog positioning and translate center styles */
+              [role="dialog"] {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                transform: none !important;
+                max-width: 100% !important;
+                width: 100% !important;
+                height: auto !important;
+                max-height: none !important;
+                margin: 0 !important;
+                padding: 20px !important;
+                border: none !important;
+                box-shadow: none !important;
+                background: white !important;
               }
               #dte-print-area {
                 position: absolute !important;
@@ -1025,11 +1043,12 @@ export default function InstitutionalModule() {
                 top: 0 !important;
                 width: 100% !important;
                 margin: 0 !important;
-                padding: 10px !important;
+                padding: 0 !important;
                 background: white !important;
                 color: black !important;
               }
-              .no-print {
+              /* Hide Radix Close button and overlay, plus footer */
+              button[aria-label="Close"], .no-print, [data-radix-focus-guard] {
                 display: none !important;
               }
             }
