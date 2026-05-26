@@ -1010,18 +1010,18 @@ export default function InstitutionalModule() {
       </Tabs>
 
       <Dialog open={viewingInvoice !== null} onOpenChange={(open) => { if (!open) setViewingInvoice(null) }}>
-        <DialogContent className="sm:max-w-[700px] w-[95vw] max-h-[90vh] overflow-y-auto bg-white text-black font-sans p-6 rounded-xl border border-gray-200 shadow-2xl">
+        <DialogContent className="sm:max-w-[700px] w-[95vw] max-h-[90vh] overflow-y-auto bg-background text-foreground font-sans p-6 rounded-xl border border-border shadow-2xl">
           <style dangerouslySetInnerHTML={{__html: `
             @media print {
-              /* Hide everything */
+              /* Hide everything else */
               body * {
                 visibility: hidden !important;
               }
-              /* Show dialog content container and our print area */
+              /* Show dialog content and our print area */
               [role="dialog"], [role="dialog"] *, #dte-print-area, #dte-print-area * {
                 visibility: visible !important;
               }
-              /* Reset Shadcn UI Dialog positioning and translate center styles */
+              /* Reset Shadcn UI Dialog positioning and force clean white print styles */
               [role="dialog"] {
                 position: absolute !important;
                 left: 0 !important;
@@ -1036,6 +1036,7 @@ export default function InstitutionalModule() {
                 border: none !important;
                 box-shadow: none !important;
                 background: white !important;
+                color: black !important;
               }
               #dte-print-area {
                 position: absolute !important;
@@ -1047,6 +1048,12 @@ export default function InstitutionalModule() {
                 background: white !important;
                 color: black !important;
               }
+              /* Force all nested text and backgrounds to be optimized for white paper */
+              #dte-print-area * {
+                background: transparent !important;
+                color: black !important;
+                border-color: #e2e8f0 !important;
+              }
               /* Hide Radix Close button and overlay, plus footer */
               button[aria-label="Close"], .no-print, [data-radix-focus-guard] {
                 display: none !important;
@@ -1055,7 +1062,7 @@ export default function InstitutionalModule() {
           `}} />
           
           <div id="dte-print-area">
-            <DialogHeader className="border-b pb-4">
+            <DialogHeader className="border-b border-border pb-4">
               <div className="flex justify-between items-start">
                 <div>
                   <DialogTitle className="text-xl font-bold uppercase tracking-wider text-primary">Representación Gráfica DTE</DialogTitle>
@@ -1072,28 +1079,28 @@ export default function InstitutionalModule() {
             {viewingInvoice && (
               <div className="space-y-6 pt-4 text-xs">
                 {/* Emisor y DTE Header */}
-                <div className="grid grid-cols-2 gap-4 border p-4 rounded-lg bg-gray-50/50">
+                <div className="grid grid-cols-2 gap-4 border border-border p-4 rounded-lg bg-muted/30">
                   <div>
-                    <h3 className="font-bold text-sm text-gray-800">Pinturas Tecnicolor</h3>
-                    <p className="text-gray-500 text-[10px]">San Salvador, El Salvador</p>
-                    <p className="text-[10px] text-gray-400 mt-1">Giro: Venta de pinturas y acabados</p>
+                    <h3 className="font-bold text-sm text-foreground">Pinturas Tecnicolor</h3>
+                    <p className="text-muted-foreground text-[10px]">San Salvador, El Salvador</p>
+                    <p className="text-[10px] text-muted-foreground/80 mt-1">Giro: Venta de pinturas y acabados</p>
                   </div>
-                  <div className="border-l pl-4 flex flex-col justify-between">
+                  <div className="border-l border-border pl-4 flex flex-col justify-between">
                     <div>
-                      <span className="font-bold uppercase text-[9px] text-gray-400 block">Tipo Documento</span>
-                      <span className="font-bold text-gray-800 text-[11px] sm:text-xs">
+                      <span className="font-bold uppercase text-[9px] text-muted-foreground block">Tipo Documento</span>
+                      <span className="font-bold text-foreground text-[11px] sm:text-xs">
                         {viewingInvoice.documentType === '03' ? 'Comprobante de Crédito Fiscal (CCF)' : viewingInvoice.documentType === '01' ? 'Factura de Consumidor Final (FAC)' : 'Documento DTE'}
                       </span>
                     </div>
                     <div className="mt-2 grid grid-cols-2 gap-2">
                       <div>
-                        <span className="font-bold uppercase text-[9px] text-gray-400 block">No. Documento</span>
-                        <span className="font-mono text-gray-700 font-bold">{viewingInvoice.invoiceNumber}</span>
+                        <span className="font-bold uppercase text-[9px] text-muted-foreground block">No. Documento</span>
+                        <span className="font-mono text-foreground/90 font-bold">{viewingInvoice.invoiceNumber}</span>
                       </div>
                       {viewingInvoice.numeroControl && (
                         <div>
-                          <span className="font-bold uppercase text-[9px] text-gray-400 block">No. Control</span>
-                          <span className="font-mono text-gray-700 font-bold">{viewingInvoice.numeroControl}</span>
+                          <span className="font-bold uppercase text-[9px] text-muted-foreground block">No. Control</span>
+                          <span className="font-mono text-foreground/90 font-bold">{viewingInvoice.numeroControl}</span>
                         </div>
                       )}
                     </div>
@@ -1103,36 +1110,36 @@ export default function InstitutionalModule() {
                 {/* Detalles de la Transacción */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <span className="font-bold uppercase text-[9px] text-gray-400 block">Entidad Asociada</span>
-                    <span className="font-bold text-sm text-gray-800">{viewingInvoice.entityName}</span>
-                    <span className="text-[10px] text-gray-500 block">ID: {viewingInvoice.entityId}</span>
+                    <span className="font-bold uppercase text-[9px] text-muted-foreground block">Entidad Asociada</span>
+                    <span className="font-bold text-sm text-foreground">{viewingInvoice.entityName}</span>
+                    <span className="text-[10px] text-muted-foreground block">ID: {viewingInvoice.entityId}</span>
                   </div>
                   <div>
-                    <span className="font-bold uppercase text-[9px] text-gray-400 block">Fecha de Emisión</span>
-                    <span className="font-semibold text-gray-700">{new Date(viewingInvoice.issueDate).toLocaleString()}</span>
+                    <span className="font-bold uppercase text-[9px] text-muted-foreground block">Fecha de Emisión</span>
+                    <span className="font-semibold text-foreground/90">{new Date(viewingInvoice.issueDate).toLocaleString()}</span>
                   </div>
                 </div>
 
                 {/* Tabla de Items */}
-                <div className="border rounded-lg overflow-hidden">
+                <div className="border border-border rounded-lg overflow-hidden">
                   <table className="w-full text-[11px]">
-                    <thead className="bg-gray-100 border-b">
+                    <thead className="bg-muted border-b border-border">
                       <tr>
-                        <th className="p-2 text-left font-bold text-gray-600">Cant.</th>
-                        <th className="p-2 text-left font-bold text-gray-600">Código</th>
-                        <th className="p-2 text-left font-bold text-gray-600">Descripción</th>
-                        <th className="p-2 text-right font-bold text-gray-600">Precio Unit.</th>
-                        <th className="p-2 text-right font-bold text-gray-600">Subtotal</th>
+                        <th className="p-2 text-left font-bold text-muted-foreground">Cant.</th>
+                        <th className="p-2 text-left font-bold text-muted-foreground">Código</th>
+                        <th className="p-2 text-left font-bold text-muted-foreground">Descripción</th>
+                        <th className="p-2 text-right font-bold text-muted-foreground">Precio Unit.</th>
+                        <th className="p-2 text-right font-bold text-muted-foreground">Subtotal</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y bg-white">
+                    <tbody className="divide-y divide-border bg-card">
                       {viewingInvoice.items && viewingInvoice.items.map((item: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-gray-50/50">
-                          <td className="p-2 text-gray-700">{item.quantity}</td>
-                          <td className="p-2 font-mono text-[10px] text-gray-500">{item.code || 'S/C'}</td>
-                          <td className="p-2 font-medium text-gray-800">{item.description}</td>
-                          <td className="p-2 text-right text-gray-700">${item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                          <td className="p-2 text-right font-bold text-gray-800">${item.lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <tr key={idx} className="hover:bg-muted/30">
+                          <td className="p-2 text-foreground/80">{item.quantity}</td>
+                          <td className="p-2 font-mono text-[10px] text-muted-foreground">{item.code || 'S/C'}</td>
+                          <td className="p-2 font-medium text-foreground">{item.description}</td>
+                          <td className="p-2 text-right text-foreground/80">${item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="p-2 text-right font-bold text-foreground">${item.lineTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1141,28 +1148,28 @@ export default function InstitutionalModule() {
 
                 {/* Totales */}
                 <div className="flex justify-end">
-                  <div className="w-[250px] space-y-1.5 border p-3 rounded-lg bg-gray-50/50 text-[11px]">
-                    <div className="flex justify-between text-gray-600">
+                  <div className="w-[250px] space-y-1.5 border border-border p-3 rounded-lg bg-muted/30 text-[11px]">
+                    <div className="flex justify-between text-muted-foreground">
                       <span>Subtotal:</span>
-                      <span>${viewingInvoice.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className="text-foreground">${viewingInvoice.subtotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
-                    <div className="flex justify-between text-gray-600">
+                    <div className="flex justify-between text-muted-foreground">
                       <span>IVA (13%):</span>
-                      <span>${viewingInvoice.taxAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      <span className="text-foreground">${viewingInvoice.taxAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
                     {viewingInvoice.retentionAmount && viewingInvoice.retentionAmount > 0 && (
-                      <div className="flex justify-between text-gray-600">
+                      <div className="flex justify-between text-muted-foreground">
                         <span>Retención (1%):</span>
                         <span className="text-red-500 text-right">-${viewingInvoice.retentionAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                     )}
                     {viewingInvoice.perceptionAmount && viewingInvoice.perceptionAmount > 0 && (
-                      <div className="flex justify-between text-gray-600">
+                      <div className="flex justify-between text-muted-foreground">
                         <span>Percepción (1%):</span>
                         <span className="text-green-600 text-right">+${viewingInvoice.perceptionAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                       </div>
                     )}
-                    <div className="flex justify-between text-sm font-black text-gray-900 border-t pt-1.5">
+                    <div className="flex justify-between text-sm font-black text-foreground border-t border-border pt-1.5">
                       <span>TOTAL A PAGAR:</span>
                       <span>${viewingInvoice.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
                     </div>
@@ -1172,7 +1179,7 @@ export default function InstitutionalModule() {
             )}
           </div>
           
-          <DialogFooter className="mt-4 border-t pt-4 no-print">
+          <DialogFooter className="mt-4 border-t border-border pt-4 no-print">
             <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2">
               <Download className="h-3.5 w-3.5" /> Imprimir / PDF
             </Button>
