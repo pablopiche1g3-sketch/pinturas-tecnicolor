@@ -1013,7 +1013,12 @@ export default function InstitutionalModule() {
         <DialogContent className="sm:max-w-[700px] w-[95vw] max-h-[90vh] overflow-y-auto bg-background text-foreground font-sans p-6 rounded-xl border border-border shadow-2xl dte-visualizer-modal">
           <style dangerouslySetInnerHTML={{__html: `
             @media print {
-              /* Hide everything else */
+              /* Completely hide the application layout and any sibling elements of the portal to collapse layout footprint */
+              .no-print-layout,
+              body > *:not([data-radix-portal]) {
+                display: none !important;
+              }
+              /* Hide everything else as a safety fallback */
               body * {
                 visibility: hidden !important;
               }
@@ -1031,6 +1036,11 @@ export default function InstitutionalModule() {
               /* Show ONLY our specific DTE modal and its content, preserving table/grid/flex displays */
               .dte-visualizer-modal, .dte-visualizer-modal * {
                 visibility: visible !important;
+              }
+              /* Set clean document margins */
+              @page {
+                size: auto;
+                margin: 15mm 10mm 15mm 10mm;
               }
               /* Force html/body to flow naturally without vh boundaries to avoid blank pages */
               html, body {
@@ -1051,7 +1061,7 @@ export default function InstitutionalModule() {
                 height: auto !important;
                 max-height: none !important;
                 margin: 0 !important;
-                padding: 20px !important;
+                padding: 0 !important;
                 border: none !important;
                 box-shadow: none !important;
                 background: white !important;

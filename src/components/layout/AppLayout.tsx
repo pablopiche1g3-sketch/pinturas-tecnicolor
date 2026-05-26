@@ -91,7 +91,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <div className="flex min-h-screen bg-background font-body text-foreground">
+    <div className="flex min-h-screen bg-background font-body text-foreground no-print-layout">
       {!isMobile && (
         <aside 
           className={cn(
