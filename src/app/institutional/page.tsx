@@ -116,16 +116,19 @@ export default function InstitutionalModule() {
   
   const projectCosts = projectTransactions.filter(t => t.type === 'purchase').reduce((acc, curr) => acc + curr.totalAmount, 0)
 
-  const getProductProgress = (productCode: string, projectId: string) => {
+  const getProductProgress = (ep: any, projectId: string) => {
     const project = projects.find(p => p.id === projectId)
     const txs = transactions.filter(t => t.projectId === projectId && !t.isVoided)
     const received = txs
       .filter(t => t.type === 'purchase')
       .flatMap(t => t.items)
-      .filter(i => i.code === productCode)
+      .filter(i => 
+        (i.code && ep.code && i.code === ep.code) || 
+        (i.description && ep.description && (i.description.toLowerCase().includes(ep.description.toLowerCase()) || ep.description.toLowerCase().includes(i.description.toLowerCase())))
+      )
       .reduce((acc, curr) => acc + curr.quantity, 0)
     
-    const expected = project?.expectedProducts.find(p => p.code === productCode)?.quantity || 1
+    const expected = ep.quantity || 1
     return Math.min((received / expected) * 100, 100)
   }
 
@@ -1017,9 +1020,9 @@ export default function InstitutionalModule() {
                         <div key={ep.code} className="space-y-1">
                           <div className="flex justify-between text-[9px]">
                             <span className="truncate max-w-[150px] font-medium text-foreground">{ep.description}</span>
-                            <span className="text-muted-foreground">{getProductProgress(ep.code, p.id).toFixed(0)}%</span>
+                            <span className="text-muted-foreground">{getProductProgress(ep, p.id).toFixed(0)}%</span>
                           </div>
-                          <Progress value={getProductProgress(ep.code, p.id)} className="h-1" />
+                          <Progress value={getProductProgress(ep, p.id)} className="h-1" />
                         </div>
                       ))}
                       {p.documents.length > 0 && (
