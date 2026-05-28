@@ -128,7 +128,14 @@ export default function InstitutionalModule() {
 
     const matches = expectedProducts.filter(ep => {
       const epDesc = (ep.description || '').toLowerCase();
-      return iDesc.includes(epDesc) || epDesc.includes(iDesc);
+      if (iDesc.includes(epDesc) || epDesc.includes(iDesc)) return true;
+      
+      const iWords = iDesc.split(/\s+/);
+      const epWords = epDesc.split(/\s+/);
+      const allEpInI = epWords.every(w => iWords.includes(w));
+      const allIInEp = iWords.every(w => epWords.includes(w));
+      
+      return allEpInI || allIInEp;
     });
     if (matches.length > 0) {
       return matches.reduce((prev, current) => {
