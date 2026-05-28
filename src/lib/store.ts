@@ -61,6 +61,8 @@ export interface Project {
   documents: ProjectDocument[];
   createdAt: string;
   status: 'active' | 'completed';
+  warrantyStartDate?: string;
+  warrantyMonths?: number;
 }
 
 export interface Reminder {

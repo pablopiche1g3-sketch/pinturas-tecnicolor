@@ -34,7 +34,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { Progress } from "@/components/ui/progress"
-import { useFirestore } from "@/firebase"
+import { useFirestore, useStorage } from "@/firebase"
+import { ref, uploadString, getDownloadURL } from "firebase/storage"
+import { jsPDF } from "jspdf"
 
 export default function InstitutionalModule() {
   const { 
@@ -42,6 +44,7 @@ export default function InstitutionalModule() {
     addTransaction, voidTransaction, addToInventory, addDocumentToProject, deleteDocumentFromProject 
   } = useLedgerStore()
   const db = useFirestore()
+  const storage = useStorage()
   const { toast } = useToast()
   
   const [mounted, setMounted] = React.useState(false)
@@ -61,7 +64,9 @@ export default function InstitutionalModule() {
     name: '',
     purchaseOrder: '',
     targetSaleAmount: 0,
-    customerId: ''
+    customerId: '',
+    warrantyStartDate: '',
+    warrantyMonths: 0
   })
   const [newProjectProducts, setNewProjectProducts] = React.useState<ProjectProduct[]>([])
   const [tempProduct, setTempProduct] = React.useState<ProjectProduct>({
@@ -196,6 +201,8 @@ export default function InstitutionalModule() {
         customerId: newProject.customerId,
         customerName: customer?.name || 'Cliente Desconocido',
         expectedProducts: newProjectProducts,
+        warrantyStartDate: newProject.warrantyStartDate || undefined,
+        warrantyMonths: newProject.warrantyMonths || undefined,
       })
       toast({ title: "Proyecto Actualizado", description: "Cambios guardados exitosamente." })
     } else {
@@ -206,12 +213,14 @@ export default function InstitutionalModule() {
         customerId: newProject.customerId,
         customerName: customer?.name || 'Cliente Desconocido',
         expectedProducts: newProjectProducts,
-        status: 'active'
+        status: 'active',
+        warrantyStartDate: newProject.warrantyStartDate || undefined,
+        warrantyMonths: newProject.warrantyMonths || undefined,
       })
       toast({ title: "Proyecto Creado", description: "El proyecto se ha registrado exitosamente." })
     }
 
-    setNewProject({ name: '', purchaseOrder: '', targetSaleAmount: 0, customerId: '' })
+    setNewProject({ name: '', purchaseOrder: '', targetSaleAmount: 0, customerId: '', warrantyStartDate: '', warrantyMonths: 0 })
     setNewProjectProducts([])
     setEditingProject(null)
     setIsProjectDialogOpen(false)
@@ -224,7 +233,9 @@ export default function InstitutionalModule() {
       name: project.name,
       purchaseOrder: project.purchaseOrder,
       targetSaleAmount: project.targetSaleAmount,
-      customerId: project.customerId
+      customerId: project.customerId,
+      warrantyStartDate: project.warrantyStartDate || '',
+      warrantyMonths: project.warrantyMonths || 0
     })
     setNewProjectProducts(project.expectedProducts)
     setIsProjectDialogOpen(true)
@@ -321,40 +332,110 @@ export default function InstitutionalModule() {
   }
 
   // Document Management
-  const handleDocUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !editingProject) return
 
-    if (file.type !== 'application/pdf') {
-      toast({ title: "Formato no válido", description: "Solo se permiten archivos PDF.", variant: "destructive" })
+    if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
+      toast({ title: "Formato no válido", description: "Solo se permiten imágenes y archivos PDF.", variant: "destructive" })
       return
     }
 
     setIsUploading(true)
-    const reader = new FileReader()
-    reader.onload = (event) => {
-      const base64Data = event.target?.result as string
+
+    try {
+      let finalDataUrl = "";
+      let finalName = file.name;
+
+      if (file.type.startsWith('image/')) {
+        // Comprimir y convertir a PDF
+        finalName = file.name.replace(/\.[^/.]+$/, "") + ".pdf";
+        const imageBase64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        const img = new window.Image();
+        img.src = imageBase64;
+        await new Promise((resolve) => (img.onload = resolve));
+
+        // Reducir la resolución (max 1200px)
+        const maxDim = 1200;
+        let width = img.width;
+        let height = img.height;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Could not get canvas context");
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Calidad 0.7 para JPEG compresión
+        const compressedDataUrl = canvas.toDataURL("image/jpeg", 0.7);
+
+        // Crear PDF
+        const pdf = new jsPDF({
+          orientation: width > height ? "landscape" : "portrait",
+          unit: "px",
+          format: [width, height]
+        });
+        pdf.addImage(compressedDataUrl, "JPEG", 0, 0, width, height);
+        finalDataUrl = pdf.output("datauristring");
+      } else {
+        // Es un PDF, leerlo tal cual
+        finalDataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
+      // Subir a Firebase Storage
+      const storageRef = ref(storage, `projects/${editingProject.id}/documents/${Date.now()}_${finalName}`);
+      await uploadString(storageRef, finalDataUrl, 'data_url');
+      const downloadURL = await getDownloadURL(storageRef);
+
+      // Guardar en Firestore con la URL (NO el base64 gigante)
       addDocumentToProject(db, editingProject.id, {
-        name: file.name,
-        type: file.type,
-        size: file.size,
-        data: base64Data
+        name: finalName,
+        type: 'application/pdf',
+        size: file.size, 
+        data: downloadURL
       })
+      
+      toast({ title: "Documento Guardado", description: `${finalName} ha sido subido y optimizado.` })
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Error", description: "No se pudo procesar o subir el archivo.", variant: "destructive" })
+    } finally {
       setIsUploading(false)
-      toast({ title: "Documento Guardado", description: `${file.name} ha sido adjuntado.` })
+      // Resetear el input para permitir subir el mismo archivo de nuevo si es necesario
+      e.target.value = '';
     }
-    reader.onerror = () => {
-      setIsUploading(false)
-      toast({ title: "Error", description: "No se pudo procesar el archivo.", variant: "destructive" })
-    }
-    reader.readAsDataURL(file)
   }
 
   const handleDownloadDoc = (doc: ProjectDocument) => {
-    const link = document.createElement('a')
-    link.href = doc.data
-    link.download = doc.name
-    link.click()
+    if (doc.data.startsWith('http')) {
+      window.open(doc.data, '_blank')
+    } else {
+      const link = document.createElement('a')
+      link.href = doc.data
+      link.download = doc.name
+      link.click()
+    }
   }
 
   // AI & Manual Processing Logic...
@@ -770,6 +851,20 @@ export default function InstitutionalModule() {
                             <Label>Monto Venta Objetivo ($)</Label>
                             <Input type="number" value={newProject.targetSaleAmount} onChange={e => setNewProject({...newProject, targetSaleAmount: Number(e.target.value)})} />
                           </div>
+                          
+                          <div className="pt-4 border-t space-y-4">
+                            <h4 className="font-bold text-xs uppercase text-muted-foreground">Garantía del Proyecto</h4>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label>Inicio de Garantía</Label>
+                                <Input type="date" value={newProject.warrantyStartDate || ''} onChange={e => setNewProject({...newProject, warrantyStartDate: e.target.value})} />
+                              </div>
+                              <div className="space-y-2">
+                                <Label>Duración (Meses)</Label>
+                                <Input type="number" placeholder="Ej. 12" value={newProject.warrantyMonths || ''} onChange={e => setNewProject({...newProject, warrantyMonths: Number(e.target.value)})} />
+                              </div>
+                            </div>
+                          </div>
                         </div>
 
                         <div className="space-y-4">
@@ -861,7 +956,7 @@ export default function InstitutionalModule() {
                           {isUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
                           Subir PDF
                         </Button>
-                        <input type="file" ref={docInputRef} className="hidden" accept=".pdf" onChange={handleDocUpload} />
+                        <input type="file" ref={docInputRef} className="hidden" accept=".pdf,image/*" onChange={handleDocUpload} />
                       </div>
 
                       <ScrollArea className="h-[300px] rounded-lg border bg-muted/30 p-4">
@@ -1052,7 +1147,28 @@ export default function InstitutionalModule() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {projects.map(p => (
+              {projects.map(p => {
+                const getWarrantyStatus = () => {
+                  if (!p.warrantyStartDate || !p.warrantyMonths) return null;
+                  const start = new Date(p.warrantyStartDate);
+                  const end = new Date(start);
+                  end.setMonth(end.getMonth() + p.warrantyMonths);
+                  const now = new Date();
+                  
+                  const diffTime = end.getTime() - now.getTime();
+                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                  if (diffDays < 0) {
+                    return { text: "GARANTÍA VENCIDA", color: "bg-destructive text-white border-destructive" };
+                  } else if (diffDays <= 30) {
+                    return { text: `GARANTÍA VENCE EN ${diffDays} DÍAS`, color: "bg-red-500 text-white border-red-500" };
+                  } else {
+                    return { text: `GARANTÍA: ${end.toLocaleDateString()}`, color: "bg-blue-100 text-blue-700 border-blue-200" };
+                  }
+                };
+                const warranty = getWarrantyStatus();
+
+                return (
                 <Card 
                   key={p.id} 
                   className={cn(
@@ -1070,6 +1186,7 @@ export default function InstitutionalModule() {
                       <div className="flex flex-col items-end gap-1">
                         <Badge variant="outline" className="text-[9px] uppercase font-mono shrink-0">{p.purchaseOrder}</Badge>
                         {p.status === 'completed' && <Badge className="text-[8px] bg-green-500 border-none text-white">ENTREGADO</Badge>}
+                        {warranty && <Badge className={cn("text-[8px] border", warranty.color)}>{warranty.text}</Badge>}
                       </div>
                     </div>
                     <CardDescription className="text-xs truncate">{p.customerName}</CardDescription>
@@ -1113,7 +1230,8 @@ export default function InstitutionalModule() {
                     </Button>
                   </CardFooter>
                 </Card>
-              ))}
+                );
+              })}
             </div>
           </div>
         </TabsContent>

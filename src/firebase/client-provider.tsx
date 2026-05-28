@@ -15,13 +15,14 @@ export function FirebaseClientProvider({
   children: React.ReactNode;
 }) {
   // Inicializamos Firebase solo una vez en el cliente
-  const { firebaseApp, firestore, auth } = useMemo(() => initializeFirebase(), []);
+  const { firebaseApp, firestore, auth, storage } = useMemo(() => initializeFirebase(), []);
 
   return (
     <FirebaseProvider
       firebaseApp={firebaseApp}
       firestore={firestore}
       auth={auth}
+      storage={storage}
     >
       {children}
     </FirebaseProvider>
