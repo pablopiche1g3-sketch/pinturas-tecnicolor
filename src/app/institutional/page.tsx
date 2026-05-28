@@ -116,16 +116,36 @@ export default function InstitutionalModule() {
   
   const projectCosts = projectTransactions.filter(t => t.type === 'purchase').reduce((acc, curr) => acc + curr.totalAmount, 0)
 
+  const getMatchingExpectedProduct = (i: any, expectedProducts: any[]) => {
+    if (i.code) {
+      const byCode = expectedProducts.find(ep => ep.code === i.code);
+      if (byCode) return byCode;
+    }
+    const iDesc = (i.description || '').toLowerCase().trim();
+    if (!iDesc) return null;
+    const exactDesc = expectedProducts.find(ep => (ep.description || '').toLowerCase().trim() === iDesc);
+    if (exactDesc) return exactDesc;
+
+    const matches = expectedProducts.filter(ep => {
+      const epDesc = (ep.description || '').toLowerCase();
+      return iDesc.includes(epDesc) || epDesc.includes(iDesc);
+    });
+    if (matches.length > 0) {
+      return matches.reduce((prev, current) => (prev.description?.length || 0) > (current.description?.length || 0) ? prev : current);
+    }
+    return null;
+  }
+
   const getProductProgress = (ep: any, projectId: string) => {
     const project = projects.find(p => p.id === projectId)
     const txs = transactions.filter(t => t.projectId === projectId && !t.isVoided)
     const received = txs
       .filter(t => t.type === 'purchase')
       .flatMap(t => t.items)
-      .filter(i => 
-        (i.code && ep.code && i.code === ep.code) || 
-        (i.description && ep.description && (i.description.toLowerCase().includes(ep.description.toLowerCase()) || ep.description.toLowerCase().includes(i.description.toLowerCase())))
-      )
+      .filter(i => {
+        const match = getMatchingExpectedProduct(i, project?.expectedProducts || []);
+        return match && match.code === ep.code && match.description === ep.description;
+      })
       .reduce((acc, curr) => acc + curr.quantity, 0)
     
     const expected = ep.quantity || 1
@@ -220,19 +240,19 @@ export default function InstitutionalModule() {
     
     p.expectedProducts.forEach(ep => {
       // Calcular promedio de costo de compra
-      const purchased = allPurchasedItems.filter(i => 
-        (i.code && ep.code && i.code === ep.code) || 
-        (i.description && ep.description && (i.description.toLowerCase().includes(ep.description.toLowerCase()) || ep.description.toLowerCase().includes(i.description.toLowerCase())))
-      )
+      const purchased = allPurchasedItems.filter(i => {
+        const match = getMatchingExpectedProduct(i, p.expectedProducts);
+        return match && match.code === ep.code && match.description === ep.description;
+      })
       const qtyPurchased = purchased.reduce((acc, curr) => acc + curr.quantity, 0)
       const totalCost = purchased.reduce((acc, curr) => acc + curr.lineTotal, 0)
       const avgCost = qtyPurchased > 0 ? totalCost / qtyPurchased : 0
       
       // Calcular precio de venta real a partir de las facturas de venta subidas
-      const sold = allSoldItems.filter(i => 
-        (i.code && ep.code && i.code === ep.code) || 
-        (i.description && ep.description && (i.description.toLowerCase().includes(ep.description.toLowerCase()) || ep.description.toLowerCase().includes(i.description.toLowerCase())))
-      )
+      const sold = allSoldItems.filter(i => {
+        const match = getMatchingExpectedProduct(i, p.expectedProducts);
+        return match && match.code === ep.code && match.description === ep.description;
+      })
       const qtySold = sold.reduce((acc, curr) => acc + curr.quantity, 0)
       const totalSalesVal = sold.reduce((acc, curr) => acc + curr.lineTotal, 0)
       
@@ -243,10 +263,7 @@ export default function InstitutionalModule() {
     })
 
     // Procesar ítems que se compraron pero no estaban en la orden de compra original
-    const unmatched = allPurchasedItems.filter(i => !p.expectedProducts.some(ep => 
-      (ep.code && i.code && ep.code === i.code) || 
-      (i.description && ep.description && (i.description.toLowerCase().includes(ep.description.toLowerCase()) || ep.description.toLowerCase().includes(i.description.toLowerCase())))
-    ))
+    const unmatched = allPurchasedItems.filter(i => !getMatchingExpectedProduct(i, p.expectedProducts))
     
     const groupedUnmatched = unmatched.reduce((acc, curr) => {
       const key = curr.code || curr.description || 'unknown'
