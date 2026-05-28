@@ -217,13 +217,19 @@ export default function InstitutionalModule() {
     
     p.expectedProducts.forEach(ep => {
       // Calcular promedio de costo de compra
-      const purchased = allPurchasedItems.filter(i => i.code === ep.code || (i.description && ep.description && i.description.toLowerCase().includes(ep.description.toLowerCase())))
+      const purchased = allPurchasedItems.filter(i => 
+        (i.code && ep.code && i.code === ep.code) || 
+        (i.description && ep.description && (i.description.toLowerCase().includes(ep.description.toLowerCase()) || ep.description.toLowerCase().includes(i.description.toLowerCase())))
+      )
       const qtyPurchased = purchased.reduce((acc, curr) => acc + curr.quantity, 0)
       const totalCost = purchased.reduce((acc, curr) => acc + curr.lineTotal, 0)
       const avgCost = qtyPurchased > 0 ? totalCost / qtyPurchased : 0
       
       // Calcular precio de venta real a partir de las facturas de venta subidas
-      const sold = allSoldItems.filter(i => i.code === ep.code || (i.description && ep.description && i.description.toLowerCase().includes(ep.description.toLowerCase())))
+      const sold = allSoldItems.filter(i => 
+        (i.code && ep.code && i.code === ep.code) || 
+        (i.description && ep.description && (i.description.toLowerCase().includes(ep.description.toLowerCase()) || ep.description.toLowerCase().includes(i.description.toLowerCase())))
+      )
       const qtySold = sold.reduce((acc, curr) => acc + curr.quantity, 0)
       const totalSalesVal = sold.reduce((acc, curr) => acc + curr.lineTotal, 0)
       
@@ -234,7 +240,10 @@ export default function InstitutionalModule() {
     })
 
     // Procesar ítems que se compraron pero no estaban en la orden de compra original
-    const unmatched = allPurchasedItems.filter(i => !p.expectedProducts.some(ep => ep.code === i.code || (i.description && ep.description && i.description.toLowerCase().includes(ep.description.toLowerCase()))))
+    const unmatched = allPurchasedItems.filter(i => !p.expectedProducts.some(ep => 
+      (ep.code && i.code && ep.code === i.code) || 
+      (i.description && ep.description && (i.description.toLowerCase().includes(ep.description.toLowerCase()) || ep.description.toLowerCase().includes(i.description.toLowerCase())))
+    ))
     
     const groupedUnmatched = unmatched.reduce((acc, curr) => {
       const key = curr.code || curr.description || 'unknown'
@@ -248,7 +257,10 @@ export default function InstitutionalModule() {
       const avgCost = u.qty > 0 ? u.totalCost / u.qty : 0
       
       // Buscar si este producto extra también se vendió en las facturas de venta
-      const sold = allSoldItems.filter(i => i.code === u.code || (i.description && u.description && i.description.toLowerCase().includes(u.description.toLowerCase())))
+      const sold = allSoldItems.filter(i => 
+        (i.code && u.code && i.code === u.code) || 
+        (i.description && u.description && (i.description.toLowerCase().includes(u.description.toLowerCase()) || u.description.toLowerCase().includes(i.description.toLowerCase())))
+      )
       const qtySold = sold.reduce((acc, curr) => acc + curr.quantity, 0)
       const totalSalesVal = sold.reduce((acc, curr) => acc + curr.lineTotal, 0)
       const salePrice = qtySold > 0 ? (totalSalesVal / qtySold) : 0
@@ -390,16 +402,18 @@ export default function InstitutionalModule() {
     const orphanItems: TransactionItem[] = []
     
     rawItems.forEach(item => {
-      const isExpected = currentProject.expectedProducts.some(ep => 
-        ep.code === item.code || 
-        item.description?.toLowerCase().includes(ep.description.toLowerCase())
+      const ep = currentProject.expectedProducts.find(p => 
+        p.code === item.code || 
+        item.description?.toLowerCase().includes(p.description.toLowerCase())
       )
+      const isExpected = !!ep
+      const unitPrice = item.unitPrice || (ep?.unitPrice || 0)
       const txItem = {
-        description: item.description || 'Gasto proveedor',
+        description: item.description || (ep?.description || 'Gasto proveedor'),
         quantity: item.quantity || 1,
-        unitPrice: item.unitPrice || 0,
-        lineTotal: item.lineTotal || 0,
-        code: item.code || 'S/C'
+        unitPrice: unitPrice,
+        lineTotal: item.lineTotal || ((item.quantity || 1) * unitPrice),
+        code: item.code || (ep?.code || 'S/C')
       }
       if (isExpected) validItems.push(txItem)
       else orphanItems.push(txItem)
@@ -1185,7 +1199,15 @@ export default function InstitutionalModule() {
                        </div>
                        <div className="border p-4 rounded-lg bg-muted/20 space-y-3">
                           <div className="grid grid-cols-2 gap-2">
-                             <Input placeholder="Código del producto" className="col-span-2" value={tempManualItem.code} onChange={e => setTempManualItem({...tempManualItem, code: e.target.value})} />
+                             <Input placeholder="Código del producto" className="col-span-2" value={tempManualItem.code} onChange={e => {
+                               const code = e.target.value;
+                               const ep = currentProject?.expectedProducts.find(p => p.code === code);
+                               if (ep) {
+                                 setTempManualItem({...tempManualItem, code, description: ep.description, unitPrice: ep.unitPrice});
+                               } else {
+                                 setTempManualItem({...tempManualItem, code});
+                               }
+                             }} />
                              <Input placeholder="Descripción del producto" className="col-span-2" value={tempManualItem.description} onChange={e => setTempManualItem({...tempManualItem, description: e.target.value})} />
                              <Input type="number" placeholder="Cant." value={tempManualItem.quantity} onChange={e => setTempManualItem({...tempManualItem, quantity: Number(e.target.value)})} />
                              <Input type="number" placeholder="Precio ($)" value={tempManualItem.unitPrice} onChange={e => setTempManualItem({...tempManualItem, unitPrice: Number(e.target.value)})} />
@@ -1253,7 +1275,15 @@ export default function InstitutionalModule() {
                     <CardContent className="space-y-4">
                        <div className="border p-4 rounded-lg bg-muted/20 space-y-3">
                           <div className="grid grid-cols-2 gap-2">
-                             <Input placeholder="Código del producto" className="col-span-2" value={tempManualItem.code} onChange={e => setTempManualItem({...tempManualItem, code: e.target.value})} />
+                             <Input placeholder="Código del producto" className="col-span-2" value={tempManualItem.code} onChange={e => {
+                               const code = e.target.value;
+                               const ep = currentProject?.expectedProducts.find(p => p.code === code);
+                               if (ep) {
+                                 setTempManualItem({...tempManualItem, code, description: ep.description, unitPrice: ep.unitPrice});
+                               } else {
+                                 setTempManualItem({...tempManualItem, code});
+                               }
+                             }} />
                              <Input placeholder="Descripción del producto" className="col-span-2" value={tempManualItem.description} onChange={e => setTempManualItem({...tempManualItem, description: e.target.value})} />
                              <Input type="number" placeholder="Cant." value={tempManualItem.quantity} onChange={e => setTempManualItem({...tempManualItem, quantity: Number(e.target.value)})} />
                              <Input type="number" placeholder="Costo Unitario ($)" value={tempManualItem.unitPrice} onChange={e => setTempManualItem({...tempManualItem, unitPrice: Number(e.target.value)})} />

@@ -269,7 +269,12 @@ export default function LedgerPage() {
                       </div>
                       <div className="text-right border-l pl-8">
                         <p className="text-[10px] uppercase text-muted-foreground font-bold leading-none mb-1">Utilidad Neta</p>
-                        <p className="text-sm font-black text-primary">${stats.totalGain.toLocaleString()}</p>
+                        <p className="text-sm font-black text-primary">
+                          ${stats.totalGain.toLocaleString()}
+                          <span className="text-xs text-muted-foreground font-normal ml-1">
+                            ({stats.totalSales > 0 ? ((stats.totalGain / stats.totalSales) * 100).toFixed(1) : 0}%)
+                          </span>
+                        </p>
                       </div>
                     </div>
                   </div>
