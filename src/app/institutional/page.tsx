@@ -131,7 +131,11 @@ export default function InstitutionalModule() {
       return iDesc.includes(epDesc) || epDesc.includes(iDesc);
     });
     if (matches.length > 0) {
-      return matches.reduce((prev, current) => (prev.description?.length || 0) > (current.description?.length || 0) ? prev : current);
+      return matches.reduce((prev, current) => {
+        const diffPrev = Math.abs((prev.description?.length || 0) - iDesc.length);
+        const diffCurr = Math.abs((current.description?.length || 0) - iDesc.length);
+        return diffPrev < diffCurr ? prev : current;
+      });
     }
     return null;
   }
