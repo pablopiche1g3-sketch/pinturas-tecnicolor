@@ -20,6 +20,7 @@ export interface Entity {
   type: 'supplier' | 'customer';
   email?: string;
   phone?: string;
+  isGranContribuyente?: boolean;
   createdAt: string;
 }
 

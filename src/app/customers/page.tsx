@@ -26,6 +26,8 @@ import {
 import { Plus, Trash2, Mail, Phone, User, Loader2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { useFirestore } from "@/firebase"
+import { Switch } from "@/components/ui/switch"
+import { Badge } from "@/components/ui/badge"
 
 export default function CustomersPage() {
   const { entities, addEntity, deleteEntity } = useLedgerStore()
@@ -35,7 +37,8 @@ export default function CustomersPage() {
   const [formData, setFormData] = React.useState({
     name: '',
     email: '',
-    phone: ''
+    phone: '',
+    isGranContribuyente: false
   })
 
   React.useEffect(() => {
@@ -51,9 +54,10 @@ export default function CustomersPage() {
       name: formData.name,
       email: formData.email,
       phone: formData.phone,
+      isGranContribuyente: formData.isGranContribuyente,
       type: 'customer'
     })
-    setFormData({ name: '', email: '', phone: '' })
+    setFormData({ name: '', email: '', phone: '', isGranContribuyente: false })
     setIsOpen(false)
   }
 
@@ -114,6 +118,17 @@ export default function CustomersPage() {
                     placeholder="+1 (555) 999-8888" 
                   />
                 </div>
+                <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="isGranContribuyente">¿Gran Contribuyente?</Label>
+                    <p className="text-[10px] text-muted-foreground uppercase">Aplica retención del 1% de IVA en ventas &gt; $100</p>
+                  </div>
+                  <Switch 
+                    id="isGranContribuyente" 
+                    checked={formData.isGranContribuyente} 
+                    onCheckedChange={checked => setFormData(prev => ({ ...prev, isGranContribuyente: checked }))} 
+                  />
+                </div>
                 <DialogFooter>
                   <Button type="submit" className="w-full bg-accent hover:bg-accent/90">Confirmar Cliente</Button>
                 </DialogFooter>
@@ -139,8 +154,15 @@ export default function CustomersPage() {
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
-                          <User className="h-4 w-4 text-accent" />
-                          {c.name}
+                          <User className="h-4 w-4 text-accent mt-0.5 shrink-0" />
+                          <div className="flex flex-col gap-0.5">
+                            <span>{c.name}</span>
+                            {c.isGranContribuyente && (
+                              <Badge className="bg-primary hover:bg-primary text-[8px] h-4 w-fit py-0 text-white border-none uppercase">
+                                Gran Contribuyente
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>

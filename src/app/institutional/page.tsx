@@ -20,11 +20,19 @@ import {
 } from "@/components/ui/dialog"
 import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project, type ProjectDocument, type Transaction } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput, type AiActionResponse } from "@/ai/flows/ai-json-key-mapper"
-import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download } from "lucide-react"
+import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { Progress } from "@/components/ui/progress"
 import { useFirestore } from "@/firebase"
 
@@ -43,6 +51,11 @@ export default function InstitutionalModule() {
   const [isProjectDialogOpen, setIsProjectDialogOpen] = React.useState(false)
   const [editingProject, setEditingProject] = React.useState<Project | null>(null)
   const [viewingInvoice, setViewingInvoice] = React.useState<Transaction | null>(null)
+  const [isSuppliesDialogOpen, setIsSuppliesDialogOpen] = React.useState(false)
+
+  const handleUpdateProductProperty = (idx: number, key: keyof ProjectProduct, value: any) => {
+    setNewProjectProducts(prev => prev.map((p, i) => i === idx ? { ...p, [key]: value } : p))
+  }
   
   const [newProject, setNewProject] = React.useState({
     name: '',
@@ -406,7 +419,9 @@ export default function InstitutionalModule() {
     if (validItems.length > 0) {
       const subtotal = validItems.reduce((acc, curr) => acc + curr.lineTotal, 0)
       const tax = mappedData.taxAmount || (subtotal * 0.13)
-      const total = mappedData.totalAmount || (subtotal + tax)
+      const retention = mappedData.retentionAmount || 0
+      const perception = mappedData.perceptionAmount || 0
+      const total = mappedData.totalAmount || (subtotal + tax - retention + perception)
 
       addTransaction(db, {
         invoiceNumber: mappedData.invoiceNumber || `DTE-${Date.now()}`,
@@ -420,6 +435,8 @@ export default function InstitutionalModule() {
         items: validItems,
         subtotal,
         taxAmount: tax,
+        retentionAmount: retention,
+        perceptionAmount: perception,
         totalAmount: total,
         costBasis: total,
         gain: 0
@@ -496,9 +513,12 @@ export default function InstitutionalModule() {
       return
     }
     const supplier = suppliers.find(s => s.id === manualPurchase.supplierId)
+    const isGC = supplier?.isGranContribuyente || false
+    const isCCF = manualPurchase.documentType === '03'
     const subtotal = manualItems.reduce((acc, curr) => acc + curr.lineTotal, 0)
     const tax = subtotal * 0.13
-    const total = subtotal + tax
+    const perception = isGC && isCCF && subtotal >= 100 ? subtotal * 0.01 : 0
+    const total = subtotal + tax + perception
 
     addTransaction(db, {
       invoiceNumber: manualPurchase.codigoGeneracion,
@@ -512,6 +532,8 @@ export default function InstitutionalModule() {
       items: manualItems,
       subtotal,
       taxAmount: tax,
+      retentionAmount: 0,
+      perceptionAmount: perception,
       totalAmount: total,
       costBasis: total,
       gain: 0
@@ -549,8 +571,24 @@ export default function InstitutionalModule() {
 
   const handleSaveInvoice = (closeProject: boolean) => {
     if (!mappedData || !selectedProjectId || !currentProject) return
+
+    const customer = entities.find(e => e.id === currentProject.customerId)
+    const isGC = customer?.isGranContribuyente || false
+    const isCCF = (mappedData.documentType || '01') === '03'
+    const subtotal = mappedData.subtotal || 0
+    const tax = mappedData.taxAmount || 0
+    const parsedRetention = mappedData.retentionAmount || 0
+    const calculatedRetention = parsedRetention > 0 
+      ? parsedRetention 
+      : (isGC && isCCF && subtotal >= 100 ? subtotal * 0.01 : 0)
+    const perception = mappedData.perceptionAmount || 0
+    const adjustedTotal = mappedData.totalAmount && parsedRetention === calculatedRetention
+      ? mappedData.totalAmount 
+      : (subtotal + tax - calculatedRetention + perception)
+
     addTransaction(db, {
       invoiceNumber: mappedData.invoiceNumber || `INV-${Date.now()}`,
+      numeroControl: (mappedData as any).numeroControl || '',
       issueDate: mappedData.issueDate || new Date().toISOString(),
       entityId: currentProject.customerId,
       entityName: currentProject.customerName,
@@ -558,11 +596,13 @@ export default function InstitutionalModule() {
       type: 'sale',
       documentType: mappedData.documentType || '01',
       items: (mappedData.items || []).map(i => ({ ...i, description: i.description || '', quantity: i.quantity || 1, unitPrice: i.unitPrice || 0, lineTotal: i.lineTotal || 0 })),
-      subtotal: mappedData.subtotal || 0,
-      taxAmount: mappedData.taxAmount || 0,
-      totalAmount: mappedData.totalAmount || 0,
+      subtotal,
+      taxAmount: tax,
+      retentionAmount: calculatedRetention,
+      perceptionAmount: perception,
+      totalAmount: adjustedTotal,
       costBasis: projectCosts,
-      gain: (mappedData.totalAmount || 0) - projectCosts
+      gain: adjustedTotal - projectCosts
     })
     
     if (closeProject) {
@@ -652,7 +692,18 @@ export default function InstitutionalModule() {
                         </div>
 
                         <div className="space-y-4">
-                          <h4 className="font-bold text-xs uppercase text-muted-foreground">Productos de la OC</h4>
+                          <div className="flex justify-between items-center">
+                            <h4 className="font-bold text-xs uppercase text-muted-foreground">Productos de la OC</h4>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              type="button"
+                              className="h-7 text-[10px] px-2 gap-1 text-primary border-primary/20 hover:bg-primary/5 shrink-0" 
+                              onClick={(e) => { e.preventDefault(); setIsSuppliesDialogOpen(true); }}
+                            >
+                              <Maximize2 className="h-3 w-3" /> Editar en Pantalla Completa
+                            </Button>
+                          </div>
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             <Input className="h-8 text-xs" placeholder="Código SV" value={tempProduct.code} onChange={e => setTempProduct({...tempProduct, code: e.target.value})} />
                             <Input className="h-8 text-xs" type="number" placeholder="Cantidad" value={tempProduct.quantity} onChange={e => setTempProduct({...tempProduct, quantity: Number(e.target.value)})} />
@@ -660,13 +711,19 @@ export default function InstitutionalModule() {
                             <Input className="sm:col-span-3 h-8 text-xs" placeholder="Descripción del producto" value={tempProduct.description} onChange={e => setTempProduct({...tempProduct, description: e.target.value})} />
                           </div>
                           <Button variant="outline" size="sm" className="w-full h-8 text-xs" onClick={handleAddProductToProject}>Añadir Item</Button>
-                          <ScrollArea className="h-[120px] rounded border bg-muted/20 p-2">
+                          <ScrollArea className="h-[200px] rounded-lg border bg-muted/10 p-2 shadow-inner">
                             {newProjectProducts.map((p, idx) => (
-                              <div key={idx} className="flex justify-between items-center text-[10px] py-1 border-b">
-                                <span className="truncate pr-2">{p.code} - {p.description} (x{p.quantity} @ ${p.unitPrice})</span>
-                                <Button variant="ghost" size="icon" className="h-4 w-4 shrink-0" onClick={() => setNewProjectProducts(newProjectProducts.filter((_, i) => i !== idx))}><Trash2 className="h-3 w-3" /></Button>
+                              <div key={idx} className="flex justify-between items-center text-[10px] py-1.5 border-b last:border-0 group hover:bg-muted/30 px-1 rounded transition-colors">
+                                <div className="flex flex-col min-w-0 pr-2">
+                                  <span className="font-bold text-foreground truncate">{p.code || 'S/C'} - {p.description}</span>
+                                  <span className="text-muted-foreground text-[9px] mt-0.5">Cantidad: {p.quantity} • Precio: ${p.unitPrice.toFixed(2)} • Total: ${(p.quantity * p.unitPrice).toFixed(2)}</span>
+                                </div>
+                                <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0 text-destructive hover:bg-destructive/10" onClick={() => setNewProjectProducts(newProjectProducts.filter((_, i) => i !== idx))}><Trash2 className="h-3.5 w-3.5" /></Button>
                               </div>
                             ))}
+                            {newProjectProducts.length === 0 && (
+                              <div className="h-full flex items-center justify-center text-muted-foreground text-[10px] italic py-10">No hay artículos cargados en la OC.</div>
+                            )}
                           </ScrollArea>
                         </div>
                       </div>
@@ -764,6 +821,149 @@ export default function InstitutionalModule() {
                   <DialogFooter className="mt-6">
                     <Button className="w-full bg-primary" onClick={handleCreateOrUpdateProject}>
                       {editingProject ? 'Guardar Cambios' : 'Crear Proyecto'}
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              <Dialog open={isSuppliesDialogOpen} onOpenChange={setIsSuppliesDialogOpen}>
+                <DialogContent className="sm:max-w-[900px] w-[95vw] max-h-[85vh] flex flex-col p-6 overflow-hidden">
+                  <DialogHeader className="pb-4 border-b">
+                    <DialogTitle className="flex items-center gap-2 text-xl font-bold font-headline text-foreground"><Sliders className="h-5 w-5 text-primary" /> Control de Suministros Autorizados de la OC</DialogTitle>
+                    <CardDescription>
+                      Edite libremente los códigos, cantidades, precios y descripciones de los artículos de la Orden de Compra (OC). Los cambios se aplicarán al guardar el proyecto.
+                    </CardDescription>
+                  </DialogHeader>
+
+                  <div className="flex-1 overflow-y-auto my-4 border rounded-xl bg-card">
+                    <Table>
+                      <TableHeader className="bg-muted/50 sticky top-0 z-10">
+                        <TableRow>
+                          <TableHead className="w-[120px]">Código SV</TableHead>
+                          <TableHead className="w-[300px]">Descripción</TableHead>
+                          <TableHead className="w-[90px] text-right">Cantidad</TableHead>
+                          <TableHead className="w-[110px] text-right">Precio Venta ($)</TableHead>
+                          <TableHead className="w-[110px] text-right">Total ($)</TableHead>
+                          <TableHead className="w-[60px] text-center">Acción</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {newProjectProducts.length > 0 ? (
+                          newProjectProducts.map((p, idx) => (
+                            <TableRow key={idx} className="hover:bg-muted/30">
+                              <TableCell className="p-2">
+                                <Input 
+                                  className="h-8 text-xs font-mono" 
+                                  value={p.code} 
+                                  onChange={e => handleUpdateProductProperty(idx, 'code', e.target.value)} 
+                                  placeholder="CÓDIGO" 
+                                />
+                              </TableCell>
+                              <TableCell className="p-2">
+                                <Input 
+                                  className="h-8 text-xs" 
+                                  value={p.description} 
+                                  onChange={e => handleUpdateProductProperty(idx, 'description', e.target.value)} 
+                                  placeholder="Descripción del producto" 
+                                />
+                              </TableCell>
+                              <TableCell className="p-2">
+                                <Input 
+                                  type="number"
+                                  className="h-8 text-xs text-right" 
+                                  value={p.quantity} 
+                                  onChange={e => handleUpdateProductProperty(idx, 'quantity', Number(e.target.value))} 
+                                />
+                              </TableCell>
+                              <TableCell className="p-2">
+                                <Input 
+                                  type="number"
+                                  className="h-8 text-xs text-right" 
+                                  value={p.unitPrice} 
+                                  onChange={e => handleUpdateProductProperty(idx, 'unitPrice', Number(e.target.value))} 
+                                />
+                              </TableCell>
+                              <TableCell className="p-2 text-right text-xs font-bold text-foreground">
+                                ${(p.quantity * p.unitPrice).toFixed(2)}
+                              </TableCell>
+                              <TableCell className="p-2 text-center">
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  type="button"
+                                  className="h-7 w-7 text-destructive hover:bg-destructive/10" 
+                                  onClick={() => setNewProjectProducts(newProjectProducts.filter((_, i) => i !== idx))}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={6} className="h-32 text-center text-muted-foreground italic text-xs">
+                              No hay productos en esta Orden de Compra. Agregue uno abajo.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
+
+                  <div className="bg-muted/40 p-4 rounded-xl border space-y-3 shrink-0">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Agregar Nuevo Artículo</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                      <Input 
+                        className="h-9 text-xs" 
+                        placeholder="Código" 
+                        value={tempProduct.code} 
+                        onChange={e => setTempProduct({...tempProduct, code: e.target.value})} 
+                      />
+                      <Input 
+                        className="h-9 text-xs sm:col-span-2" 
+                        placeholder="Descripción del producto" 
+                        value={tempProduct.description} 
+                        onChange={e => setTempProduct({...tempProduct, description: e.target.value})} 
+                      />
+                      <div className="flex gap-2">
+                        <Input 
+                          type="number" 
+                          className="h-9 text-xs text-right w-1/2" 
+                          placeholder="Cant." 
+                          value={tempProduct.quantity} 
+                          onChange={e => setTempProduct({...tempProduct, quantity: Number(e.target.value)})} 
+                        />
+                        <Input 
+                          type="number" 
+                          className="h-9 text-xs text-right w-1/2" 
+                          placeholder="Precio ($)" 
+                          value={tempProduct.unitPrice || ''} 
+                          onChange={e => setTempProduct({...tempProduct, unitPrice: Number(e.target.value)})} 
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-between items-center gap-4 pt-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        type="button"
+                        className="gap-1.5 h-9 text-xs shrink-0" 
+                        onClick={handleAddProductToProject}
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Añadir Artículo
+                      </Button>
+                      <div className="text-right">
+                        <span className="text-[10px] text-muted-foreground uppercase font-bold block leading-none mb-1">Valor Estimado de la OC</span>
+                        <span className="text-lg font-black text-primary">
+                          ${newProjectProducts.reduce((acc, curr) => acc + (curr.quantity * curr.unitPrice), 0).toFixed(2)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <DialogFooter className="mt-4 gap-2 pt-4 border-t shrink-0">
+                    <Button type="button" className="w-full bg-primary font-bold text-white hover:bg-primary/90" onClick={() => setIsSuppliesDialogOpen(false)}>
+                      Confirmar y Regresar
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -970,10 +1170,19 @@ export default function InstitutionalModule() {
                           <div className="space-y-2"><Label>Código Generación</Label><Input value={manualPurchase.codigoGeneracion} onChange={e => setManualPurchase({...manualPurchase, codigoGeneracion: e.target.value})} /></div>
                           <div className="space-y-2"><Label>Control</Label><Input value={manualPurchase.numeroControl} onChange={e => setManualPurchase({...manualPurchase, numeroControl: e.target.value})} /></div>
                        </div>
-                       <Select value={manualPurchase.supplierId} onValueChange={v => setManualPurchase({...manualPurchase, supplierId: v})}>
-                         <SelectTrigger><SelectValue placeholder="Proveedor" /></SelectTrigger>
-                         <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
-                       </Select>
+                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                          <Select value={manualPurchase.supplierId} onValueChange={v => setManualPurchase({...manualPurchase, supplierId: v})}>
+                            <SelectTrigger><SelectValue placeholder="Proveedor" /></SelectTrigger>
+                            <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
+                          </Select>
+                          <Select value={manualPurchase.documentType} onValueChange={v => setManualPurchase({...manualPurchase, documentType: v})}>
+                            <SelectTrigger><SelectValue placeholder="Tipo Documento" /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="03">Crédito Fiscal (CCF)</SelectItem>
+                              <SelectItem value="01">Factura Consumidor (FAC)</SelectItem>
+                            </SelectContent>
+                          </Select>
+                       </div>
                        <div className="border p-4 rounded-lg bg-muted/20 space-y-3">
                           <div className="grid grid-cols-2 gap-2">
                              <Input placeholder="Código del producto" className="col-span-2" value={tempManualItem.code} onChange={e => setTempManualItem({...tempManualItem, code: e.target.value})} />
@@ -988,15 +1197,49 @@ export default function InstitutionalModule() {
                   </Card>
                   <Card>
                     <CardHeader><CardTitle className="text-lg">Resumen Manual</CardTitle></CardHeader>
-                    <CardContent>
-                       <ScrollArea className="h-[250px] border rounded-lg p-2">
+                    <CardContent className="space-y-4">
+                       <ScrollArea className="h-[180px] border rounded-lg p-2 bg-card">
                           {manualItems.map((it, idx) => (
                             <div key={idx} className="flex justify-between p-2 border-b text-[10px]">
                                <span>{it.code ? `[${it.code}] ` : ''}{it.description} (x{it.quantity})</span>
-                               <span className="font-bold">${it.lineTotal.toFixed(2)}</span>
+                               <span className="font-bold text-foreground">${it.lineTotal.toFixed(2)}</span>
                             </div>
                           ))}
+                          {manualItems.length === 0 && (
+                            <div className="h-full flex items-center justify-center text-muted-foreground text-xs italic py-10">No hay productos agregados.</div>
+                          )}
                        </ScrollArea>
+                       {(() => {
+                         const supplier = suppliers.find(s => s.id === manualPurchase.supplierId)
+                         const isGC = supplier?.isGranContribuyente || false
+                         const isCCF = manualPurchase.documentType === '03'
+                         const subtotal = manualItems.reduce((acc, curr) => acc + curr.lineTotal, 0)
+                         const tax = subtotal * 0.13
+                         const perception = isGC && isCCF && subtotal >= 100 ? subtotal * 0.01 : 0
+                         const total = subtotal + tax + perception
+
+                         return (
+                           <div className="p-3 bg-muted rounded-xl space-y-1.5 text-[11px] border border-border/60">
+                             <div className="flex justify-between"><span>Subtotal:</span><span>${subtotal.toFixed(2)}</span></div>
+                             <div className="flex justify-between"><span>IVA (13%):</span><span>${tax.toFixed(2)}</span></div>
+                             {perception > 0 && (
+                               <div className="flex justify-between text-green-600 font-bold">
+                                 <span>Percepción IVA (1%):</span>
+                                 <span>+${perception.toFixed(2)}</span>
+                               </div>
+                             )}
+                             <div className="flex justify-between text-sm font-black border-t mt-2 pt-2 text-foreground">
+                               <span>Total Compra:</span>
+                               <span>${total.toFixed(2)}</span>
+                             </div>
+                             {perception > 0 && (
+                               <div className="text-[9px] text-muted-foreground italic border-t pt-1.5 mt-1 border-dotted">
+                                 * Sujeto a Percepción del 1% IVA (Hacienda El Salvador) porque el proveedor es Gran Contribuyente.
+                               </div>
+                             )}
+                           </div>
+                         )
+                       })()}
                     </CardContent>
                   </Card>
                 </div>
@@ -1113,14 +1356,87 @@ export default function InstitutionalModule() {
                    <CardContent>
                       {mappedData ? (
                         <div className="space-y-4">
-                           <div className="p-4 bg-muted rounded-xl space-y-2">
-                              <div className="flex justify-between"><span>Venta Emitida:</span><span className="font-bold">${mappedData.totalAmount?.toFixed(2)}</span></div>
-                              <div className="flex justify-between"><span>Objetivo OC:</span><span>${currentProject?.targetSaleAmount.toFixed(2)}</span></div>
-                           </div>
-                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                             <Button variant="outline" className="w-full" onClick={() => handleSaveInvoice(false)}>Guardar Parcial</Button>
-                             <Button className="w-full bg-primary" onClick={() => handleSaveInvoice(true)}>Cerrar Proyecto y Guardar</Button>
-                           </div>
+                           {(() => {
+                             const customer = entities.find(e => e.id === currentProject?.customerId)
+                             const isGC = customer?.isGranContribuyente || false
+                             const isCCF = (mappedData.documentType || '01') === '03'
+                             const subtotal = mappedData.subtotal || 0
+                             const tax = mappedData.taxAmount || (subtotal * 0.13)
+                             const parsedRetention = mappedData.retentionAmount || 0
+                             const calculatedRetention = parsedRetention > 0 
+                               ? parsedRetention 
+                               : (isGC && isCCF && subtotal >= 100 ? subtotal * 0.01 : 0)
+                             const perception = mappedData.perceptionAmount || 0
+                             const adjustedTotal = subtotal + tax - calculatedRetention + perception
+
+                             return (
+                               <>
+                                 <div className="p-4 bg-muted rounded-xl space-y-2 text-xs">
+                                    <div className="flex justify-between"><span>Subtotal:</span><span>${subtotal.toFixed(2)}</span></div>
+                                    <div className="flex justify-between"><span>IVA (13%):</span><span>${tax.toFixed(2)}</span></div>
+                                    {calculatedRetention > 0 && (
+                                      <div className="flex justify-between text-red-500 font-medium animate-in fade-in duration-300">
+                                        <span>Retención IVA (1%):</span>
+                                        <span>-${calculatedRetention.toFixed(2)}</span>
+                                      </div>
+                                    )}
+                                    {perception > 0 && (
+                                      <div className="flex justify-between text-green-600 font-medium">
+                                        <span>Percepción IVA (1%):</span>
+                                        <span>+${perception.toFixed(2)}</span>
+                                      </div>
+                                    )}
+                                    <div className="flex justify-between text-base font-black border-t mt-2 pt-2 text-foreground">
+                                      <span>Total a Recibir:</span>
+                                      <span>${adjustedTotal.toFixed(2)}</span>
+                                    </div>
+                                    <div className="flex justify-between border-t pt-2 mt-2 text-muted-foreground">
+                                      <span>Objetivo OC:</span>
+                                      <span>${currentProject?.targetSaleAmount.toFixed(2)}</span>
+                                    </div>
+                                 </div>
+
+                                 {calculatedRetention > 0 && (
+                                    <div className="p-3 bg-red-50/70 dark:bg-red-950/20 text-red-700 dark:text-red-300 rounded-lg border border-red-200/50 dark:border-red-900/30 text-[10px] space-y-1 animate-in zoom-in-95 duration-300">
+                                      <p className="font-bold flex items-center gap-1.5 uppercase tracking-wide text-red-800 dark:text-red-200">
+                                        <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse shrink-0"></span>
+                                        Retención del 1% IVA Aplicada
+                                      </p>
+                                      <p className="leading-relaxed">
+                                        Identificada según normativa de Hacienda (Art. 162 C.T.). El cliente <strong>{currentProject?.customerName}</strong> es <strong>Gran Contribuyente</strong> en un Crédito Fiscal superior a $100.00.
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {isGC && isCCF && subtotal >= 100 && parsedRetention === 0 && (
+                                    <div className="p-3 bg-amber-50/70 dark:bg-amber-950/20 text-amber-700 dark:text-amber-300 rounded-lg border border-amber-200/50 dark:border-amber-900/30 text-[10px] space-y-1 animate-in zoom-in-95 duration-300">
+                                      <p className="font-bold flex items-center gap-1.5 uppercase tracking-wide text-amber-800 dark:text-amber-200">
+                                        ⚠️ Advertencia de Cumplimiento
+                                      </p>
+                                      <p className="leading-relaxed">
+                                        La operación califica para <strong>Retención del 1% de IVA</strong> (Gran Contribuyente y CCF &gt;= $100.00), pero el archivo subido no la reportaba en <code>ivaRete1</code>. Hemos autocalculado <strong>${(subtotal * 0.01).toFixed(2)}</strong> para conciliar.
+                                      </p>
+                                    </div>
+                                  )}
+
+                                  {!isGC && parsedRetention > 0 && (
+                                    <div className="p-3 bg-blue-50/70 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 rounded-lg border border-blue-200/50 dark:border-blue-900/30 text-[10px] space-y-1 animate-in zoom-in-95 duration-300">
+                                      <p className="font-bold flex items-center gap-1.5 uppercase tracking-wide text-blue-800 dark:text-blue-200">
+                                        ℹ️ Ajuste de Cliente
+                                      </p>
+                                      <p className="leading-relaxed">
+                                        La factura de venta contiene <strong>Retención del 1% de IVA</strong> en origen. Hemos aplicado el valor del DTE, aunque el cliente no figuraba como Gran Contribuyente en nuestro catálogo.
+                                      </p>
+                                    </div>
+                                  )}
+
+                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                   <Button variant="outline" className="w-full" onClick={() => handleSaveInvoice(false)}>Guardar Parcial</Button>
+                                   <Button className="w-full bg-primary" onClick={() => handleSaveInvoice(true)}>Cerrar Proyecto y Guardar</Button>
+                                 </div>
+                               </>
+                             )
+                           })()}
                         </div>
                       ) : <div className="py-20 text-center opacity-40 italic text-xs">Cargue el DTE de venta.</div>}
                    </CardContent>

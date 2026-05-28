@@ -26,6 +26,8 @@ import {
 import { Plus, Trash2, Mail, Phone, Truck, Loader2 } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { useFirestore } from "@/firebase"
+import { Switch } from "@/components/ui/switch"
+import { Badge } from "@/components/ui/badge"
 
 export default function SuppliersPage() {
   const { entities, addEntity, deleteEntity } = useLedgerStore()
@@ -35,7 +37,8 @@ export default function SuppliersPage() {
   const [formData, setFormData] = React.useState({
     name: '',
     email: '',
-    phone: ''
+    phone: '',
+    isGranContribuyente: false
   })
 
   React.useEffect(() => {
@@ -51,9 +54,10 @@ export default function SuppliersPage() {
       name: formData.name,
       email: formData.email,
       phone: formData.phone,
+      isGranContribuyente: formData.isGranContribuyente,
       type: 'supplier'
     })
-    setFormData({ name: '', email: '', phone: '' })
+    setFormData({ name: '', email: '', phone: '', isGranContribuyente: false })
     setIsOpen(false)
   }
 
@@ -114,8 +118,19 @@ export default function SuppliersPage() {
                     placeholder="+1 (555) 000-0000" 
                   />
                 </div>
+                <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="isGranContribuyente">¿Gran Contribuyente?</Label>
+                    <p className="text-[10px] text-muted-foreground uppercase">Proveedor calificado como Gran Contribuyente</p>
+                  </div>
+                  <Switch 
+                    id="isGranContribuyente" 
+                    checked={formData.isGranContribuyente} 
+                    onCheckedChange={checked => setFormData(prev => ({ ...prev, isGranContribuyente: checked }))} 
+                  />
+                </div>
                 <DialogFooter>
-                  <Button type="submit" className="w-full">Guardar Entidad</Button>
+                  <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-white">Guardar Entidad</Button>
                 </DialogFooter>
               </form>
             </DialogContent>
@@ -139,8 +154,15 @@ export default function SuppliersPage() {
                     <TableRow key={s.id}>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-2">
-                          <Truck className="h-4 w-4 text-primary" />
-                          {s.name}
+                          <Truck className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+                          <div className="flex flex-col gap-0.5">
+                            <span>{s.name}</span>
+                            {s.isGranContribuyente && (
+                              <Badge className="bg-primary/80 hover:bg-primary text-[8px] h-4 w-fit py-0 text-white border-none uppercase">
+                                Gran Contribuyente
+                              </Badge>
+                            )}
+                          </div>
                         </div>
                       </TableCell>
                       <TableCell>
