@@ -118,7 +118,8 @@ export default function InstitutionalModule() {
 
   const getMatchingExpectedProduct = (i: any, expectedProducts: any[]) => {
     if (i.code) {
-      const byCode = expectedProducts.find(ep => ep.code === i.code);
+      const iCode = String(i.code).trim().toLowerCase();
+      const byCode = expectedProducts.find(ep => String(ep.code || '').trim().toLowerCase() === iCode);
       if (byCode) return byCode;
     }
     const iDesc = (i.description || '').toLowerCase().trim();
