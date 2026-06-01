@@ -150,7 +150,8 @@ export default function InstitutionalModule() {
   const getProductProgress = (ep: any, projectId: string) => {
     const project = projects.find(p => p.id === projectId)
     const txs = transactions.filter(t => t.projectId === projectId && !t.isVoided)
-    const received = txs
+    
+    const delivered = txs
       .filter(t => t.type === 'remission')
       .flatMap(t => t.items)
       .filter(i => {
@@ -158,9 +159,19 @@ export default function InstitutionalModule() {
         return match && match.code === ep.code && match.description === ep.description;
       })
       .reduce((acc, curr) => acc + curr.quantity, 0)
+
+    const invoiced = txs
+      .filter(t => t.type === 'sale')
+      .flatMap(t => t.items)
+      .filter(i => {
+        const match = getMatchingExpectedProduct(i, project?.expectedProducts || []);
+        return match && match.code === ep.code && match.description === ep.description;
+      })
+      .reduce((acc, curr) => acc + curr.quantity, 0)
     
+    const effectiveProgressAmount = Math.max(delivered, invoiced)
     const expected = ep.quantity || 1
-    return Math.min((received / expected) * 100, 100)
+    return Math.min((effectiveProgressAmount / expected) * 100, 100)
   }
 
   const handleAddProductToProject = () => {
