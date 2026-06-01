@@ -96,7 +96,7 @@ export interface Transaction {
   entityId: string;
   entityName: string;
   projectId?: string;
-  type: 'purchase' | 'sale';
+  type: 'purchase' | 'sale' | 'remission';
   documentType: '01' | '03' | '07' | string;
   items: TransactionItem[];
   subtotal: number;

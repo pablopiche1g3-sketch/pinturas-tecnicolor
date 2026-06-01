@@ -151,7 +151,7 @@ export default function InstitutionalModule() {
     const project = projects.find(p => p.id === projectId)
     const txs = transactions.filter(t => t.projectId === projectId && !t.isVoided)
     const received = txs
-      .filter(t => t.type === 'purchase')
+      .filter(t => t.type === 'remission')
       .flatMap(t => t.items)
       .filter(i => {
         const match = getMatchingExpectedProduct(i, project?.expectedProducts || []);
@@ -612,6 +612,30 @@ export default function InstitutionalModule() {
     })
     setManualItems([])
     toast({ title: "Traslado Interno Registrado", description: "Costo añadido al proyecto." })
+  }
+
+  const handleSaveRemission = () => {
+    if (!selectedProjectId) return
+    const subtotal = manualItems.reduce((acc, curr) => acc + curr.lineTotal, 0)
+    addTransaction(db, {
+      invoiceNumber: manualPurchase.codigoGeneracion || `REM-${Date.now()}`,
+      numeroControl: '',
+      issueDate: manualPurchase.issueDate || new Date().toISOString(),
+      entityId: 'remission',
+      entityName: 'Nota de Remisión',
+      projectId: selectedProjectId,
+      type: 'remission',
+      documentType: 'remission',
+      items: manualItems,
+      subtotal,
+      taxAmount: 0,
+      totalAmount: subtotal,
+      costBasis: subtotal,
+      gain: 0
+    })
+    setManualItems([])
+    setManualPurchase({ supplierId: '', documentType: '01', issueDate: new Date().toISOString(), codigoGeneracion: '', numeroControl: '' })
+    toast({ title: "Nota de Remisión Guardada", description: "La mercadería se ha marcado como entregada." })
   }
 
   const handleSaveInvoice = (closeProject: boolean) => {
@@ -1391,12 +1415,103 @@ export default function InstitutionalModule() {
         </TabsContent>
 
         <TabsContent value="comparison">
-           {!selectedProjectId ? (
+           {!selectedProjectId || !currentProject ? (
              <div className="py-20 text-center border-2 border-dashed rounded-lg opacity-40 px-4">Seleccione un proyecto.</div>
            ) : (
-             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <Card>
-                   <CardHeader><CardTitle className="text-lg">Cargar Venta Emitida</CardTitle></CardHeader>
+             <div className="space-y-6">
+               <Card>
+                 <CardHeader><CardTitle className="text-lg">Tabla Comparativa: Entregas vs Facturación</CardTitle></CardHeader>
+                 <CardContent>
+                   <div className="overflow-x-auto rounded-lg border">
+                     <Table>
+                       <TableHeader className="bg-muted/50">
+                         <TableRow>
+                           <TableHead>Producto OC</TableHead>
+                           <TableHead className="text-right">Esperado (OC)</TableHead>
+                           <TableHead className="text-right">Entregado (Remisión)</TableHead>
+                           <TableHead className="text-right">Facturado (DTE)</TableHead>
+                           <TableHead className="text-right font-bold text-primary">Pendiente de Facturar</TableHead>
+                         </TableRow>
+                       </TableHeader>
+                       <TableBody>
+                         {currentProject.expectedProducts.map(ep => {
+                           const projectTxs = transactions.filter(t => t.projectId === currentProject.id && !t.isVoided);
+                           const delivered = projectTxs.filter(t => t.type === 'remission').flatMap(t => t.items).filter(i => {
+                             const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
+                             return match && match.code === ep.code && match.description === ep.description;
+                           }).reduce((acc, curr) => acc + curr.quantity, 0);
+                           
+                           const invoiced = projectTxs.filter(t => t.type === 'sale').flatMap(t => t.items).filter(i => {
+                             const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
+                             return match && match.code === ep.code && match.description === ep.description;
+                           }).reduce((acc, curr) => acc + curr.quantity, 0);
+
+                           const pending = delivered - invoiced;
+
+                           return (
+                             <TableRow key={ep.code}>
+                               <TableCell className="font-medium text-xs max-w-[200px] truncate" title={ep.description}>{ep.code} - {ep.description}</TableCell>
+                               <TableCell className="text-right">{ep.quantity}</TableCell>
+                               <TableCell className="text-right text-blue-600 font-bold">{delivered}</TableCell>
+                               <TableCell className="text-right text-green-600 font-bold">{invoiced}</TableCell>
+                               <TableCell className="text-right font-black text-primary">{pending > 0 ? pending : 0}</TableCell>
+                             </TableRow>
+                           )
+                         })}
+                       </TableBody>
+                     </Table>
+                   </div>
+                 </CardContent>
+               </Card>
+
+               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                 <Card>
+                    <CardHeader><CardTitle className="text-lg text-blue-600 font-bold flex items-center gap-2"><Package className="h-5 w-5" /> 1. Ingresar Nota de Remisión</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>N° de Remisión / Envío</Label>
+                          <Input placeholder="Ej. REM-001" value={manualPurchase.codigoGeneracion} onChange={e => setManualPurchase({...manualPurchase, codigoGeneracion: e.target.value})} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Fecha de Entrega</Label>
+                          <Input type="date" value={manualPurchase.issueDate.split('T')[0]} onChange={e => setManualPurchase({...manualPurchase, issueDate: new Date(e.target.value).toISOString()})} />
+                        </div>
+                      </div>
+                      
+                      <div className="bg-muted/40 p-4 rounded-xl border space-y-3">
+                        <h4 className="text-xs font-bold uppercase text-muted-foreground">Agregar Productos Entregados</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+                          <Input className="h-8 text-xs" placeholder="Código" value={tempManualItem.code} onChange={e => setTempManualItem({...tempManualItem, code: e.target.value})} />
+                          <Input className="h-8 text-xs sm:col-span-2" placeholder="Descripción" value={tempManualItem.description} onChange={e => setTempManualItem({...tempManualItem, description: e.target.value})} />
+                          <Input type="number" className="h-8 text-xs text-right" placeholder="Cant." value={tempManualItem.quantity} onChange={e => setTempManualItem({...tempManualItem, quantity: Number(e.target.value)})} />
+                        </div>
+                        <Button variant="outline" size="sm" className="w-full h-8 text-xs" onClick={handleAddManualItem}>Añadir a Remisión</Button>
+                      </div>
+
+                      {manualItems.length > 0 && (
+                        <div className="border rounded-lg overflow-hidden">
+                          <Table>
+                            <TableHeader className="bg-muted"><TableRow><TableHead>Item</TableHead><TableHead className="text-right">Cant.</TableHead></TableRow></TableHeader>
+                            <TableBody>
+                              {manualItems.map((item, idx) => (
+                                <TableRow key={idx}>
+                                  <TableCell className="text-xs py-1.5">{item.code} - {item.description}</TableCell>
+                                  <TableCell className="text-xs py-1.5 text-right">{item.quantity}</TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                          <div className="p-3 bg-muted/30">
+                            <Button className="w-full bg-blue-600 hover:bg-blue-700" onClick={handleSaveRemission}>Guardar Nota de Remisión</Button>
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                 </Card>
+
+                 <Card>
+                    <CardHeader><CardTitle className="text-lg text-green-600 font-bold flex items-center gap-2"><ReceiptText className="h-5 w-5" /> 2. Cargar Venta Emitida</CardTitle></CardHeader>
                    <CardContent className="space-y-6">
                       <div 
                         className={cn("border-2 border-dashed rounded-xl p-8 flex flex-col items-center gap-4 cursor-pointer", isDragging ? "bg-primary/5 border-primary" : "border-border")}
@@ -1502,6 +1617,7 @@ export default function InstitutionalModule() {
                       ) : <div className="py-20 text-center opacity-40 italic text-xs">Cargue el DTE de venta.</div>}
                    </CardContent>
                 </Card>
+             </div>
              </div>
            )}
         </TabsContent>
