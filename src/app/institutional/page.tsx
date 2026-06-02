@@ -201,8 +201,8 @@ export default function InstitutionalModule() {
         customerId: newProject.customerId,
         customerName: customer?.name || 'Cliente Desconocido',
         expectedProducts: newProjectProducts,
-        warrantyStartDate: newProject.warrantyStartDate || undefined,
-        warrantyMonths: newProject.warrantyMonths || undefined,
+        warrantyStartDate: newProject.warrantyStartDate || null,
+        warrantyMonths: newProject.warrantyMonths || null,
       })
       toast({ title: "Proyecto Actualizado", description: "Cambios guardados exitosamente." })
     } else {
@@ -214,8 +214,8 @@ export default function InstitutionalModule() {
         customerName: customer?.name || 'Cliente Desconocido',
         expectedProducts: newProjectProducts,
         status: 'active',
-        warrantyStartDate: newProject.warrantyStartDate || undefined,
-        warrantyMonths: newProject.warrantyMonths || undefined,
+        warrantyStartDate: newProject.warrantyStartDate || null,
+        warrantyMonths: newProject.warrantyMonths || null,
       })
       toast({ title: "Proyecto Creado", description: "El proyecto se ha registrado exitosamente." })
     }
