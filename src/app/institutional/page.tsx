@@ -1549,8 +1549,46 @@ export default function InstitutionalModule() {
              <div className="py-20 text-center border-2 border-dashed rounded-lg opacity-40 px-4">Seleccione un proyecto.</div>
            ) : (
              <div className="space-y-6">
+               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                 <Card className="bg-primary/5 border-primary/20">
+                   <CardContent className="p-4 text-center">
+                     <p className="text-[10px] uppercase text-muted-foreground font-bold">Monto OC</p>
+                     <p className="text-xl font-black text-primary">${currentProject.targetSaleAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                   </CardContent>
+                 </Card>
+                 <Card className="bg-blue-50 border-blue-200">
+                   <CardContent className="p-4 text-center">
+                     <p className="text-[10px] uppercase text-blue-600/70 font-bold">Total Remitido</p>
+                     <p className="text-xl font-black text-blue-600">
+                       ${transactions.filter(t => t.projectId === currentProject.id && !t.isVoided && t.type === 'remission').reduce((a, b) => a + b.totalAmount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                     </p>
+                   </CardContent>
+                 </Card>
+                 <Card className="bg-green-50 border-green-200">
+                   <CardContent className="p-4 text-center">
+                     <p className="text-[10px] uppercase text-green-600/70 font-bold">Total Facturado</p>
+                     <p className="text-xl font-black text-green-600">
+                       ${transactions.filter(t => t.projectId === currentProject.id && !t.isVoided && t.type === 'sale').reduce((a, b) => a + b.totalAmount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                     </p>
+                   </CardContent>
+                 </Card>
+                 <Card className="bg-orange-50 border-orange-200">
+                   <CardContent className="p-4 text-center">
+                     <p className="text-[10px] uppercase text-orange-600/70 font-bold">Saldo Pendiente OC</p>
+                     <p className="text-xl font-black text-orange-600">
+                       ${(currentProject.targetSaleAmount - transactions.filter(t => t.projectId === currentProject.id && !t.isVoided && t.type === 'sale').reduce((a, b) => a + b.totalAmount, 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                     </p>
+                   </CardContent>
+                 </Card>
+               </div>
+
                <Card>
-                 <CardHeader><CardTitle className="text-lg">Tabla Comparativa: Entregas vs Facturación</CardTitle></CardHeader>
+                 <CardHeader>
+                   <CardTitle className="text-lg">Cantidades: Entregas vs Facturación</CardTitle>
+                   <CardDescription className="text-xs">
+                     *Nota: Si la factura o DTE fue emitida con un código genérico o descripción agrupada a petición del cliente, las cantidades de abajo podrían no coincidir, pero el Resumen Financiero superior se mantendrá exacto por monto ($).
+                   </CardDescription>
+                 </CardHeader>
                  <CardContent>
                    <div className="overflow-x-auto rounded-lg border">
                      <Table>
