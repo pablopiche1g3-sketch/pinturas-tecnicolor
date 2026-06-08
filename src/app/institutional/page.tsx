@@ -359,7 +359,10 @@ export default function InstitutionalModule() {
 
         const img = new window.Image();
         img.src = imageBase64;
-        await new Promise((resolve) => (img.onload = resolve));
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error("No se pudo leer la imagen. Verifique que el formato sea válido (JPG/PNG). Formatos como HEIC de iPhone podrían no estar soportados directamente en el navegador."));
+        });
 
         // Reducir la resolución (max 1200px)
         const maxDim = 1200;
@@ -417,9 +420,13 @@ export default function InstitutionalModule() {
       })
       
       toast({ title: "Documento Guardado", description: `${finalName} ha sido subido y optimizado.` })
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      toast({ title: "Error", description: "No se pudo procesar o subir el archivo.", variant: "destructive" })
+      toast({ 
+        title: "Error al procesar", 
+        description: err.message || "No se pudo procesar o subir el archivo.", 
+        variant: "destructive" 
+      })
     } finally {
       setIsUploading(false)
       // Resetear el input para permitir subir el mismo archivo de nuevo si es necesario
