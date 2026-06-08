@@ -856,7 +856,10 @@ export default function InstitutionalModule() {
                           </div>
                           <div className="space-y-2">
                             <Label>Monto Venta Objetivo ($)</Label>
-                            <Input type="number" value={newProject.targetSaleAmount} onChange={e => setNewProject({...newProject, targetSaleAmount: Number(e.target.value)})} />
+                            <Input type="number" step="0.01" value={newProject.targetSaleAmount || ''} onChange={e => setNewProject({...newProject, targetSaleAmount: Number(e.target.value)})} placeholder="Ej. 24320.50" />
+                            <p className="text-[10px] text-muted-foreground mt-1 leading-tight">
+                              Ingresa el monto sin separador de miles. Usa el punto solo para decimales (Ej: 24320.50).
+                            </p>
                           </div>
                           
                           <div className="pt-4 border-t space-y-4">
@@ -1556,19 +1559,11 @@ export default function InstitutionalModule() {
              <div className="py-20 text-center border-2 border-dashed rounded-lg opacity-40 px-4">Seleccione un proyecto.</div>
            ) : (
              <div className="space-y-6">
-               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+               <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                  <Card className="bg-primary/5 border-primary/20">
                    <CardContent className="p-4 text-center">
                      <p className="text-[10px] uppercase text-muted-foreground font-bold">Monto OC</p>
                      <p className="text-xl font-black text-primary">${currentProject.targetSaleAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-                   </CardContent>
-                 </Card>
-                 <Card className="bg-blue-50 border-blue-200">
-                   <CardContent className="p-4 text-center">
-                     <p className="text-[10px] uppercase text-blue-600/70 font-bold">Total Remitido</p>
-                     <p className="text-xl font-black text-blue-600">
-                       ${transactions.filter(t => t.projectId === currentProject.id && !t.isVoided && t.type === 'remission').reduce((a, b) => a + b.totalAmount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                     </p>
                    </CardContent>
                  </Card>
                  <Card className="bg-green-50 border-green-200">
@@ -1579,11 +1574,27 @@ export default function InstitutionalModule() {
                      </p>
                    </CardContent>
                  </Card>
+                 <Card className="bg-rose-50 border-rose-200">
+                   <CardContent className="p-4 text-center">
+                     <p className="text-[10px] uppercase text-rose-600/70 font-bold">Total Compras</p>
+                     <p className="text-xl font-black text-rose-600">
+                       ${transactions.filter(t => t.projectId === currentProject.id && !t.isVoided && t.type === 'purchase').reduce((a, b) => a + b.totalAmount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                     </p>
+                   </CardContent>
+                 </Card>
                  <Card className="bg-orange-50 border-orange-200">
                    <CardContent className="p-4 text-center">
                      <p className="text-[10px] uppercase text-orange-600/70 font-bold">Saldo Pendiente OC</p>
                      <p className="text-xl font-black text-orange-600">
                        ${(currentProject.targetSaleAmount - transactions.filter(t => t.projectId === currentProject.id && !t.isVoided && t.type === 'sale').reduce((a, b) => a + b.totalAmount, 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                     </p>
+                   </CardContent>
+                 </Card>
+                 <Card className="bg-blue-50 border-blue-200">
+                   <CardContent className="p-4 text-center">
+                     <p className="text-[10px] uppercase text-blue-600/70 font-bold">Total Remitido</p>
+                     <p className="text-xl font-black text-blue-600">
+                       ${transactions.filter(t => t.projectId === currentProject.id && !t.isVoided && t.type === 'remission').reduce((a, b) => a + b.totalAmount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                      </p>
                    </CardContent>
                  </Card>
