@@ -795,7 +795,8 @@ export default function InstitutionalModule() {
     if (!editingTransaction) return
     
     // Recalculate totals based on items
-    let subtotal = editingTransaction.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0)
+    const items = editingTransaction.items || []
+    let subtotal = items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0)
     let totalAmount = subtotal
     let taxAmount = 0
     let retentionAmount = 0
@@ -829,7 +830,7 @@ export default function InstitutionalModule() {
     
     // Flatten transactions into items
     const rows = projectTransactions.flatMap(tx => 
-      tx.items.map(item => ({
+      (tx.items || []).map(item => ({
         "Tipo de DTE": tx.type === 'purchase' ? 'Compra' : tx.type === 'sale' ? 'Venta' : 'Remisión',
         "Número de DTE": tx.invoiceNumber || tx.numeroControl,
         "Fecha": new Date(tx.issueDate).toLocaleDateString(),
@@ -1701,15 +1702,17 @@ export default function InstitutionalModule() {
                        <TableBody>
                          {currentProject.expectedProducts.map(ep => {
                            const projectTxs = transactions.filter(t => t.projectId === currentProject.id && !t.isVoided);
-                           const delivered = projectTxs.filter(t => t.type === 'remission').flatMap(t => t.items).filter(i => {
+                           const delivered = projectTxs.filter(t => t.type === 'remission').flatMap(t => t.items || []).filter(i => {
+                             if (!i) return false;
                              const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
                              return match && match.code === ep.code && match.description === ep.description;
-                           }).reduce((acc, curr) => acc + curr.quantity, 0);
+                           }).reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
                            
-                           const invoiced = projectTxs.filter(t => t.type === 'sale').flatMap(t => t.items).filter(i => {
+                           const invoiced = projectTxs.filter(t => t.type === 'sale').flatMap(t => t.items || []).filter(i => {
+                             if (!i) return false;
                              const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
                              return match && match.code === ep.code && match.description === ep.description;
-                           }).reduce((acc, curr) => acc + curr.quantity, 0);
+                           }).reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
 
                            const pending = delivered - invoiced;
 
@@ -2119,7 +2122,7 @@ export default function InstitutionalModule() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border bg-card">
-                    {editingTransaction.items.map((item, idx) => (
+                    {(editingTransaction.items || []).map((item, idx) => (
                       <tr key={idx} className="hover:bg-muted/30 transition-colors">
                         <td className="p-2">
                           <Input 
@@ -2175,21 +2178,21 @@ export default function InstitutionalModule() {
                   <div className="flex justify-between text-muted-foreground">
                     <span>Subtotal:</span>
                     <span className="text-foreground">
-                      ${editingTransaction.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${(editingTransaction.items || []).reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                   {editingTransaction.documentType === '03' && (
                     <div className="flex justify-between text-muted-foreground">
                       <span>IVA (13%):</span>
                       <span className="text-foreground">
-                        ${(editingTransaction.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0) * 0.13).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        ${((editingTransaction.items || []).reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0) * 0.13).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </span>
                     </div>
                   )}
                   <div className="flex justify-between text-sm font-black text-foreground border-t border-border pt-1.5 mt-1.5">
                     <span>TOTAL PROYECTADO:</span>
                     <span>
-                      ${(editingTransaction.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0) * (editingTransaction.documentType === '03' ? 1.13 : 1)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      ${((editingTransaction.items || []).reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0) * (editingTransaction.documentType === '03' ? 1.13 : 1)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                     </span>
                   </div>
                 </div>
