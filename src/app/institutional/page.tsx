@@ -21,7 +21,6 @@ import {
 import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project, type ProjectDocument, type Transaction } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput, type AiActionResponse } from "@/ai/flows/ai-json-key-mapper"
 import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders } from "lucide-react"
-import * as XLSX from 'xlsx'
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -2128,11 +2127,11 @@ export default function InstitutionalModule() {
                           <Input 
                             type="number" 
                             className="h-8 w-20 text-xs" 
-                            value={item.quantity} 
+                            value={item?.quantity || 0} 
                             onChange={(e) => {
                               const newQty = Number(e.target.value);
-                              const newItems = [...editingTransaction.items];
-                              newItems[idx] = { ...item, quantity: newQty, lineTotal: newQty * item.unitPrice };
+                              const newItems = [...(editingTransaction.items || [])];
+                              newItems[idx] = { ...item, quantity: newQty, lineTotal: newQty * (item?.unitPrice || 0) };
                               setEditingTransaction({ ...editingTransaction, items: newItems });
                             }} 
                           />
@@ -2140,9 +2139,9 @@ export default function InstitutionalModule() {
                         <td className="p-2">
                           <Input 
                             className="h-8 text-xs font-mono" 
-                            value={item.code || ''} 
+                            value={item?.code || ''} 
                             onChange={(e) => {
-                              const newItems = [...editingTransaction.items];
+                              const newItems = [...(editingTransaction.items || [])];
                               newItems[idx] = { ...item, code: e.target.value };
                               setEditingTransaction({ ...editingTransaction, items: newItems });
                             }} 
@@ -2151,19 +2150,19 @@ export default function InstitutionalModule() {
                         <td className="p-2">
                           <Input 
                             className="h-8 text-xs" 
-                            value={item.description} 
+                            value={item?.description || ''} 
                             onChange={(e) => {
-                              const newItems = [...editingTransaction.items];
+                              const newItems = [...(editingTransaction.items || [])];
                               newItems[idx] = { ...item, description: e.target.value };
                               setEditingTransaction({ ...editingTransaction, items: newItems });
                             }} 
                           />
                         </td>
                         <td className="p-2 text-right text-muted-foreground">
-                          ${item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          ${(item?.unitPrice || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </td>
                         <td className="p-2 text-right font-bold text-foreground">
-                          ${(item.quantity * item.unitPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                          ${((item?.quantity || 0) * (item?.unitPrice || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                         </td>
                       </tr>
                     ))}
