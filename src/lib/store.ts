@@ -131,6 +131,7 @@ interface LedgerActions {
   updateProject: (db: Firestore, id: string, updates: Partial<Project>) => void;
   deleteProject: (db: Firestore, id: string) => void;
   addTransaction: (db: Firestore, transaction: Omit<Transaction, 'id'>) => void;
+  updateTransaction: (db: Firestore, id: string, updates: Partial<Transaction>) => void;
   voidTransaction: (db: Firestore, id: string, reason: string, relatedDoc?: string) => void;
   deleteTransaction: (db: Firestore, id: string) => void;
   addToInventory: (db: Firestore, items: Omit<InventoryItem, 'id' | 'dateAdded'>[]) => void;
@@ -229,6 +230,16 @@ export const useLedgerStore = create<LedgerState & LedgerActions>((set, get) => 
       ...transaction,
       isVoided: false
     });
+  },
+
+  updateTransaction: (db, id, updates) => {
+    // filter undefined fields to prevent firestore errors
+    const validUpdates = Object.entries(updates).reduce((acc, [k, v]) => {
+      if (v !== undefined) acc[k] = v;
+      else acc[k] = null;
+      return acc;
+    }, {} as any);
+    updateDoc(doc(db, 'transactions', id), validUpdates);
   },
 
   voidTransaction: (db, id, reason, relatedDoc) => {

@@ -21,6 +21,7 @@ import {
 import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project, type ProjectDocument, type Transaction } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput, type AiActionResponse } from "@/ai/flows/ai-json-key-mapper"
 import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders } from "lucide-react"
+import * as XLSX from 'xlsx'
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -41,7 +42,7 @@ import { jsPDF } from "jspdf"
 export default function InstitutionalModule() {
   const { 
     entities, projects, transactions, addProject, updateProject, deleteProject, 
-    addTransaction, voidTransaction, addToInventory, addDocumentToProject, deleteDocumentFromProject 
+    addTransaction, updateTransaction, voidTransaction, addToInventory, addDocumentToProject, deleteDocumentFromProject 
   } = useLedgerStore()
   const db = useFirestore()
   const storage = useStorage()
@@ -54,6 +55,7 @@ export default function InstitutionalModule() {
   const [isProjectDialogOpen, setIsProjectDialogOpen] = React.useState(false)
   const [editingProject, setEditingProject] = React.useState<Project | null>(null)
   const [viewingInvoice, setViewingInvoice] = React.useState<Transaction | null>(null)
+  const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
   const [isSuppliesDialogOpen, setIsSuppliesDialogOpen] = React.useState(false)
 
   const handleUpdateProductProperty = (idx: number, key: keyof ProjectProduct, value: any) => {
@@ -789,6 +791,64 @@ export default function InstitutionalModule() {
     toast({ title: "Anulación Registrada" })
   }
 
+  const handleEditTransactionSave = () => {
+    if (!editingTransaction) return
+    
+    // Recalculate totals based on items
+    let subtotal = editingTransaction.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0)
+    let totalAmount = subtotal
+    let taxAmount = 0
+    let retentionAmount = 0
+    let perceptionAmount = 0
+
+    if (editingTransaction.documentType === '03') { // CCF
+      taxAmount = subtotal * 0.13
+      totalAmount = subtotal + taxAmount
+    }
+
+    const updatedTx = {
+      ...editingTransaction,
+      subtotal,
+      taxAmount,
+      totalAmount,
+      retentionAmount,
+      perceptionAmount,
+      // costBasis and gain could be recalculated but they are typically only set at creation or handled specifically
+    }
+
+    updateTransaction(db, editingTransaction.id, updatedTx)
+    setEditingTransaction(null)
+    toast({
+      title: "Transacción actualizada",
+      description: "Los cambios han sido guardados correctamente.",
+    })
+  }
+
+  const exportKardexExcel = () => {
+    if (!currentProject) return
+    
+    // Flatten transactions into items
+    const rows = projectTransactions.flatMap(tx => 
+      tx.items.map(item => ({
+        "Tipo de DTE": tx.type === 'purchase' ? 'Compra' : tx.type === 'sale' ? 'Venta' : 'Remisión',
+        "Número de DTE": tx.invoiceNumber || tx.numeroControl,
+        "Fecha": new Date(tx.issueDate).toLocaleDateString(),
+        "Entidad": tx.entityName,
+        "Proyecto": currentProject.name,
+        "Código": item.code || '',
+        "Producto": item.description,
+        "Cantidad": item.quantity,
+        "Precio Unitario": item.unitPrice,
+        "Total": item.lineTotal || (item.quantity * item.unitPrice)
+      }))
+    )
+
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, "Kardex")
+    XLSX.writeFile(wb, `Kardex_${currentProject.name}_${new Date().toISOString().split('T')[0]}.xlsx`)
+  }
+
   if (!mounted) return null
 
   return (
@@ -935,7 +995,21 @@ export default function InstitutionalModule() {
                                     <span className="text-xs font-bold">{tx.invoiceNumber}</span>
                                     <Badge variant="outline" className="text-[9px]">{tx.documentType === '03' ? 'CCF' : tx.documentType === '01' ? 'FAC' : 'DTE'}</Badge>
                                   </div>
-                                  <span className="text-xs font-bold text-foreground">${tx.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs font-bold text-foreground">${tx.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 text-muted-foreground hover:text-primary z-10"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setEditingTransaction(tx);
+                                      }}
+                                      title="Editar"
+                                    >
+                                      <Edit2 className="h-3 w-3" />
+                                    </Button>
+                                  </div>
                                 </div>
                                 <div className="flex justify-between text-[10px] text-muted-foreground">
                                   <span className="truncate max-w-[200px]">{tx.entityName}</span>
@@ -1601,11 +1675,16 @@ export default function InstitutionalModule() {
                </div>
 
                <Card>
-                 <CardHeader>
-                   <CardTitle className="text-lg">Cantidades: Entregas vs Facturación</CardTitle>
-                   <CardDescription className="text-xs">
-                     *Nota: Si la factura o DTE fue emitida con un código genérico o descripción agrupada a petición del cliente, las cantidades de abajo podrían no coincidir, pero el Resumen Financiero superior se mantendrá exacto por monto ($).
-                   </CardDescription>
+                 <CardHeader className="flex flex-row justify-between items-start">
+                   <div>
+                     <CardTitle className="text-lg">Cantidades: Entregas vs Facturación</CardTitle>
+                     <CardDescription className="text-xs">
+                       *Nota: Si la factura o DTE fue emitida con un código genérico o descripción agrupada a petición del cliente, las cantidades de abajo podrían no coincidir, pero el Resumen Financiero superior se mantendrá exacto por monto ($).
+                     </CardDescription>
+                   </div>
+                   <Button size="sm" variant="outline" className="gap-2 border-green-600 text-green-700 hover:bg-green-50" onClick={exportKardexExcel}>
+                     <FileDown className="h-4 w-4" /> Exportar Kardex (Excel)
+                   </Button>
                  </CardHeader>
                  <CardContent>
                    <div className="overflow-x-auto rounded-lg border">
@@ -2012,6 +2091,118 @@ export default function InstitutionalModule() {
             </Button>
             <Button size="sm" className="bg-primary hover:bg-primary/90" onClick={() => setViewingInvoice(null)}>
               Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={editingTransaction !== null} onOpenChange={(open) => { if (!open) setEditingTransaction(null) }}>
+        <DialogContent className="sm:max-w-[800px] w-[95vw] max-h-[85vh] flex flex-col p-6 overflow-hidden">
+          <DialogHeader className="pb-4 border-b">
+            <DialogTitle className="text-xl font-bold font-headline">Editar DTE (Factura/Remisión)</DialogTitle>
+            <CardDescription>
+              Modifique las cantidades o descripciones de esta transacción para ajustarla al proyecto actual.
+            </CardDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto space-y-4 py-4">
+            {editingTransaction && (
+              <div className="border border-border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted border-b border-border text-xs">
+                    <tr>
+                      <th className="p-2 text-left font-bold text-muted-foreground w-20">Cant.</th>
+                      <th className="p-2 text-left font-bold text-muted-foreground">Código</th>
+                      <th className="p-2 text-left font-bold text-muted-foreground">Descripción</th>
+                      <th className="p-2 text-right font-bold text-muted-foreground">P.U.</th>
+                      <th className="p-2 text-right font-bold text-muted-foreground">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border bg-card">
+                    {editingTransaction.items.map((item, idx) => (
+                      <tr key={idx} className="hover:bg-muted/30 transition-colors">
+                        <td className="p-2">
+                          <Input 
+                            type="number" 
+                            className="h-8 w-20 text-xs" 
+                            value={item.quantity} 
+                            onChange={(e) => {
+                              const newQty = Number(e.target.value);
+                              const newItems = [...editingTransaction.items];
+                              newItems[idx] = { ...item, quantity: newQty, lineTotal: newQty * item.unitPrice };
+                              setEditingTransaction({ ...editingTransaction, items: newItems });
+                            }} 
+                          />
+                        </td>
+                        <td className="p-2">
+                          <Input 
+                            className="h-8 text-xs font-mono" 
+                            value={item.code || ''} 
+                            onChange={(e) => {
+                              const newItems = [...editingTransaction.items];
+                              newItems[idx] = { ...item, code: e.target.value };
+                              setEditingTransaction({ ...editingTransaction, items: newItems });
+                            }} 
+                          />
+                        </td>
+                        <td className="p-2">
+                          <Input 
+                            className="h-8 text-xs" 
+                            value={item.description} 
+                            onChange={(e) => {
+                              const newItems = [...editingTransaction.items];
+                              newItems[idx] = { ...item, description: e.target.value };
+                              setEditingTransaction({ ...editingTransaction, items: newItems });
+                            }} 
+                          />
+                        </td>
+                        <td className="p-2 text-right text-muted-foreground">
+                          ${item.unitPrice.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="p-2 text-right font-bold text-foreground">
+                          ${(item.quantity * item.unitPrice).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            
+            {editingTransaction && (
+              <div className="flex justify-end mt-4">
+                <div className="w-[250px] space-y-1.5 border border-border p-3 rounded-lg bg-muted/30 text-[11px]">
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>Subtotal:</span>
+                    <span className="text-foreground">
+                      ${editingTransaction.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  {editingTransaction.documentType === '03' && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <span>IVA (13%):</span>
+                      <span className="text-foreground">
+                        ${(editingTransaction.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0) * 0.13).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex justify-between text-sm font-black text-foreground border-t border-border pt-1.5 mt-1.5">
+                    <span>TOTAL PROYECTADO:</span>
+                    <span>
+                      ${(editingTransaction.items.reduce((acc, item) => acc + (item.quantity * item.unitPrice), 0) * (editingTransaction.documentType === '03' ? 1.13 : 1)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="mt-4 border-t border-border pt-4">
+            <Button variant="outline" size="sm" onClick={() => setEditingTransaction(null)}>
+              Cancelar
+            </Button>
+            <Button size="sm" className="bg-primary hover:bg-primary/90" onClick={handleEditTransactionSave}>
+              Guardar Cambios
             </Button>
           </DialogFooter>
         </DialogContent>
