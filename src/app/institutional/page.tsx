@@ -202,8 +202,8 @@ export default function InstitutionalModule() {
         customerId: newProject.customerId,
         customerName: customer?.name || 'Cliente Desconocido',
         expectedProducts: newProjectProducts,
-        warrantyStartDate: newProject.warrantyStartDate || undefined,
-        warrantyMonths: newProject.warrantyMonths || undefined,
+        warrantyStartDate: newProject.warrantyStartDate || null,
+        warrantyMonths: newProject.warrantyMonths || null,
       })
       toast({ title: "Proyecto Actualizado", description: "Cambios guardados exitosamente." })
     } else {
@@ -215,8 +215,8 @@ export default function InstitutionalModule() {
         customerName: customer?.name || 'Cliente Desconocido',
         expectedProducts: newProjectProducts,
         status: 'active',
-        warrantyStartDate: newProject.warrantyStartDate || undefined,
-        warrantyMonths: newProject.warrantyMonths || undefined,
+        warrantyStartDate: newProject.warrantyStartDate || null,
+        warrantyMonths: newProject.warrantyMonths || null,
       })
       toast({ title: "Proyecto Creado", description: "El proyecto se ha registrado exitosamente." })
     }
@@ -1234,7 +1234,7 @@ export default function InstitutionalModule() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {projects.map(p => {
                 const getWarrantyStatus = () => {
-                  if (p.warrantyStartDate === undefined || p.warrantyMonths === undefined) return null;
+                  if (!p.warrantyStartDate || !p.warrantyMonths) return null;
                   const start = new Date(p.warrantyStartDate);
                   const end = new Date(start);
                   end.setMonth(end.getMonth() + p.warrantyMonths);
