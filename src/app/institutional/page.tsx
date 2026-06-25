@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dialog"
 import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project, type ProjectDocument, type Transaction } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput, type AiActionResponse } from "@/ai/flows/ai-json-key-mapper"
-import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders } from "lucide-react"
+import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders, Edit2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -139,8 +139,8 @@ export default function InstitutionalModule() {
       
       const iWords = iDesc.split(/\s+/);
       const epWords = epDesc.split(/\s+/);
-      const allEpInI = epWords.every(w => iWords.includes(w));
-      const allIInEp = iWords.every(w => epWords.includes(w));
+      const allEpInI = epWords.every((w: string) => iWords.includes(w));
+      const allIInEp = iWords.every((w: string) => epWords.includes(w));
       
       return allEpInI || allIInEp;
     });
@@ -202,8 +202,8 @@ export default function InstitutionalModule() {
         customerId: newProject.customerId,
         customerName: customer?.name || 'Cliente Desconocido',
         expectedProducts: newProjectProducts,
-        warrantyStartDate: newProject.warrantyStartDate || null,
-        warrantyMonths: newProject.warrantyMonths || null,
+        warrantyStartDate: newProject.warrantyStartDate || undefined,
+        warrantyMonths: newProject.warrantyMonths || undefined,
       })
       toast({ title: "Proyecto Actualizado", description: "Cambios guardados exitosamente." })
     } else {
@@ -215,8 +215,8 @@ export default function InstitutionalModule() {
         customerName: customer?.name || 'Cliente Desconocido',
         expectedProducts: newProjectProducts,
         status: 'active',
-        warrantyStartDate: newProject.warrantyStartDate || null,
-        warrantyMonths: newProject.warrantyMonths || null,
+        warrantyStartDate: newProject.warrantyStartDate || undefined,
+        warrantyMonths: newProject.warrantyMonths || undefined,
       })
       toast({ title: "Proyecto Creado", description: "El proyecto se ha registrado exitosamente." })
     }
@@ -824,7 +824,7 @@ export default function InstitutionalModule() {
     })
   }
 
-  const exportKardexExcel = () => {
+  const exportKardexExcel = async () => {
     if (!currentProject) return
     
     // Flatten transactions into items
@@ -843,6 +843,7 @@ export default function InstitutionalModule() {
       }))
     )
 
+    const XLSX = await import('xlsx')
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, "Kardex")
@@ -874,7 +875,7 @@ export default function InstitutionalModule() {
                 setIsProjectDialogOpen(open)
                 if (!open) {
                   setEditingProject(null)
-                  setNewProject({ name: '', purchaseOrder: '', targetSaleAmount: 0, customerId: '' })
+                  setNewProject({ name: '', purchaseOrder: '', targetSaleAmount: 0, customerId: '', warrantyStartDate: '', warrantyMonths: 0 })
                   setNewProjectProducts([])
                 }
               }}>
@@ -1233,7 +1234,7 @@ export default function InstitutionalModule() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               {projects.map(p => {
                 const getWarrantyStatus = () => {
-                  if (!p.warrantyStartDate || !p.warrantyMonths) return null;
+                  if (p.warrantyStartDate === undefined || p.warrantyMonths === undefined) return null;
                   const start = new Date(p.warrantyStartDate);
                   const end = new Date(start);
                   end.setMonth(end.getMonth() + p.warrantyMonths);
