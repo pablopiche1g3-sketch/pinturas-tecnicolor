@@ -1829,13 +1829,13 @@ export default function InstitutionalModule() {
                              const isGC = customer?.isGranContribuyente || false
                              const isCCF = (mappedData.documentType || '01') === '03'
                              const subtotal = mappedData.subtotal || 0
-                             const tax = mappedData.taxAmount || (subtotal * 0.13)
+                             const tax = mappedData.taxAmount !== undefined ? mappedData.taxAmount : (isCCF ? subtotal * 0.13 : 0)
                              const parsedRetention = mappedData.retentionAmount || 0
                              const calculatedRetention = parsedRetention > 0 
                                ? parsedRetention 
                                : (isGC && isCCF && subtotal >= 100 ? subtotal * 0.01 : 0)
                              const perception = mappedData.perceptionAmount || 0
-                             const adjustedTotal = subtotal + tax - calculatedRetention + perception
+                             const adjustedTotal = mappedData.totalAmount || (subtotal + tax - calculatedRetention + perception)
 
                              return (
                                <>
