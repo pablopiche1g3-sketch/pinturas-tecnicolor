@@ -1492,9 +1492,21 @@ export default function InstitutionalModule() {
                     <CardContent className="space-y-4">
                        <ScrollArea className="h-[180px] border rounded-lg p-2 bg-card">
                           {manualItems.map((it, idx) => (
-                            <div key={idx} className="flex justify-between p-2 border-b text-[10px]">
-                               <span>{it.code ? `[${it.code}] ` : ''}{it.description} (x{it.quantity})</span>
-                               <span className="font-bold text-foreground">${it.lineTotal.toFixed(2)}</span>
+                            <div key={idx} className="flex justify-between items-center p-2 border-b text-[10px] group">
+                               <div className="flex-1">
+                                 <span>{it.code ? `[${it.code}] ` : ''}{it.description} (x{it.quantity})</span>
+                               </div>
+                               <div className="flex items-center gap-2">
+                                 <span className="font-bold text-foreground">${it.lineTotal.toFixed(2)}</span>
+                                 <Button 
+                                   variant="ghost" 
+                                   size="icon" 
+                                   className="h-5 w-5 text-destructive opacity-0 group-hover:opacity-100 transition-opacity" 
+                                   onClick={() => setManualItems(manualItems.filter((_, i) => i !== idx))}
+                                 >
+                                   <Trash2 className="h-3 w-3" />
+                                 </Button>
+                               </div>
                             </div>
                           ))}
                           {manualItems.length === 0 && (
@@ -1568,9 +1580,21 @@ export default function InstitutionalModule() {
                     <CardContent>
                        <ScrollArea className="h-[250px] border rounded-lg p-2">
                           {manualItems.map((it, idx) => (
-                            <div key={idx} className="flex justify-between p-2 border-b text-[10px]">
-                               <span>{it.code ? `[${it.code}] ` : ''}{it.description} (x{it.quantity})</span>
-                               <span className="font-bold">${it.lineTotal.toFixed(2)}</span>
+                            <div key={idx} className="flex justify-between items-center p-2 border-b text-[10px] group">
+                               <div className="flex-1">
+                                 <span>{it.code ? `[${it.code}] ` : ''}{it.description} (x{it.quantity})</span>
+                               </div>
+                               <div className="flex items-center gap-2">
+                                 <span className="font-bold">${it.lineTotal.toFixed(2)}</span>
+                                 <Button 
+                                   variant="ghost" 
+                                   size="icon" 
+                                   className="h-5 w-5 text-destructive opacity-0 group-hover:opacity-100 transition-opacity" 
+                                   onClick={() => setManualItems(manualItems.filter((_, i) => i !== idx))}
+                                 >
+                                   <Trash2 className="h-3 w-3" />
+                                 </Button>
+                               </div>
                             </div>
                           ))}
                        </ScrollArea>
@@ -2159,8 +2183,18 @@ export default function InstitutionalModule() {
                             }} 
                           />
                         </td>
-                        <td className="p-2 text-right text-muted-foreground">
-                          ${(item?.unitPrice || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                        <td className="p-2">
+                          <Input 
+                            type="number" 
+                            className="h-8 w-24 text-xs text-right" 
+                            value={item?.unitPrice || 0} 
+                            onChange={(e) => {
+                              const newPrice = Number(e.target.value);
+                              const newItems = [...(editingTransaction.items || [])];
+                              newItems[idx] = { ...item, unitPrice: newPrice, lineTotal: (item?.quantity || 0) * newPrice };
+                              setEditingTransaction({ ...editingTransaction, items: newItems });
+                            }} 
+                          />
                         </td>
                         <td className="p-2 text-right font-bold text-foreground">
                           ${((item?.quantity || 0) * (item?.unitPrice || 0)).toLocaleString('en-US', { minimumFractionDigits: 2 })}
