@@ -110,6 +110,7 @@ export default function InstitutionalModule() {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const fileInputEmitRef = React.useRef<HTMLInputElement>(null)
   const fileInputVoidRef = React.useRef<HTMLInputElement>(null)
+  const fileInputExcelRef = React.useRef<HTMLInputElement>(null)
 
   React.useEffect(() => {
     setMounted(true)
@@ -445,6 +446,72 @@ export default function InstitutionalModule() {
       link.click()
     }
   }
+
+  const handleDownloadTemplate = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    try {
+      const XLSX = await import('xlsx');
+      const ws = XLSX.utils.json_to_sheet([
+        { CODIGO: "PT-001", CANTIDAD: 10, "PRECIO VENTA": 15.50, "DESCRIPCION DEL PRODUCTO": "Pintura Acrílica Blanca" }
+      ]);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Plantilla");
+      XLSX.writeFile(wb, "Plantilla_Carga_Productos.xlsx");
+      toast({ title: "Plantilla descargada", description: "Llena el archivo Excel y súbelo para cargar los productos." });
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Error", description: "No se pudo generar la plantilla.", variant: "destructive" });
+    }
+  };
+
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    try {
+      const XLSX = await import('xlsx');
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        try {
+          const bstr = evt.target?.result;
+          const wb = XLSX.read(bstr, { type: 'binary' });
+          const wsname = wb.SheetNames[0];
+          const ws = wb.Sheets[wsname];
+          const data = XLSX.utils.sheet_to_json(ws);
+          
+          let importedCount = 0;
+          const newProducts = [...newProjectProducts];
+          
+          data.forEach((row: any) => {
+            const code = row['CODIGO'] || row['codigo'] || row['Codigo'] || '';
+            const qty = Number(row['CANTIDAD'] || row['cantidad'] || row['Cantidad']) || 0;
+            const price = Number(row['PRECIO VENTA'] || row['precio'] || row['Precio'] || row['PRECIO']) || 0;
+            const desc = row['DESCRIPCION DEL PRODUCTO'] || row['descripcion'] || row['Descripcion'] || row['DESCRIPCION'] || '';
+            
+            if (desc && qty > 0) {
+              newProducts.push({
+                code: String(code),
+                description: String(desc),
+                quantity: qty,
+                unitPrice: price,
+              });
+              importedCount++;
+            }
+          });
+          
+          setNewProjectProducts(newProducts);
+          toast({ title: "Importación exitosa", description: `Se importaron ${importedCount} productos del archivo Excel.` });
+        } catch (err) {
+           toast({ title: "Error de lectura", description: "El archivo Excel no tiene el formato correcto.", variant: "destructive" });
+        }
+      };
+      reader.readAsBinaryString(file);
+    } catch (err) {
+      console.error(err);
+      toast({ title: "Error", description: "No se pudo procesar el archivo Excel.", variant: "destructive" });
+    }
+    e.target.value = '';
+  };
 
   // AI & Manual Processing Logic...
   const handleProcessData = async (content?: string) => {
@@ -939,17 +1006,41 @@ export default function InstitutionalModule() {
                         </div>
 
                         <div className="space-y-4">
-                          <div className="flex justify-between items-center">
-                            <h4 className="font-bold text-xs uppercase text-muted-foreground">Productos de la OC</h4>
-                            <Button 
-                              variant="outline" 
-                              size="sm" 
-                              type="button"
-                              className="h-7 text-[10px] px-2 gap-1 text-primary border-primary/20 hover:bg-primary/5 shrink-0" 
-                              onClick={(e) => { e.preventDefault(); setIsSuppliesDialogOpen(true); }}
-                            >
-                              <Maximize2 className="h-3 w-3" /> Editar en Pantalla Completa
-                            </Button>
+                          <div className="flex justify-between items-center gap-2">
+                            <h4 className="font-bold text-xs uppercase text-muted-foreground flex-1">Productos de la OC</h4>
+                            <div className="flex gap-1">
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                type="button"
+                                className="h-7 text-[10px] px-2 gap-1 text-green-600 border-green-600/20 hover:bg-green-600/10 shrink-0" 
+                                onClick={handleDownloadTemplate}
+                                title="Descargar Plantilla Excel"
+                              >
+                                <Download className="h-3 w-3" /> Plantilla
+                              </Button>
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                type="button"
+                                className="h-7 text-[10px] px-2 gap-1 text-green-600 border-green-600/20 hover:bg-green-600/10 shrink-0" 
+                                onClick={(e) => { e.preventDefault(); fileInputExcelRef.current?.click(); }}
+                                title="Cargar desde Excel"
+                              >
+                                <Upload className="h-3 w-3" /> Cargar
+                              </Button>
+                              <input type="file" ref={fileInputExcelRef} className="hidden" accept=".xlsx, .xls" onChange={handleImportExcel} />
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                type="button"
+                                className="h-7 text-[10px] px-2 gap-1 text-primary border-primary/20 hover:bg-primary/5 shrink-0" 
+                                onClick={(e) => { e.preventDefault(); setIsSuppliesDialogOpen(true); }}
+                                title="Editar en Pantalla Completa"
+                              >
+                                <Maximize2 className="h-3 w-3" /> Ampliar
+                              </Button>
+                            </div>
                           </div>
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             <Input className="h-8 text-xs" placeholder="Código SV" value={tempProduct.code} onChange={e => setTempProduct({...tempProduct, code: e.target.value})} />
