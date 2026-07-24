@@ -130,6 +130,7 @@ interface LedgerActions {
   addProject: (db: Firestore, project: Omit<Project, 'id' | 'createdAt' | 'documents'>) => void;
   updateProject: (db: Firestore, id: string, updates: Partial<Project>) => void;
   deleteProject: (db: Firestore, id: string) => void;
+  mergeProjects: (db: Firestore, sourceProjectId: string, targetProjectId: string, sourceProject: Project, targetProject: Project, transactions: Transaction[]) => Promise<void>;
   addTransaction: (db: Firestore, transaction: Omit<Transaction, 'id'>) => void;
   updateTransaction: (db: Firestore, id: string, updates: Partial<Transaction>) => void;
   voidTransaction: (db: Firestore, id: string, reason: string, relatedDoc?: string) => void;
@@ -223,6 +224,50 @@ export const useLedgerStore = create<LedgerState & LedgerActions>((set, get) => 
   deleteProject: (db, id) => {
     deleteDoc(doc(db, 'projects', id));
     // Note: In production you might want to delete sub-transactions too
+  },
+
+  mergeProjects: async (db, sourceProjectId, targetProjectId, sourceProject, targetProject, transactions) => {
+    // 1. Update all transactions from source project to target project
+    const sourceTxs = transactions.filter(t => t.projectId === sourceProjectId);
+    for (const tx of sourceTxs) {
+      await updateDoc(doc(db, 'transactions', tx.id), { projectId: targetProjectId });
+    }
+
+    // 2. Combine expected products
+    const combinedProducts = [...(targetProject.expectedProducts || [])];
+    for (const sourceProd of (sourceProject.expectedProducts || [])) {
+      const existingIdx = combinedProducts.findIndex(p => 
+        (p.code && sourceProd.code && p.code.trim().toLowerCase() === sourceProd.code.trim().toLowerCase()) ||
+        (p.description && sourceProd.description && p.description.trim().toLowerCase() === sourceProd.description.trim().toLowerCase())
+      );
+      if (existingIdx >= 0) {
+        combinedProducts[existingIdx] = {
+          ...combinedProducts[existingIdx],
+          quantity: combinedProducts[existingIdx].quantity + sourceProd.quantity,
+          unitPrice: sourceProd.unitPrice || combinedProducts[existingIdx].unitPrice
+        };
+      } else {
+        combinedProducts.push({ ...sourceProd });
+      }
+    }
+
+    // 3. Combine documents
+    const combinedDocs = [...(targetProject.documents || []), ...(sourceProject.documents || [])];
+
+    // 4. Update target project with aggregated values
+    const newPO = targetProject.purchaseOrder && sourceProject.purchaseOrder && !targetProject.purchaseOrder.includes(sourceProject.purchaseOrder)
+      ? `${targetProject.purchaseOrder} / ${sourceProject.purchaseOrder}`
+      : targetProject.purchaseOrder || sourceProject.purchaseOrder;
+
+    await updateDoc(doc(db, 'projects', targetProjectId), {
+      targetSaleAmount: (targetProject.targetSaleAmount || 0) + (sourceProject.targetSaleAmount || 0),
+      expectedProducts: combinedProducts,
+      documents: combinedDocs,
+      purchaseOrder: newPO
+    });
+
+    // 5. Delete source project
+    await deleteDoc(doc(db, 'projects', sourceProjectId));
   },
 
   addTransaction: (db, transaction) => {

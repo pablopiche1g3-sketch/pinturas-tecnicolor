@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dialog"
 import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project, type ProjectDocument, type Transaction } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput, type AiActionResponse } from "@/ai/flows/ai-json-key-mapper"
-import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders, Edit2 } from "lucide-react"
+import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders, Edit2, GitMerge, Layers, TrendingUp, Info } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -40,7 +40,7 @@ import { jsPDF } from "jspdf"
 
 export default function InstitutionalModule() {
   const { 
-    entities, projects, transactions, addProject, updateProject, deleteProject, 
+    entities, projects, transactions, addProject, updateProject, deleteProject, mergeProjects,
     addTransaction, updateTransaction, voidTransaction, addToInventory, addDocumentToProject, deleteDocumentFromProject 
   } = useLedgerStore()
   const db = useFirestore()
@@ -111,6 +111,18 @@ export default function InstitutionalModule() {
   const fileInputEmitRef = React.useRef<HTMLInputElement>(null)
   const fileInputVoidRef = React.useRef<HTMLInputElement>(null)
   const fileInputExcelRef = React.useRef<HTMLInputElement>(null)
+
+  const [viewingProductDetail, setViewingProductDetail] = React.useState<{
+    code: string;
+    description: string;
+    expectedQty: number;
+    expectedPrice: number;
+  } | null>(null)
+
+  const [isMergeDialogOpen, setIsMergeDialogOpen] = React.useState(false)
+  const [sourceProjectToMerge, setSourceProjectToMerge] = React.useState<Project | null>(null)
+  const [targetProjectIdToMerge, setTargetProjectIdToMerge] = React.useState<string>('')
+  const [isMerging, setIsMerging] = React.useState(false)
 
   React.useEffect(() => {
     setMounted(true)
@@ -511,6 +523,37 @@ export default function InstitutionalModule() {
       toast({ title: "Error", description: "No se pudo procesar el archivo Excel.", variant: "destructive" });
     }
     e.target.value = '';
+  };
+
+  const handleConfirmMerge = async () => {
+    if (!sourceProjectToMerge || !targetProjectIdToMerge) return;
+    const targetProject = projects.find(p => p.id === targetProjectIdToMerge);
+    if (!targetProject) return;
+
+    setIsMerging(true);
+    try {
+      await mergeProjects(db, sourceProjectToMerge.id, targetProjectIdToMerge, sourceProjectToMerge, targetProject, transactions);
+      toast({
+        title: "Proyectos Unificados",
+        description: `El proyecto "${sourceProjectToMerge.name}" se fusionó exitosamente con "${targetProject.name}".`
+      });
+      setIsMergeDialogOpen(false);
+      const newSelectedId = targetProjectIdToMerge;
+      setSourceProjectToMerge(null);
+      setTargetProjectIdToMerge('');
+      if (selectedProjectId === sourceProjectToMerge.id) {
+        setSelectedProjectId(newSelectedId);
+      }
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        title: "Error al unificar",
+        description: err.message || "No se pudieron fusionar los proyectos.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsMerging(false);
+    }
   };
 
   // AI & Manual Processing Logic...
@@ -1398,6 +1441,13 @@ export default function InstitutionalModule() {
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" onClick={(e) => handleExportProject(e, p)} title="Exportar Rentabilidad (Excel)">
                       <FileDown className="h-4 w-4" />
                     </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-50" onClick={(e) => {
+                      e.stopPropagation();
+                      setSourceProjectToMerge(p);
+                      setIsMergeDialogOpen(true);
+                    }} title="Unir con otro proyecto">
+                      <GitMerge className="h-4 w-4" />
+                    </Button>
                     <Button variant="ghost" size="icon" className={cn("h-8 w-8", p.status === 'completed' ? "text-primary" : "text-muted-foreground")} onClick={(e) => toggleProjectStatus(e, p)} title="Cambiar Estado">
                       <CheckCircle className="h-4 w-4" />
                     </Button>
@@ -1775,77 +1825,249 @@ export default function InstitutionalModule() {
                  <Card className="bg-orange-50 border-orange-200">
                    <CardContent className="p-4 text-center">
                      <p className="text-[10px] uppercase text-orange-600/70 font-bold">Saldo Pendiente OC</p>
-                     <p className="text-xl font-black text-orange-600">
-                       ${(currentProject.targetSaleAmount - transactions.filter(t => t.projectId === currentProject.id && !t.isVoided && t.type === 'sale').reduce((a, b) => a + b.totalAmount, 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                     </p>
-                   </CardContent>
-                 </Card>
-                 <Card className="bg-blue-50 border-blue-200">
-                   <CardContent className="p-4 text-center">
-                     <p className="text-[10px] uppercase text-blue-600/70 font-bold">Total Remitido</p>
-                     <p className="text-xl font-black text-blue-600">
-                       ${transactions.filter(t => t.projectId === currentProject.id && !t.isVoided && t.type === 'remission').reduce((a, b) => a + b.totalAmount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                     </p>
-                   </CardContent>
-                 </Card>
-               </div>
+<Card className="bg-blue-50 border-blue-200">
+                    <CardContent className="p-4 text-center">
+                      <p className="text-[10px] uppercase text-blue-600/70 font-bold">Total Remitido</p>
+                      <p className="text-xl font-black text-blue-600">
+                        ${transactions.filter(t => t.projectId === currentProject.id && !t.isVoided && t.type === 'remission').reduce((a, b) => a + b.totalAmount, 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </div>
 
-               <Card>
-                 <CardHeader className="flex flex-row justify-between items-start">
-                   <div>
-                     <CardTitle className="text-lg">Cantidades: Entregas vs Facturación</CardTitle>
-                     <CardDescription className="text-xs">
-                       *Nota: Si la factura o DTE fue emitida con un código genérico o descripción agrupada a petición del cliente, las cantidades de abajo podrían no coincidir, pero el Resumen Financiero superior se mantendrá exacto por monto ($).
-                     </CardDescription>
-                   </div>
-                   <Button size="sm" variant="outline" className="gap-2 border-green-600 text-green-700 hover:bg-green-50" onClick={exportKardexExcel}>
-                     <FileDown className="h-4 w-4" /> Exportar Kardex (Excel)
-                   </Button>
-                 </CardHeader>
-                 <CardContent>
-                   <div className="overflow-x-auto rounded-lg border">
-                     <Table>
-                       <TableHeader className="bg-muted/50">
-                         <TableRow>
-                           <TableHead>Producto OC</TableHead>
-                           <TableHead className="text-right">Esperado (OC)</TableHead>
-                           <TableHead className="text-right">Entregado (Remisión)</TableHead>
-                           <TableHead className="text-right">Facturado (DTE)</TableHead>
-                           <TableHead className="text-right font-bold text-primary">Pendiente de Facturar</TableHead>
-                         </TableRow>
-                       </TableHeader>
-                       <TableBody>
-                         {currentProject.expectedProducts.map(ep => {
-                           const projectTxs = transactions.filter(t => t.projectId === currentProject.id && !t.isVoided);
-                           const delivered = projectTxs.filter(t => t.type === 'remission').flatMap(t => t.items || []).filter(i => {
-                             if (!i) return false;
-                             const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
-                             return match && match.code === ep.code && match.description === ep.description;
-                           }).reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
-                           
-                           const invoiced = projectTxs.filter(t => t.type === 'sale').flatMap(t => t.items || []).filter(i => {
-                             if (!i) return false;
-                             const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
-                             return match && match.code === ep.code && match.description === ep.description;
-                           }).reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
+                {(() => {
+                  const projectTxs = transactions.filter(t => t.projectId === currentProject.id && !t.isVoided);
+                  
+                  const productRows = (currentProject.expectedProducts || []).map(ep => {
+                    const remissionItems = projectTxs.filter(t => t.type === 'remission').flatMap(t => t.items || []).filter(i => {
+                      if (!i) return false;
+                      const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
+                      return match && (match.code === ep.code || match.description === ep.description);
+                    });
+                    const deliveredQty = remissionItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
 
-                           const pending = delivered - invoiced;
+                    const saleItems = projectTxs.filter(t => t.type === 'sale').flatMap(t => t.items || []).filter(i => {
+                      if (!i) return false;
+                      const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
+                      return match && (match.code === ep.code || match.description === ep.description);
+                    });
+                    const saleQty = saleItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
+                    const saleTotal = saleItems.reduce((acc, curr) => acc + (curr?.lineTotal || (curr?.quantity * curr?.unitPrice) || 0), 0);
+                    const saleAvgUnitPrice = saleQty > 0 ? saleTotal / saleQty : ep.unitPrice;
 
-                           return (
-                             <TableRow key={ep.code}>
-                               <TableCell className="font-medium text-xs max-w-[200px] truncate" title={ep.description}>{ep.code} - {ep.description}</TableCell>
-                               <TableCell className="text-right">{ep.quantity}</TableCell>
-                               <TableCell className="text-right text-blue-600 font-bold">{delivered}</TableCell>
-                               <TableCell className="text-right text-green-600 font-bold">{invoiced}</TableCell>
-                               <TableCell className="text-right font-black text-primary">{pending > 0 ? pending : 0}</TableCell>
-                             </TableRow>
-                           )
-                         })}
-                       </TableBody>
-                     </Table>
-                   </div>
-                 </CardContent>
-               </Card>
+                    const costItems = projectTxs.filter(t => t.type === 'purchase' || t.type === 'internal').flatMap(t => t.items || []).filter(i => {
+                      if (!i) return false;
+                      const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
+                      return match && (match.code === ep.code || match.description === ep.description);
+                    });
+                    const costQty = costItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
+                    const costTotal = costItems.reduce((acc, curr) => acc + (curr?.lineTotal || (curr?.quantity * curr?.unitPrice) || 0), 0);
+                    const costAvgUnitPrice = costQty > 0 ? costTotal / costQty : 0;
+
+                    const pendingDeliver = ep.quantity - deliveredQty;
+                    const pendingInvoice = deliveredQty - saleQty;
+                    const marginAmount = saleTotal - costTotal;
+                    const marginPercent = saleTotal > 0 ? (marginAmount / saleTotal) * 100 : 0;
+
+                    return {
+                      ep,
+                      deliveredQty,
+                      saleQty,
+                      saleTotal,
+                      saleAvgUnitPrice,
+                      costQty,
+                      costTotal,
+                      costAvgUnitPrice,
+                      pendingDeliver,
+                      pendingInvoice,
+                      marginAmount,
+                      marginPercent
+                    };
+                  });
+
+                  return (
+                    <div className="space-y-6">
+                      {/* 1. Tabla de Margen y Rentabilidad por Producto */}
+                      <Card className="border-t-4 border-t-primary shadow-sm">
+                        <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-2">
+                          <div>
+                            <CardTitle className="text-lg font-bold flex items-center gap-2">
+                              <TrendingUp className="h-5 w-5 text-green-600" />
+                              Margen y Rentabilidad por Producto
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                              Comparativa de Ventas Facturadas vs. Costos de Adquisición/Insumos por ítem.
+                            </CardDescription>
+                          </div>
+                          <Button size="sm" variant="outline" className="gap-2 border-green-600 text-green-700 hover:bg-green-50 shrink-0" onClick={exportKardexExcel}>
+                            <FileDown className="h-4 w-4" /> Exportar Kardex (Excel)
+                          </Button>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="overflow-x-auto rounded-lg border">
+                            <Table className="text-xs">
+                              <TableHeader className="bg-muted/60">
+                                <TableRow>
+                                  <TableHead className="font-bold">Producto</TableHead>
+                                  <TableHead className="text-center bg-green-50/50 text-green-900 border-x" colSpan={3}>Venta (Facturas)</TableHead>
+                                  <TableHead className="text-center bg-orange-50/50 text-orange-900 border-r" colSpan={3}>Costo (Compras / Matriz)</TableHead>
+                                  <TableHead className="text-right font-bold bg-primary/5">Margen ($ / %)</TableHead>
+                                </TableRow>
+                                <TableRow className="text-[10px] uppercase font-bold text-muted-foreground bg-muted/30">
+                                  <TableHead></TableHead>
+                                  <TableHead className="text-right border-l">Cant.</TableHead>
+                                  <TableHead className="text-right">Precio Unit.</TableHead>
+                                  <TableHead className="text-right border-r">Venta Total</TableHead>
+                                  <TableHead className="text-right">Cant.</TableHead>
+                                  <TableHead className="text-right">Costo Unit.</TableHead>
+                                  <TableHead className="text-right border-r">Costo Total</TableHead>
+                                  <TableHead className="text-right"></TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {productRows.length === 0 ? (
+                                  <TableRow>
+                                    <TableCell colSpan={8} className="h-24 text-center text-muted-foreground italic">
+                                      No hay productos configurados en la Orden de Compra de este proyecto.
+                                    </TableCell>
+                                  </TableRow>
+                                ) : (
+                                  productRows.map((r, idx) => (
+                                    <TableRow key={idx} className="hover:bg-muted/30">
+                                      <TableCell className="font-medium max-w-[200px] truncate" title={r.ep.description}>
+                                        <span className="font-bold text-foreground">{r.ep.code || 'S/C'}</span>
+                                        <span className="block text-[10px] text-muted-foreground truncate">{r.ep.description}</span>
+                                      </TableCell>
+
+                                      {/* Venta */}
+                                      <TableCell className="text-right border-l font-semibold">{r.saleQty}</TableCell>
+                                      <TableCell className="text-right text-muted-foreground">${r.saleAvgUnitPrice.toFixed(2)}</TableCell>
+                                      <TableCell className="text-right font-bold text-green-600 border-r">${r.saleTotal.toFixed(2)}</TableCell>
+
+                                      {/* Costo */}
+                                      <TableCell className="text-right font-semibold">{r.costQty}</TableCell>
+                                      <TableCell className="text-right text-muted-foreground">${r.costAvgUnitPrice.toFixed(2)}</TableCell>
+                                      <TableCell className="text-right font-bold text-orange-600 border-r">${r.costTotal.toFixed(2)}</TableCell>
+
+                                      {/* Margen */}
+                                      <TableCell className="text-right font-bold bg-primary/5">
+                                        <div className={cn("text-xs font-black", r.marginAmount >= 0 ? "text-green-600" : "text-destructive")}>
+                                          ${r.marginAmount.toFixed(2)}
+                                        </div>
+                                        <div className="text-[9px] text-muted-foreground">
+                                          {r.marginPercent.toFixed(1)}%
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))
+                                )}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* 2. Tabla de Control de Entregas e Individualidad Parcial */}
+                      <Card>
+                        <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-2">
+                          <div>
+                            <CardTitle className="text-lg font-bold flex items-center gap-2">
+                              <Package className="h-5 w-5 text-blue-600" />
+                              Control de Entregas Parciales y Facturación
+                            </CardTitle>
+                            <CardDescription className="text-xs">
+                              Monitoreo de lo despachado en remisiones individuales vs. facturado por comprobante DTE.
+                            </CardDescription>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="overflow-x-auto rounded-lg border">
+                            <Table className="text-xs">
+                              <TableHeader className="bg-muted/50">
+                                <TableRow>
+                                  <TableHead className="font-bold">Producto OC</TableHead>
+                                  <TableHead className="text-right">Cotizado (OC)</TableHead>
+                                  <TableHead className="text-right text-blue-600">Enviado (Remisión)</TableHead>
+                                  <TableHead className="text-right text-green-600">Facturado (DTE)</TableHead>
+                                  <TableHead className="text-center">Pend. Enviar</TableHead>
+                                  <TableHead className="text-center">Por Facturar</TableHead>
+                                  <TableHead className="text-center">Detalle</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {productRows.map((r, idx) => (
+                                  <TableRow key={idx} className="hover:bg-muted/30">
+                                    <TableCell className="font-medium max-w-[220px] truncate" title={r.ep.description}>
+                                      <span className="font-bold">{r.ep.code || 'S/C'}</span> - {r.ep.description}
+                                    </TableCell>
+                                    <TableCell className="text-right font-semibold">
+                                      {r.ep.quantity}
+                                      <span className="block text-[9px] text-muted-foreground">${(r.ep.quantity * r.ep.unitPrice).toFixed(2)}</span>
+                                    </TableCell>
+                                    <TableCell className="text-right text-blue-600 font-bold">
+                                      {r.deliveredQty}
+                                      <span className="block text-[9px] text-muted-foreground">${(r.deliveredQty * r.ep.unitPrice).toFixed(2)}</span>
+                                    </TableCell>
+                                    <TableCell className="text-right text-green-600 font-bold">
+                                      {r.saleQty}
+                                    </TableCell>
+                                    
+                                    {/* Pendiente Enviar */}
+                                    <TableCell className="text-center">
+                                      {r.pendingDeliver > 0 ? (
+                                        <Badge variant="outline" className="text-[9px] bg-amber-50 text-amber-700 border-amber-200">
+                                          {r.pendingDeliver} por enviar
+                                        </Badge>
+                                      ) : r.pendingDeliver < 0 ? (
+                                        <Badge variant="outline" className="text-[9px] bg-purple-50 text-purple-700 border-purple-200">
+                                          +{Math.abs(r.pendingDeliver)} sobre-entrega
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="outline" className="text-[9px] bg-green-50 text-green-700 border-green-200">
+                                          Completado
+                                        </Badge>
+                                      )}
+                                    </TableCell>
+
+                                    {/* Por Facturar */}
+                                    <TableCell className="text-center">
+                                      {r.pendingInvoice > 0 ? (
+                                        <Badge className="text-[9px] bg-blue-600 text-white">
+                                          {r.pendingInvoice} por facturar
+                                        </Badge>
+                                      ) : (
+                                        <Badge variant="secondary" className="text-[9px]">
+                                          Facturado
+                                        </Badge>
+                                      )}
+                                    </TableCell>
+
+                                    {/* Ver Detalle */}
+                                    <TableCell className="text-center">
+                                      <Button
+                                        size="sm"
+                                        variant="ghost"
+                                        className="h-7 text-xs gap-1 text-primary hover:bg-primary/10"
+                                        onClick={() => setViewingProductDetail({
+                                          code: r.ep.code,
+                                          description: r.ep.description,
+                                          expectedQty: r.ep.quantity,
+                                          expectedPrice: r.ep.unitPrice
+                                        })}
+                                      >
+                                        <Eye className="h-3.5 w-3.5" /> Ver
+                                      </Button>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
+                  );
+                })()}
 
                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                  <Card>
@@ -2331,6 +2553,188 @@ export default function InstitutionalModule() {
             </Button>
             <Button size="sm" className="bg-primary hover:bg-primary/90" onClick={handleEditTransactionSave}>
               Guardar Cambios
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      {/* Modal: Detalle de Entregas e Historial por Producto */}
+      <Dialog open={!!viewingProductDetail} onOpenChange={(open) => !open && setViewingProductDetail(null)}>
+        <DialogContent className="sm:max-w-[700px] w-[95vw] max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+              <Eye className="h-5 w-5 text-primary" />
+              Historial de Entregas y Facturas Parciales
+            </DialogTitle>
+            <CardDescription className="text-xs">
+              {viewingProductDetail?.code ? `[${viewingProductDetail.code}] ` : ''}{viewingProductDetail?.description}
+            </CardDescription>
+          </DialogHeader>
+
+          {viewingProductDetail && currentProject && (
+            <div className="space-y-4 text-xs">
+              <div className="grid grid-cols-3 gap-2 bg-muted/40 p-3 rounded-lg border text-center">
+                <div>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Cotizado (OC)</span>
+                  <span className="text-sm font-bold text-foreground">{viewingProductDetail.expectedQty} u.</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Remitido (Físico)</span>
+                  <span className="text-sm font-bold text-blue-600">
+                    {transactions
+                      .filter(t => t.projectId === currentProject.id && !t.isVoided && t.type === 'remission')
+                      .flatMap(t => t.items || [])
+                      .filter(i => {
+                        if (!i) return false;
+                        const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
+                        return match && (match.code === viewingProductDetail.code || match.description === viewingProductDetail.description);
+                      })
+                      .reduce((acc, curr) => acc + (curr?.quantity || 0), 0)} u.
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground uppercase font-bold block">Facturado (Fiscal)</span>
+                  <span className="text-sm font-bold text-green-600">
+                    {transactions
+                      .filter(t => t.projectId === currentProject.id && !t.isVoided && t.type === 'sale')
+                      .flatMap(t => t.items || [])
+                      .filter(i => {
+                        if (!i) return false;
+                        const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
+                        return match && (match.code === viewingProductDetail.code || match.description === viewingProductDetail.description);
+                      })
+                      .reduce((acc, curr) => acc + (curr?.quantity || 0), 0)} u.
+                  </span>
+                </div>
+              </div>
+
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader className="bg-muted/60">
+                    <TableRow>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Comprobante / N° Doc</TableHead>
+                      <TableHead className="text-center">Tipo</TableHead>
+                      <TableHead className="text-right">Cant.</TableHead>
+                      <TableHead className="text-right">P. Unit / Costo</TableHead>
+                      <TableHead className="text-right font-bold">Total ($)</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(() => {
+                      const projectTxs = transactions.filter(t => t.projectId === currentProject.id && !t.isVoided);
+                      const matchingEvents = projectTxs.flatMap(tx => {
+                        const matchingItems = (tx.items || []).filter(i => {
+                          if (!i) return false;
+                          const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
+                          return match && (match.code === viewingProductDetail.code || match.description === viewingProductDetail.description);
+                        });
+
+                        return matchingItems.map(item => ({
+                          txId: tx.id,
+                          date: tx.issueDate,
+                          docNum: tx.invoiceNumber || 'S/N',
+                          docType: tx.documentType,
+                          type: tx.type,
+                          quantity: item.quantity,
+                          unitPrice: item.unitPrice,
+                          lineTotal: item.lineTotal || (item.quantity * item.unitPrice)
+                        }));
+                      });
+
+                      if (matchingEvents.length === 0) {
+                        return (
+                          <TableRow>
+                            <TableCell colSpan={6} className="h-24 text-center text-muted-foreground italic">
+                              No hay movimientos ni comprobantes registrados para este producto aún.
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+
+                      return matchingEvents.map((evt, idx) => (
+                        <TableRow key={idx}>
+                          <TableCell className="text-muted-foreground">{new Date(evt.date).toLocaleDateString()}</TableCell>
+                          <TableCell className="font-mono font-bold text-foreground">{evt.docNum}</TableCell>
+                          <TableCell className="text-center">
+                            {evt.type === 'remission' && <Badge className="bg-blue-500 text-[9px]">Remisión Parcial</Badge>}
+                            {evt.type === 'sale' && <Badge className="bg-green-600 text-[9px]">{evt.docType === '03' ? 'CCF Factura' : 'FAC Venta'}</Badge>}
+                            {(evt.type === 'purchase' || evt.type === 'internal') && <Badge variant="outline" className="text-[9px]">Compra / Insumo</Badge>}
+                          </TableCell>
+                          <TableCell className="text-right font-bold">{evt.quantity}</TableCell>
+                          <TableCell className="text-right text-muted-foreground">${evt.unitPrice.toFixed(2)}</TableCell>
+                          <TableCell className="text-right font-bold text-foreground">${evt.lineTotal.toFixed(2)}</TableCell>
+                        </TableRow>
+                      ));
+                    })()}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="mt-2">
+            <Button variant="outline" size="sm" onClick={() => setViewingProductDetail(null)}>
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Unir Proyectos */}
+      <Dialog open={isMergeDialogOpen} onOpenChange={setIsMergeDialogOpen}>
+        <DialogContent className="sm:max-w-[500px] w-[95vw]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-lg font-bold">
+              <GitMerge className="h-5 w-5 text-blue-600" />
+              Unir / Fusionar Proyectos
+            </DialogTitle>
+            <CardDescription className="text-xs">
+              Consolide dos entregas o presupuestos en un solo proyecto principal manteniendo el historial de remisiones y comprobantes DTE.
+            </CardDescription>
+          </DialogHeader>
+
+          {sourceProjectToMerge && (
+            <div className="space-y-4 py-2 text-xs">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 space-y-1">
+                <span className="font-bold block">Proyecto Origen a Consolidar:</span>
+                <span className="font-semibold block text-sm">{sourceProjectToMerge.name}</span>
+                <span className="text-[10px] text-amber-700">Monto OC: ${sourceProjectToMerge.targetSaleAmount.toLocaleString()} • OC: {sourceProjectToMerge.purchaseOrder}</span>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Seleccionar Proyecto Destino (Principal)</Label>
+                <Select value={targetProjectIdToMerge} onValueChange={setTargetProjectIdToMerge}>
+                  <SelectTrigger className="h-10 text-xs">
+                    <SelectValue placeholder="Seleccione el proyecto que conservará todo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects
+                      .filter(p => p.id !== sourceProjectToMerge.id)
+                      .map(p => (
+                        <SelectItem key={p.id} value={p.id} className="text-xs">
+                          {p.name} ({p.purchaseOrder}) - ${p.targetSaleAmount.toLocaleString()}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  * Todas las facturas, remisiones y productos del proyecto origen pasarán a formar parte de este proyecto. El proyecto origen se eliminará.
+                </p>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter className="mt-4 gap-2">
+            <Button variant="outline" size="sm" onClick={() => setIsMergeDialogOpen(false)} disabled={isMerging}>
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              className="bg-blue-600 hover:bg-blue-700 gap-2"
+              disabled={!targetProjectIdToMerge || isMerging}
+              onClick={handleConfirmMerge}
+            >
+              {isMerging ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitMerge className="h-3.5 w-3.5" />}
+              Confirmar Fusión
             </Button>
           </DialogFooter>
         </DialogContent>
