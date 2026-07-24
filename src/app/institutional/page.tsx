@@ -936,28 +936,109 @@ export default function InstitutionalModule() {
 
   const exportKardexExcel = async () => {
     if (!currentProject) return
-    
-    // Flatten transactions into items
-    const rows = projectTransactions.flatMap(tx => 
-      (tx.items || []).map(item => ({
-        "Tipo de DTE": tx.type === 'purchase' ? 'Compra' : tx.type === 'sale' ? 'Venta' : 'Remisión',
-        "Número de DTE": tx.invoiceNumber || tx.numeroControl,
-        "Fecha": new Date(tx.issueDate).toLocaleDateString(),
-        "Entidad": tx.entityName,
-        "Proyecto": currentProject.name,
-        "Código": item.code || '',
-        "Producto": item.description,
-        "Cantidad": item.quantity,
-        "Precio Unitario": item.unitPrice,
-        "Total": item.lineTotal || (item.quantity * item.unitPrice)
-      }))
-    )
+
+    const projectTxs = transactions.filter(t => t.projectId === currentProject.id && !t.isVoided);
+
+    // 1. Sheet 1: Summary of Margins & Profitability per Product
+    const summaryRows = (currentProject.expectedProducts || []).map(ep => {
+      const remissionItems = projectTxs.filter(t => t.type === 'remission').flatMap(t => t.items || []).filter(i => {
+        if (!i) return false;
+        const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
+        return match && (match.code === ep.code || match.description === ep.description);
+      });
+      const deliveredQty = remissionItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
+
+      const saleItems = projectTxs.filter(t => t.type === 'sale').flatMap(t => t.items || []).filter(i => {
+        if (!i) return false;
+        const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
+        return match && (match.code === ep.code || match.description === ep.description);
+      });
+      const saleQty = saleItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
+      const saleTotal = saleItems.reduce((acc, curr) => acc + (curr?.lineTotal || (curr?.quantity * curr?.unitPrice) || 0), 0);
+      const saleAvgUnitPrice = saleQty > 0 ? saleTotal / saleQty : ep.unitPrice;
+
+      const costItems = projectTxs.filter(t => t.type === 'purchase').flatMap(t => t.items || []).filter(i => {
+        if (!i) return false;
+        const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
+        return match && (match.code === ep.code || match.description === ep.description);
+      });
+      const costQty = costItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
+      const costTotal = costItems.reduce((acc, curr) => acc + (curr?.lineTotal || (curr?.quantity * curr?.unitPrice) || 0), 0);
+      const costAvgUnitPrice = costQty > 0 ? costTotal / costQty : 0;
+
+      const marginAmount = saleTotal - costTotal;
+      const marginPercent = saleTotal > 0 ? (marginAmount / saleTotal) * 100 : 0;
+
+      return {
+        "Código": ep.code || 'S/C',
+        "Producto": ep.description,
+        "Cant. Cotizada (OC)": ep.quantity,
+        "Cant. Entregada (Remisión)": deliveredQty,
+        "Cant. Facturada (Venta)": saleQty,
+        "Precio Venta Unit. Prom. ($)": Number(saleAvgUnitPrice.toFixed(2)),
+        "Venta Total ($)": Number(saleTotal.toFixed(2)),
+        "Cant. Comprada (Costo)": costQty,
+        "Costo Unit. Prom. ($)": Number(costAvgUnitPrice.toFixed(2)),
+        "Costo Total ($)": Number(costTotal.toFixed(2)),
+        "Margen ($)": Number(marginAmount.toFixed(2)),
+        "Margen (%)": `${marginPercent.toFixed(1)}%`
+      };
+    });
+
+    // 2. Sheet 2: Detailed Movements with Purchase Cost vs Selling Price
+    const detailedRows = projectTxs.flatMap(tx => 
+      (tx.items || []).map(item => {
+        const isSale = tx.type === 'sale';
+        const isPurchase = tx.type === 'purchase';
+        const isRemission = tx.type === 'remission';
+
+        let unitCost = isPurchase ? item.unitPrice : 0;
+        let unitSale = isSale ? item.unitPrice : (isRemission ? item.unitPrice : 0);
+
+        if (isSale) {
+          const matchingCostItems = projectTxs.filter(t => t.type === 'purchase').flatMap(t => t.items || []).filter(i => 
+            (i.code && item.code && i.code.trim().toLowerCase() === item.code.trim().toLowerCase()) ||
+            (i.description && item.description && i.description.trim().toLowerCase() === item.description.trim().toLowerCase())
+          );
+          const totalCostQty = matchingCostItems.reduce((acc, curr) => acc + curr.quantity, 0);
+          const totalCostVal = matchingCostItems.reduce((acc, curr) => acc + (curr.lineTotal || curr.quantity * curr.unitPrice), 0);
+          unitCost = totalCostQty > 0 ? totalCostVal / totalCostQty : 0;
+        }
+
+        const lineSaleTotal = isSale ? (item.lineTotal || item.quantity * item.unitPrice) : 0;
+        const lineCostTotal = item.quantity * unitCost;
+        const lineMargin = lineSaleTotal - lineCostTotal;
+
+        return {
+          "Tipo Movimiento": isPurchase ? 'Compra / Insumo' : isSale ? 'Venta (DTE)' : 'Remisión (Envío)',
+          "Número Comprobante": tx.invoiceNumber || tx.numeroControl || 'S/N',
+          "Fecha": new Date(tx.issueDate).toLocaleDateString(),
+          "Entidad (Cliente/Prov)": tx.entityName,
+          "Proyecto": currentProject.name,
+          "Código": item.code || '',
+          "Producto": item.description,
+          "Cantidad": item.quantity,
+          "Costo Unit. Compra ($)": Number(unitCost.toFixed(2)),
+          "Precio Venta Unit. ($)": Number(unitSale.toFixed(2)),
+          "Total Costo ($)": Number(lineCostTotal.toFixed(2)),
+          "Total Venta ($)": Number(lineSaleTotal.toFixed(2)),
+          "Margen Fila ($)": Number(lineMargin.toFixed(2))
+        };
+      })
+    );
 
     const XLSX = await import('xlsx')
-    const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, "Kardex")
-    XLSX.writeFile(wb, `Kardex_${currentProject.name}_${new Date().toISOString().split('T')[0]}.xlsx`)
+
+    // Add Sheet 1 (Summary Margins)
+    const wsSummary = XLSX.utils.json_to_sheet(summaryRows)
+    XLSX.utils.book_append_sheet(wb, wsSummary, "Resumen Rentabilidad")
+
+    // Add Sheet 2 (Detailed Movements)
+    const wsDetailed = XLSX.utils.json_to_sheet(detailedRows)
+    XLSX.utils.book_append_sheet(wb, wsDetailed, "Movimientos Kardex")
+
+    XLSX.writeFile(wb, `Kardex_Rentabilidad_${currentProject.name}_${new Date().toISOString().split('T')[0]}.xlsx`)
   }
 
   if (!mounted) return null
