@@ -1823,9 +1823,14 @@ export default function InstitutionalModule() {
                    </CardContent>
                  </Card>
                  <Card className="bg-orange-50 border-orange-200">
-                   <CardContent className="p-4 text-center">
-                     <p className="text-[10px] uppercase text-orange-600/70 font-bold">Saldo Pendiente OC</p>
-<Card className="bg-blue-50 border-blue-200">
+                    <CardContent className="p-4 text-center">
+                      <p className="text-[10px] uppercase text-orange-600/70 font-bold">Saldo Pendiente OC</p>
+                      <p className="text-xl font-black text-orange-600">
+                        ${(currentProject.targetSaleAmount - transactions.filter(t => t.projectId === currentProject.id && !t.isVoided && t.type === 'sale').reduce((a, b) => a + b.totalAmount, 0)).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </p>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-blue-50 border-blue-200">
                     <CardContent className="p-4 text-center">
                       <p className="text-[10px] uppercase text-blue-600/70 font-bold">Total Remitido</p>
                       <p className="text-xl font-black text-blue-600">
@@ -1855,7 +1860,7 @@ export default function InstitutionalModule() {
                     const saleTotal = saleItems.reduce((acc, curr) => acc + (curr?.lineTotal || (curr?.quantity * curr?.unitPrice) || 0), 0);
                     const saleAvgUnitPrice = saleQty > 0 ? saleTotal / saleQty : ep.unitPrice;
 
-                    const costItems = projectTxs.filter(t => t.type === 'purchase' || t.type === 'internal').flatMap(t => t.items || []).filter(i => {
+                    const costItems = projectTxs.filter(t => t.type === 'purchase').flatMap(t => t.items || []).filter(i => {
                       if (!i) return false;
                       const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
                       return match && (match.code === ep.code || match.description === ep.description);
@@ -2556,6 +2561,7 @@ export default function InstitutionalModule() {
             </Button>
           </DialogFooter>
         </DialogContent>
+      </Dialog>
       {/* Modal: Detalle de Entregas e Historial por Producto */}
       <Dialog open={!!viewingProductDetail} onOpenChange={(open) => !open && setViewingProductDetail(null)}>
         <DialogContent className="sm:max-w-[700px] w-[95vw] max-h-[85vh] overflow-y-auto">
@@ -2657,7 +2663,7 @@ export default function InstitutionalModule() {
                           <TableCell className="text-center">
                             {evt.type === 'remission' && <Badge className="bg-blue-500 text-[9px]">Remisión Parcial</Badge>}
                             {evt.type === 'sale' && <Badge className="bg-green-600 text-[9px]">{evt.docType === '03' ? 'CCF Factura' : 'FAC Venta'}</Badge>}
-                            {(evt.type === 'purchase' || evt.type === 'internal') && <Badge variant="outline" className="text-[9px]">Compra / Insumo</Badge>}
+                            {evt.type === 'purchase' && <Badge variant="outline" className="text-[9px]">Compra / Insumo</Badge>}
                           </TableCell>
                           <TableCell className="text-right font-bold">{evt.quantity}</TableCell>
                           <TableCell className="text-right text-muted-foreground">${evt.unitPrice.toFixed(2)}</TableCell>
