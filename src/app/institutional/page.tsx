@@ -881,8 +881,8 @@ export default function InstitutionalModule() {
       retentionAmount: calculatedRetention,
       perceptionAmount: perception,
       totalAmount: adjustedTotal,
-      costBasis: projectCosts,
-      gain: adjustedTotal - projectCosts
+      costBasis: 0,
+      gain: adjustedTotal
     })
     
     if (closeProject) {

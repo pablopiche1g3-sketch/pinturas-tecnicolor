@@ -95,7 +95,7 @@ export default function LedgerPage() {
     
     const totalPurchases = validTransactions.filter(t => t.type === 'purchase').reduce((acc, t) => acc + t.totalAmount, 0)
     const totalSales = validTransactions.filter(t => t.type === 'sale').reduce((acc, t) => acc + t.totalAmount, 0)
-    const totalGain = validTransactions.filter(t => t.type === 'sale').reduce((acc, t) => acc + t.gain, 0)
+    const totalGain = totalSales - totalPurchases
 
     return {
       project,
@@ -261,16 +261,16 @@ export default function LedgerPage() {
                     <div className="hidden md:flex items-center gap-8">
                       <div className="text-right">
                         <p className="text-[10px] uppercase text-muted-foreground font-bold leading-none mb-1">Costos Reales</p>
-                        <p className="text-sm font-bold text-destructive">${stats.totalPurchases.toLocaleString()}</p>
+                        <p className="text-sm font-bold text-destructive">${stats.totalPurchases.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-[10px] uppercase text-muted-foreground font-bold leading-none mb-1">Venta Real</p>
-                        <p className="text-sm font-bold text-primary">${stats.totalSales.toLocaleString()}</p>
+                        <p className="text-sm font-bold text-primary">${stats.totalSales.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
                       </div>
                       <div className="text-right border-l pl-8">
                         <p className="text-[10px] uppercase text-muted-foreground font-bold leading-none mb-1">Utilidad Neta</p>
-                        <p className="text-sm font-black text-primary">
-                          ${stats.totalGain.toLocaleString()}
+                        <p className={cn("text-sm font-black", stats.totalGain >= 0 ? "text-green-600" : "text-destructive")}>
+                          ${stats.totalGain.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           <span className="text-xs text-muted-foreground font-normal ml-1">
                             ({stats.totalSales > 0 ? ((stats.totalGain / stats.totalSales) * 100).toFixed(1) : 0}%)
                           </span>
