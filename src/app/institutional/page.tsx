@@ -572,6 +572,30 @@ export default function InstitutionalModule() {
       }
       
       const result = response.data!;
+      
+      const docNum = result.invoiceNumber?.trim()
+      const ctrlNum = (result as any).numeroControl?.trim()
+
+      if (activeTab === 'purchases' && (docNum || ctrlNum)) {
+        const existingTx = transactions.find(t => 
+          !t.isVoided && t.type === 'purchase' && (
+            (docNum && t.invoiceNumber && t.invoiceNumber.trim().toLowerCase() === docNum.toLowerCase()) ||
+            (ctrlNum && t.numeroControl && t.numeroControl.trim().toLowerCase() === ctrlNum.toLowerCase())
+          )
+        );
+
+        if (existingTx) {
+          toast({
+            title: "⚠️ Factura de Compra Ya Registrada",
+            description: `La factura N° ${docNum || ctrlNum} ya fue ingresada previamente (Proveedor: ${existingTx.entityName || 'Registrado'}). Se ha impedido la carga duplicada.`,
+            variant: "destructive"
+          });
+          setMappedData(null);
+          setJsonInput('');
+          return;
+        }
+      }
+
       setMappedData(result)
       
       if (activeTab === 'voided') {
@@ -636,6 +660,25 @@ export default function InstitutionalModule() {
     if (!selectedSupplierId) {
       toast({ title: "Falta proveedor", description: "Por favor, seleccione el proveedor antes de confirmar el ingreso.", variant: "destructive" })
       return
+    }
+
+    const docNum = mappedData.invoiceNumber?.trim()
+    const ctrlNum = (mappedData as any).numeroControl?.trim()
+
+    const existingTx = transactions.find(t => 
+      !t.isVoided && t.type === 'purchase' && (
+        (docNum && t.invoiceNumber && t.invoiceNumber.trim().toLowerCase() === docNum.toLowerCase()) ||
+        (ctrlNum && t.numeroControl && t.numeroControl.trim().toLowerCase() === ctrlNum.toLowerCase())
+      )
+    );
+
+    if (existingTx) {
+      toast({
+        title: "⚠️ Factura de Compra Ya Existe",
+        description: `La factura de compra N° ${docNum || ctrlNum} ya se encuentra registrada en el sistema.`,
+        variant: "destructive"
+      });
+      return;
     }
 
     const supplier = suppliers.find(s => s.id === selectedSupplierId)
@@ -764,10 +807,33 @@ export default function InstitutionalModule() {
   }
 
   const handleSaveManualPurchase = () => {
-    if (!manualPurchase.codigoGeneracion || !manualPurchase.supplierId || !selectedProjectId) {
-      toast({ title: "Faltan datos", description: "Complete los campos obligatorios.", variant: "destructive" })
+    if (!selectedProjectId || !manualPurchase.supplierId) return
+    if (manualItems.length === 0) {
+      toast({ title: "Sin productos", description: "Agregue al menos un producto a la compra.", variant: "destructive" })
       return
     }
+
+    const docNum = manualPurchase.codigoGeneracion?.trim()
+    const ctrlNum = manualPurchase.numeroControl?.trim()
+
+    if (docNum || ctrlNum) {
+      const existingTx = transactions.find(t => 
+        !t.isVoided && t.type === 'purchase' && (
+          (docNum && t.invoiceNumber && t.invoiceNumber.trim().toLowerCase() === docNum.toLowerCase()) ||
+          (ctrlNum && t.numeroControl && t.numeroControl.trim().toLowerCase() === ctrlNum.toLowerCase())
+        )
+      );
+
+      if (existingTx) {
+        toast({
+          title: "⚠️ Factura de Compra Ya Existe",
+          description: `La factura de compra N° ${docNum || ctrlNum} ya fue registrada previamente en el sistema.`,
+          variant: "destructive"
+        });
+        return;
+      }
+    }
+
     const supplier = suppliers.find(s => s.id === manualPurchase.supplierId)
     const isGC = supplier?.isGranContribuyente || false
     const isCCF = manualPurchase.documentType === '03'
