@@ -135,35 +135,56 @@ export default function InstitutionalModule() {
   
   const projectCosts = projectTransactions.filter(t => t.type === 'purchase').reduce((acc, curr) => acc + curr.totalAmount, 0)
 
+  const cleanString = (str: any) => {
+    if (!str) return '';
+    return String(str)
+      .replace(/[\r\n\t\u200B-\u200D\uFEFF]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  const cleanStringLower = (str: any) => {
+    return cleanString(str).toLowerCase();
+  };
+
   const getMatchingExpectedProduct = (i: any, expectedProducts: any[]) => {
-    if (i.code) {
-      const iCode = String(i.code).trim().toLowerCase();
-      const byCode = expectedProducts.find(ep => String(ep.code || '').trim().toLowerCase() === iCode);
+    if (!expectedProducts || expectedProducts.length === 0) return null;
+
+    const iCode = cleanStringLower(i.code);
+    if (iCode) {
+      const byCode = expectedProducts.find(ep => cleanStringLower(ep.code) === iCode);
       if (byCode) return byCode;
     }
-    const iDesc = (i.description || '').toLowerCase().trim();
+
+    const iDesc = cleanStringLower(i.description);
     if (!iDesc) return null;
-    const exactDesc = expectedProducts.find(ep => (ep.description || '').toLowerCase().trim() === iDesc);
+
+    const exactDesc = expectedProducts.find(ep => cleanStringLower(ep.description) === iDesc);
     if (exactDesc) return exactDesc;
 
     const matches = expectedProducts.filter(ep => {
-      const epDesc = (ep.description || '').toLowerCase();
+      const epDesc = cleanStringLower(ep.description);
+      if (!epDesc) return false;
       if (iDesc.includes(epDesc) || epDesc.includes(iDesc)) return true;
       
-      const iWords = iDesc.split(/\s+/);
-      const epWords = epDesc.split(/\s+/);
+      const iWords = iDesc.split(' ').filter(Boolean);
+      const epWords = epDesc.split(' ').filter(Boolean);
+      if (iWords.length === 0 || epWords.length === 0) return false;
+
       const allEpInI = epWords.every((w: string) => iWords.includes(w));
       const allIInEp = iWords.every((w: string) => epWords.includes(w));
       
       return allEpInI || allIInEp;
     });
+
     if (matches.length > 0) {
       return matches.reduce((prev, current) => {
-        const diffPrev = Math.abs((prev.description?.length || 0) - iDesc.length);
-        const diffCurr = Math.abs((current.description?.length || 0) - iDesc.length);
+        const diffPrev = Math.abs(cleanStringLower(prev.description).length - iDesc.length);
+        const diffCurr = Math.abs(cleanStringLower(current.description).length - iDesc.length);
         return diffPrev < diffCurr ? prev : current;
       });
     }
+
     return null;
   }
 
@@ -173,21 +194,21 @@ export default function InstitutionalModule() {
     
     const delivered = txs
       .filter(t => t.type === 'remission')
-      .flatMap(t => t.items)
+      .flatMap(t => t.items || [])
       .filter(i => {
         const match = getMatchingExpectedProduct(i, project?.expectedProducts || []);
         return match && match.code === ep.code && match.description === ep.description;
       })
-      .reduce((acc, curr) => acc + curr.quantity, 0)
+      .reduce((acc, curr) => acc + (curr?.quantity || 0), 0)
 
     const invoiced = txs
       .filter(t => t.type === 'sale')
-      .flatMap(t => t.items)
+      .flatMap(t => t.items || [])
       .filter(i => {
         const match = getMatchingExpectedProduct(i, project?.expectedProducts || []);
         return match && match.code === ep.code && match.description === ep.description;
       })
-      .reduce((acc, curr) => acc + curr.quantity, 0)
+      .reduce((acc, curr) => acc + (curr?.quantity || 0), 0)
     
     const effectiveProgressAmount = Math.max(delivered, invoiced)
     const expected = ep.quantity || 1
@@ -195,8 +216,10 @@ export default function InstitutionalModule() {
   }
 
   const handleAddProductToProject = () => {
-    if (!tempProduct.code || !tempProduct.description) return
-    setNewProjectProducts([...newProjectProducts, tempProduct])
+    const cleanCode = cleanString(tempProduct.code);
+    const cleanDesc = cleanString(tempProduct.description);
+    if (!cleanCode || !cleanDesc) return;
+    setNewProjectProducts([...newProjectProducts, { ...tempProduct, code: cleanCode, description: cleanDesc }]);
     setTempProduct({ code: '', description: '', quantity: 1, unitPrice: 0 })
   }
 
@@ -495,11 +518,14 @@ export default function InstitutionalModule() {
           const newProducts = [...newProjectProducts];
           
           data.forEach((row: any) => {
-            const code = row['CODIGO'] || row['codigo'] || row['Codigo'] || '';
+            const rawCode = row['CODIGO'] || row['codigo'] || row['Codigo'] || '';
             const qty = Number(row['CANTIDAD'] || row['cantidad'] || row['Cantidad']) || 0;
             const price = Number(row['PRECIO VENTA'] || row['precio'] || row['Precio'] || row['PRECIO']) || 0;
-            const desc = row['DESCRIPCION DEL PRODUCTO'] || row['descripcion'] || row['Descripcion'] || row['DESCRIPCION'] || '';
+            const rawDesc = row['DESCRIPCION DEL PRODUCTO'] || row['descripcion'] || row['Descripcion'] || row['DESCRIPCION'] || '';
             
+            const code = cleanString(rawCode);
+            const desc = cleanString(rawDesc);
+
             if (desc && qty > 0) {
               newProducts.push({
                 code: String(code),
@@ -687,22 +713,19 @@ export default function InstitutionalModule() {
     const orphanItems: TransactionItem[] = []
     
     rawItems.forEach(item => {
-      const ep = currentProject.expectedProducts.find(p => 
-        p.code === item.code || 
-        item.description?.toLowerCase().includes(p.description.toLowerCase())
-      )
-      const isExpected = !!ep
-      const unitPrice = item.unitPrice || (ep?.unitPrice || 0)
+      const ep = getMatchingExpectedProduct(item, currentProject.expectedProducts);
+      const isExpected = !!ep;
+      const unitPrice = item.unitPrice || (ep?.unitPrice || 0);
       const txItem = {
-        description: item.description || (ep?.description || 'Gasto proveedor'),
+        description: item.description ? cleanString(item.description) : (ep?.description || 'Gasto proveedor'),
         quantity: item.quantity || 1,
         unitPrice: unitPrice,
         lineTotal: item.lineTotal || ((item.quantity || 1) * unitPrice),
-        code: item.code || (ep?.code || 'S/C')
-      }
-      if (isExpected) validItems.push(txItem)
-      else orphanItems.push(txItem)
-    })
+        code: item.code ? cleanString(item.code) : (ep?.code || 'S/C')
+      };
+      if (isExpected) validItems.push(txItem);
+      else orphanItems.push(txItem);
+    });
 
     if (orphanItems.length > 0) {
       addToInventory(db, orphanItems.map(oi => ({
@@ -1676,7 +1699,7 @@ export default function InstitutionalModule() {
                               </thead>
                               <tbody className="divide-y">
                                 {mappedData.items?.map((it, idx) => {
-                                  const projectProduct = currentProject?.expectedProducts.find(ep => ep.code === it.code || (it.description && ep.description && it.description.toLowerCase().includes(ep.description.toLowerCase())));
+                                  const projectProduct = getMatchingExpectedProduct(it, currentProject?.expectedProducts || []);
                                   const isExpected = !!projectProduct;
                                   const expectedQty = projectProduct ? projectProduct.quantity : 0;
                                   const hasExcess = isExpected && (it.quantity || 0) > expectedQty;
