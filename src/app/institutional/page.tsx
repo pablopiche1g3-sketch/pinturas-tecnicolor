@@ -1770,6 +1770,7 @@ export default function InstitutionalModule() {
                             <SelectTrigger><SelectValue placeholder="Proveedor" /></SelectTrigger>
                             <SelectContent>{suppliers.map(s => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}</SelectContent>
                           </Select>
+                        {/* Manual Purchase Logic Replaced with Cascade */}
                           <Select value={manualPurchase.documentType} onValueChange={v => setManualPurchase({...manualPurchase, documentType: v})}>
                             <SelectTrigger><SelectValue placeholder="Tipo Documento" /></SelectTrigger>
                             <SelectContent>
@@ -1778,23 +1779,64 @@ export default function InstitutionalModule() {
                             </SelectContent>
                           </Select>
                        </div>
+                       
                        <div className="border p-4 rounded-lg bg-muted/20 space-y-3">
-                          <div className="grid grid-cols-2 gap-2">
-                             <Input placeholder="Código del producto" className="col-span-2" value={tempManualItem.code} onChange={e => {
-                               const code = e.target.value;
-                               const ep = currentProject?.expectedProducts.find(p => p.code === code);
-                               if (ep) {
-                                 setTempManualItem({...tempManualItem, code, description: ep.description, unitPrice: ep.unitPrice});
-                               } else {
-                                 setTempManualItem({...tempManualItem, code});
-                               }
-                             }} />
-                             <Input placeholder="Descripción del producto" className="col-span-2" value={tempManualItem.description} onChange={e => setTempManualItem({...tempManualItem, description: e.target.value})} />
-                             <Input type="number" placeholder="Cant." value={tempManualItem.quantity} onChange={e => setTempManualItem({...tempManualItem, quantity: Number(e.target.value)})} />
-                             <Input type="number" placeholder="Precio ($)" value={tempManualItem.unitPrice} onChange={e => setTempManualItem({...tempManualItem, unitPrice: Number(e.target.value)})} />
-                          </div>
-                          <Button variant="outline" size="sm" className="w-full" onClick={handleAddManualItem}>Añadir Item</Button>
-                       </div>
+                           {currentProject?.expectedProducts && currentProject.expectedProducts.length > 0 && (
+                             <div className="space-y-1">
+                               <Label className="text-[11px] font-bold text-muted-foreground flex items-center gap-1">
+                                 <Sliders className="h-3 w-3 text-primary" /> Seleccionar Producto de la OC (Cascada):
+                               </Label>
+                               <Select
+                                 value=""
+                                 onValueChange={(val) => {
+                                   const ep = currentProject.expectedProducts.find(p => p.code === val || p.description === val);
+                                   if (ep) {
+                                     setTempManualItem({
+                                       ...tempManualItem,
+                                       code: ep.code || '',
+                                       description: ep.description || '',
+                                       unitPrice: ep.unitPrice || 0,
+                                       lineTotal: (tempManualItem.quantity || 1) * (ep.unitPrice || 0)
+                                     });
+                                   }
+                                 }}
+                               >
+                                 <SelectTrigger className="h-9 text-xs bg-background">
+                                   <SelectValue placeholder="-- Elegir de la Orden de Compra --" />
+                                 </SelectTrigger>
+                                 <SelectContent className="max-h-[220px]">
+                                   {currentProject.expectedProducts.map((ep, idx) => (
+                                     <SelectItem key={idx} value={ep.code || ep.description} className="text-xs">
+                                       <span className="font-bold font-mono text-primary">{ep.code || 'S/C'}</span> - {ep.description} (${ep.unitPrice?.toFixed(2) || '0.00'})
+                                     </SelectItem>
+                                   ))}
+                                 </SelectContent>
+                               </Select>
+                             </div>
+                           )}
+
+                           <div className="grid grid-cols-2 gap-2">
+                              <Input placeholder="Código del producto" className="col-span-2 text-xs font-mono" value={tempManualItem.code} onChange={e => {
+                                const code = e.target.value;
+                                const ep = currentProject?.expectedProducts.find(p => p.code?.trim().toLowerCase() === code.trim().toLowerCase());
+                                if (ep) {
+                                  setTempManualItem({...tempManualItem, code, description: ep.description, unitPrice: ep.unitPrice, lineTotal: (tempManualItem.quantity || 1) * ep.unitPrice});
+                                } else {
+                                  setTempManualItem({...tempManualItem, code});
+                                }
+                              }} />
+                              <Input placeholder="Descripción del producto" className="col-span-2 text-xs" value={tempManualItem.description} onChange={e => setTempManualItem({...tempManualItem, description: e.target.value})} />
+                              <Input type="number" placeholder="Cant." className="text-xs" value={tempManualItem.quantity} onChange={e => {
+                                const qty = Number(e.target.value);
+                                setTempManualItem({...tempManualItem, quantity: qty, lineTotal: qty * tempManualItem.unitPrice});
+                              }} />
+                              <Input type="number" placeholder="Precio ($)" className="text-xs" value={tempManualItem.unitPrice} onChange={e => {
+                                const price = Number(e.target.value);
+                                setTempManualItem({...tempManualItem, unitPrice: price, lineTotal: tempManualItem.quantity * price});
+                              }} />
+                           </div>
+                           <Button variant="outline" size="sm" className="w-full text-xs font-bold" onClick={handleAddManualItem}>Añadir Item</Button>
+                        </div>
                        <Button className="w-full bg-primary" onClick={handleSaveManualPurchase} disabled={manualItems.length === 0}>Guardar Compra</Button>
                     </CardContent>
                   </Card>
@@ -2261,12 +2303,58 @@ export default function InstitutionalModule() {
                       
                       <div className="bg-muted/40 p-4 rounded-xl border space-y-3">
                         <h4 className="text-xs font-bold uppercase text-muted-foreground">Agregar Productos Entregados</h4>
+                        
+                        {currentProject?.expectedProducts && currentProject.expectedProducts.length > 0 && (
+                          <div className="space-y-1">
+                            <Label className="text-[10px] font-bold text-muted-foreground flex items-center gap-1">
+                              <Sliders className="h-3 w-3 text-primary" /> Seleccionar Producto de la OC (Cascada):
+                            </Label>
+                            <Select
+                              value=""
+                              onValueChange={(val) => {
+                                const ep = currentProject.expectedProducts.find(p => p.code === val || p.description === val);
+                                if (ep) {
+                                  setTempManualItem({
+                                    ...tempManualItem,
+                                    code: ep.code || '',
+                                    description: ep.description || '',
+                                    unitPrice: ep.unitPrice || 0,
+                                    lineTotal: (tempManualItem.quantity || 1) * (ep.unitPrice || 0)
+                                  });
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="h-8 text-xs bg-background">
+                                <SelectValue placeholder="-- Seleccionar de la Orden de Compra --" />
+                              </SelectTrigger>
+                              <SelectContent className="max-h-[220px]">
+                                {currentProject.expectedProducts.map((ep, idx) => (
+                                  <SelectItem key={idx} value={ep.code || ep.description} className="text-xs">
+                                    <span className="font-bold font-mono text-primary">{ep.code || 'S/C'}</span> - {ep.description}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+
                         <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                          <Input className="h-8 text-xs" placeholder="Código" value={tempManualItem.code} onChange={e => setTempManualItem({...tempManualItem, code: e.target.value})} />
+                          <Input className="h-8 text-xs font-mono" placeholder="Código" value={tempManualItem.code} onChange={e => {
+                            const code = e.target.value;
+                            const ep = currentProject?.expectedProducts.find(p => p.code?.trim().toLowerCase() === code.trim().toLowerCase());
+                            if (ep) {
+                              setTempManualItem({...tempManualItem, code, description: ep.description, unitPrice: ep.unitPrice, lineTotal: (tempManualItem.quantity || 1) * ep.unitPrice});
+                            } else {
+                              setTempManualItem({...tempManualItem, code});
+                            }
+                          }} />
                           <Input className="h-8 text-xs sm:col-span-2" placeholder="Descripción" value={tempManualItem.description} onChange={e => setTempManualItem({...tempManualItem, description: e.target.value})} />
-                          <Input type="number" className="h-8 text-xs text-right" placeholder="Cant." value={tempManualItem.quantity} onChange={e => setTempManualItem({...tempManualItem, quantity: Number(e.target.value)})} />
+                          <Input type="number" className="h-8 text-xs text-right" placeholder="Cant." value={tempManualItem.quantity} onChange={e => {
+                            const qty = Number(e.target.value);
+                            setTempManualItem({...tempManualItem, quantity: qty, lineTotal: qty * tempManualItem.unitPrice});
+                          }} />
                         </div>
-                        <Button variant="outline" size="sm" className="w-full h-8 text-xs" onClick={handleAddManualItem}>Añadir a Remisión</Button>
+                        <Button variant="outline" size="sm" className="w-full h-8 text-xs font-bold" onClick={handleAddManualItem}>Añadir a Remisión</Button>
                       </div>
 
                       {manualItems.length > 0 && (
