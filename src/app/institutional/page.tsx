@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dialog"
 import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project, type ProjectDocument, type Transaction } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput, type AiActionResponse } from "@/ai/flows/ai-json-key-mapper"
-import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders, Edit2, GitMerge, Layers, TrendingUp, Info } from "lucide-react"
+import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders, Edit2, GitMerge, Layers, TrendingUp, Info, PlayCircle, Archive, Search } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -56,6 +56,8 @@ export default function InstitutionalModule() {
   const [viewingInvoice, setViewingInvoice] = React.useState<Transaction | null>(null)
   const [editingTransaction, setEditingTransaction] = React.useState<Transaction | null>(null)
   const [isSuppliesDialogOpen, setIsSuppliesDialogOpen] = React.useState(false)
+  const [projectFilterTab, setProjectFilterTab] = React.useState<'active' | 'completed' | 'all'>('active')
+  const [projectSearchQuery, setProjectSearchQuery] = React.useState<string>('')
 
   const handleUpdateProductProperty = (idx: number, key: keyof ProjectProduct, value: any) => {
     setNewProjectProducts(prev => prev.map((p, i) => i === idx ? { ...p, [key]: value } : p))
@@ -1627,100 +1629,218 @@ export default function InstitutionalModule() {
               </Dialog>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              {projects.map(p => {
-                const getWarrantyStatus = () => {
-                  if (!p.warrantyStartDate || !p.warrantyMonths) return null;
-                  const start = new Date(p.warrantyStartDate);
-                  const end = new Date(start);
-                  end.setMonth(end.getMonth() + p.warrantyMonths);
-                  const now = new Date();
-                  
-                  const diffTime = end.getTime() - now.getTime();
-                  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            {/* Filter and Search Bar for Projects */}
+            {(() => {
+              const activeCount = projects.filter(p => p.status !== 'completed').length;
+              const completedCount = projects.filter(p => p.status === 'completed').length;
+              const allCount = projects.length;
 
-                  if (diffDays < 0) {
-                    return { text: "GARANTÍA VENCIDA", color: "bg-destructive text-white border-destructive" };
-                  } else if (diffDays <= 30) {
-                    return { text: `GARANTÍA VENCE EN ${diffDays} DÍAS`, color: "bg-red-500 text-white border-red-500" };
-                  } else {
-                    return { text: `GARANTÍA: ${end.toLocaleDateString()}`, color: "bg-blue-100 text-blue-700 border-blue-200" };
-                  }
-                };
-                const warranty = getWarrantyStatus();
+              const filteredProjects = projects.filter(p => {
+                // Tab filter
+                if (projectFilterTab === 'active' && p.status === 'completed') return false;
+                if (projectFilterTab === 'completed' && p.status !== 'completed') return false;
 
-                return (
-                <Card 
-                  key={p.id} 
-                  className={cn(
-                    "cursor-pointer border-2 transition-all flex flex-col", 
-                    selectedProjectId === p.id ? "border-primary bg-primary/5" : "hover:border-primary/50",
-                    p.status === 'completed' && "opacity-80 grayscale-[0.5]"
-                  )}
-                  onClick={() => setSelectedProjectId(p.id)}
-                  onDoubleClick={(e) => openEditProject(e, p)}
-                  title="Doble clic para abrir y ver suministros/documentos"
-                >
-                  <CardHeader className="p-4 pb-2">
-                    <div className="flex justify-between items-start gap-2">
-                      <CardTitle className="text-sm font-bold text-foreground truncate">{p.name}</CardTitle>
-                      <div className="flex flex-col items-end gap-1">
-                        <Badge variant="outline" className="text-[9px] uppercase font-mono shrink-0">{p.purchaseOrder}</Badge>
-                        {p.status === 'completed' && <Badge className="text-[8px] bg-green-500 border-none text-white">ENTREGADO</Badge>}
-                        {warranty && <Badge className={cn("text-[8px] border", warranty.color)}>{warranty.text}</Badge>}
-                      </div>
+                // Search query filter
+                if (projectSearchQuery.trim()) {
+                  const q = projectSearchQuery.trim().toLowerCase();
+                  const nameMatch = p.name.toLowerCase().includes(q);
+                  const poMatch = p.purchaseOrder.toLowerCase().includes(q);
+                  const customerMatch = (p.customerName || '').toLowerCase().includes(q);
+                  return nameMatch || poMatch || customerMatch;
+                }
+
+                return true;
+              });
+
+              return (
+                <>
+                  <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 bg-card/60 p-2.5 rounded-xl border mb-6">
+                    <div className="flex items-center gap-1 bg-muted/60 p-1 rounded-lg overflow-x-auto">
+                      <Button
+                        variant={projectFilterTab === 'active' ? 'default' : 'ghost'}
+                        size="sm"
+                        className="h-8 text-xs font-bold gap-1.5 shrink-0"
+                        onClick={() => setProjectFilterTab('active')}
+                      >
+                        <PlayCircle className="h-3.5 w-3.5 text-emerald-500" />
+                        En Curso
+                        <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 h-4 font-mono">
+                          {activeCount}
+                        </Badge>
+                      </Button>
+
+                      <Button
+                        variant={projectFilterTab === 'completed' ? 'default' : 'ghost'}
+                        size="sm"
+                        className="h-8 text-xs font-bold gap-1.5 shrink-0"
+                        onClick={() => setProjectFilterTab('completed')}
+                      >
+                        <Archive className="h-3.5 w-3.5 text-blue-500" />
+                        Archivados / Entregados
+                        <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 h-4 font-mono">
+                          {completedCount}
+                        </Badge>
+                      </Button>
+
+                      <Button
+                        variant={projectFilterTab === 'all' ? 'default' : 'ghost'}
+                        size="sm"
+                        className="h-8 text-xs font-bold gap-1.5 shrink-0"
+                        onClick={() => setProjectFilterTab('all')}
+                      >
+                        <Layers className="h-3.5 w-3.5 text-amber-500" />
+                        Todos
+                        <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0 h-4 font-mono">
+                          {allCount}
+                        </Badge>
+                      </Button>
                     </div>
-                    <CardDescription className="text-xs truncate">{p.customerName}</CardDescription>
-                  </CardHeader>
-                  <CardContent className="p-4 pt-0 space-y-4 flex-1">
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-[10px] font-bold uppercase text-muted-foreground">
-                        <span>Suministros</span>
-                        <span>Obj: ${p.targetSaleAmount.toLocaleString()}</span>
-                      </div>
-                      {p.expectedProducts.slice(0, 2).map(ep => (
-                        <div key={ep.code} className="space-y-1">
-                          <div className="flex justify-between text-[9px]">
-                            <span className="truncate max-w-[150px] font-medium text-foreground">{ep.description}</span>
-                            <span className="text-muted-foreground">{getProductProgress(ep, p.id).toFixed(0)}%</span>
-                          </div>
-                          <Progress value={getProductProgress(ep, p.id)} className="h-1" />
-                        </div>
-                      ))}
-                      {p.documents.length > 0 && (
-                        <div className="flex items-center gap-1 pt-2">
-                          <Badge variant="secondary" className="text-[8px] gap-1 px-1.5 h-4">
-                            <FileText className="h-2 w-2" /> {p.documents.length} Docs
-                          </Badge>
-                        </div>
+
+                    <div className="relative w-full md:w-72">
+                      <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Buscar por nombre, OC o cliente..."
+                        className="pl-8 h-9 text-xs"
+                        value={projectSearchQuery}
+                        onChange={(e) => setProjectSearchQuery(e.target.value)}
+                      />
+                      {projectSearchQuery && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-1 top-1 h-7 w-7 text-muted-foreground"
+                          onClick={() => setProjectSearchQuery('')}
+                        >
+                          <XCircle className="h-3.5 w-3.5" />
+                        </Button>
                       )}
                     </div>
-                  </CardContent>
-                  <CardFooter className="p-2 pt-0 border-t flex justify-between gap-1">
-                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => openEditProject(e, p)} title="Configuración / Documentos">
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" onClick={(e) => handleExportProject(e, p)} title="Exportar Rentabilidad (Excel)">
-                      <FileDown className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-50" onClick={(e) => {
-                      e.stopPropagation();
-                      setSourceProjectToMerge(p);
-                      setIsMergeDialogOpen(true);
-                    }} title="Unir con otro proyecto">
-                      <GitMerge className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className={cn("h-8 w-8", p.status === 'completed' ? "text-primary" : "text-muted-foreground")} onClick={(e) => toggleProjectStatus(e, p)} title="Cambiar Estado">
-                      <CheckCircle className="h-4 w-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={(e) => handleDeleteProject(e, p.id)} title="Eliminar">
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </CardFooter>
-                </Card>
-                );
-              })}
-            </div>
+                  </div>
+
+                  {filteredProjects.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {filteredProjects.map(p => {
+                        const getWarrantyStatus = () => {
+                          if (!p.warrantyStartDate || !p.warrantyMonths) return null;
+                          const start = new Date(p.warrantyStartDate);
+                          const end = new Date(start);
+                          end.setMonth(end.getMonth() + p.warrantyMonths);
+                          const now = new Date();
+                          
+                          const diffTime = end.getTime() - now.getTime();
+                          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                          if (diffDays < 0) {
+                            return { text: "GARANTÍA VENCIDA", color: "bg-destructive text-white border-destructive" };
+                          } else if (diffDays <= 30) {
+                            return { text: `GARANTÍA VENCE EN ${diffDays} DÍAS`, color: "bg-red-500 text-white border-red-500" };
+                          } else {
+                            return { text: `GARANTÍA: ${end.toLocaleDateString()}`, color: "bg-blue-100 text-blue-700 border-blue-200" };
+                          }
+                        };
+                        const warranty = getWarrantyStatus();
+
+                        return (
+                          <Card 
+                            key={p.id} 
+                            className={cn(
+                              "cursor-pointer border-2 transition-all flex flex-col", 
+                              selectedProjectId === p.id ? "border-primary bg-primary/5" : "hover:border-primary/50",
+                              p.status === 'completed' && "opacity-80 border-slate-700/50 bg-slate-900/40"
+                            )}
+                            onClick={() => setSelectedProjectId(p.id)}
+                            onDoubleClick={(e) => openEditProject(e, p)}
+                            title="Doble clic para abrir y ver suministros/documentos"
+                          >
+                            <CardHeader className="p-4 pb-2">
+                              <div className="flex justify-between items-start gap-2">
+                                <CardTitle className="text-sm font-bold text-foreground truncate">{p.name}</CardTitle>
+                                <div className="flex flex-col items-end gap-1">
+                                  <Badge variant="outline" className="text-[9px] uppercase font-mono shrink-0">{p.purchaseOrder}</Badge>
+                                  {p.status === 'completed' && <Badge className="text-[8px] bg-green-600 border-none text-white font-bold">ENTREGADO / ARCHIVADO</Badge>}
+                                  {warranty && <Badge className={cn("text-[8px] border", warranty.color)}>{warranty.text}</Badge>}
+                                </div>
+                              </div>
+                              <CardDescription className="text-xs truncate">{p.customerName}</CardDescription>
+                            </CardHeader>
+                            <CardContent className="p-4 pt-0 space-y-4 flex-1">
+                              <div className="space-y-2">
+                                <div className="flex justify-between text-[10px] font-bold uppercase text-muted-foreground">
+                                  <span>Suministros</span>
+                                  <span>Obj: ${p.targetSaleAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                </div>
+                                {p.expectedProducts.slice(0, 2).map(ep => (
+                                  <div key={ep.code} className="space-y-1">
+                                    <div className="flex justify-between text-[9px]">
+                                      <span className="truncate max-w-[150px] font-medium text-foreground">{ep.description}</span>
+                                      <span className="text-muted-foreground">{getProductProgress(ep, p.id).toFixed(0)}%</span>
+                                    </div>
+                                    <Progress value={getProductProgress(ep, p.id)} className="h-1" />
+                                  </div>
+                                ))}
+                                {p.documents.length > 0 && (
+                                  <div className="flex items-center gap-1 pt-2">
+                                    <Badge variant="secondary" className="text-[8px] gap-1 px-1.5 h-4">
+                                      <FileText className="h-2 w-2" /> {p.documents.length} Docs
+                                    </Badge>
+                                  </div>
+                                )}
+                              </div>
+                            </CardContent>
+                            <CardFooter className="p-2 pt-0 border-t flex justify-between gap-1">
+                              <Button variant="ghost" size="icon" className="h-8 w-8" onClick={(e) => openEditProject(e, p)} title="Configuración / Documentos">
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-green-600" onClick={(e) => handleExportProject(e, p)} title="Exportar Rentabilidad (Excel)">
+                                <FileDown className="h-4 w-4" />
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-blue-600 hover:bg-blue-50" onClick={(e) => {
+                                e.stopPropagation();
+                                setSourceProjectToMerge(p);
+                                setIsMergeDialogOpen(true);
+                              }} title="Unir con otro proyecto">
+                                <GitMerge className="h-4 w-4" />
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="icon" 
+                                className={cn("h-8 w-8", p.status === 'completed' ? "text-emerald-500 hover:bg-emerald-500/10" : "text-muted-foreground hover:bg-muted")} 
+                                onClick={(e) => toggleProjectStatus(e, p)} 
+                                title={p.status === 'completed' ? "Reabrir Proyecto (Mover a En Curso)" : "Archivar / Finalizar Proyecto"}
+                              >
+                                {p.status === 'completed' ? <PlayCircle className="h-4 w-4" /> : <CheckCircle className="h-4 w-4" />}
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive" onClick={(e) => handleDeleteProject(e, p.id)} title="Eliminar">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </CardFooter>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="py-16 border-2 border-dashed rounded-xl text-center space-y-3 bg-card/30">
+                      <Archive className="h-10 w-10 mx-auto text-muted-foreground opacity-40" />
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-bold text-foreground">No se encontraron proyectos</h4>
+                        <p className="text-xs text-muted-foreground">
+                          {projectFilterTab === 'completed' 
+                            ? "No hay proyectos archivados o finalizados en este momento." 
+                            : projectSearchQuery 
+                            ? `No coinciden proyectos con "${projectSearchQuery}".` 
+                            : "No hay proyectos activos registrados."}
+                        </p>
+                      </div>
+                      {projectSearchQuery && (
+                        <Button size="sm" variant="outline" className="text-xs" onClick={() => setProjectSearchQuery('')}>
+                          Limpiar búsqueda
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </TabsContent>
 
