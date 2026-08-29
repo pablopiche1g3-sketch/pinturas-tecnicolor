@@ -41,7 +41,7 @@ import { jsPDF } from "jspdf"
 export default function InstitutionalModule() {
   const { 
     entities, projects, transactions, addProject, updateProject, deleteProject, mergeProjects,
-    addTransaction, updateTransaction, voidTransaction, addToInventory, addDocumentToProject, deleteDocumentFromProject 
+    addTransaction, updateTransaction, voidTransaction, deleteTransaction, addToInventory, addDocumentToProject, deleteDocumentFromProject 
   } = useLedgerStore()
   const db = useFirestore()
   const storage = useStorage()
@@ -579,6 +579,48 @@ export default function InstitutionalModule() {
       });
     } finally {
       setIsMerging(false);
+    }
+  };
+
+  const getDuplicateTransactionsForProject = (projectId?: string) => {
+    if (!projectId) return [];
+    const projectTxs = transactions.filter(t => t.projectId === projectId && !t.isVoided);
+    const seenKeys = new Set<string>();
+    const duplicates: typeof transactions = [];
+
+    projectTxs.forEach(tx => {
+      const numKey = (tx.numeroControl || tx.invoiceNumber || '').trim().toLowerCase();
+      const entityKey = (tx.entityName || '').trim().toLowerCase();
+      const amountKey = tx.totalAmount.toFixed(2);
+      
+      const compositeKey = numKey ? `${tx.type}:${numKey}` : `${tx.type}:${entityKey}:${amountKey}:${tx.issueDate.split('T')[0]}`;
+      
+      if (seenKeys.has(compositeKey)) {
+        duplicates.push(tx);
+      } else {
+        seenKeys.add(compositeKey);
+      }
+    });
+
+    return duplicates;
+  };
+
+  const handlePurgeDuplicates = (projectId?: string) => {
+    if (!projectId) return;
+    const duplicates = getDuplicateTransactionsForProject(projectId);
+    if (duplicates.length === 0) {
+      toast({ title: "Sin Facturas Repetidas", description: "No se encontraron facturas duplicadas en este proyecto." });
+      return;
+    }
+
+    if (confirm(`¿Desea eliminar las ${duplicates.length} factura(s) repetida(s) detectadas en este proyecto?`)) {
+      duplicates.forEach(tx => {
+        deleteTransaction(db, tx.id);
+      });
+      toast({
+        title: "Facturas Repetidas Eliminadas",
+        description: `Se han eliminado ${duplicates.length} factura(s) duplicada(s) con éxito.`,
+      });
     }
   };
 
@@ -1281,55 +1323,105 @@ export default function InstitutionalModule() {
                     </TabsContent>
 
                     <TabsContent value="history" className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h4 className="text-sm font-bold text-foreground">Historial de Facturas (JSON)</h4>
-                      </div>
-                      <ScrollArea className="h-[300px] rounded-lg border bg-muted/30 p-4">
-                        {transactions.filter(t => t.projectId === editingProject?.id).length > 0 ? (
-                          <div className="space-y-3">
-                            {transactions.filter(t => t.projectId === editingProject?.id).map((tx) => (
-                              <div 
-                                key={tx.id} 
-                                className="flex flex-col p-3 bg-card rounded-lg border shadow-sm group hover:border-primary cursor-pointer transition-all active:scale-[0.98]"
-                                onClick={() => setViewingInvoice(tx)}
-                                title="Haga clic para ver representación gráfica"
-                              >
-                                <div className="flex justify-between items-center mb-2">
-                                  <div className="flex items-center gap-2">
-                                    <ReceiptText className={cn("h-4 w-4", tx.type === 'purchase' ? "text-blue-500" : "text-green-500")} />
-                                    <span className="text-xs font-bold">{tx.invoiceNumber}</span>
-                                    <Badge variant="outline" className="text-[9px]">{tx.documentType === '03' ? 'CCF' : tx.documentType === '01' ? 'FAC' : 'DTE'}</Badge>
-                                  </div>
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs font-bold text-foreground">${tx.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6 text-muted-foreground hover:text-primary z-10"
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        setEditingTransaction(tx);
-                                      }}
-                                      title="Editar"
-                                    >
-                                      <Edit2 className="h-3 w-3" />
-                                    </Button>
-                                  </div>
-                                </div>
-                                <div className="flex justify-between text-[10px] text-muted-foreground">
-                                  <span className="truncate max-w-[200px]">{tx.entityName}</span>
-                                  <span>{new Date(tx.issueDate).toLocaleDateString()}</span>
-                                </div>
+                      {(() => {
+                        const projectDups = getDuplicateTransactionsForProject(editingProject?.id);
+                        const dupSet = new Set(projectDups.map(d => d.id));
+
+                        return (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <h4 className="text-sm font-bold text-foreground">Historial de Facturas (JSON)</h4>
+                                <p className="text-[10px] text-muted-foreground">Listado de DTEs y facturas registradas en este proyecto</p>
                               </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="flex flex-col items-center justify-center h-full text-muted-foreground opacity-50 space-y-2 py-10">
-                            <ReceiptText className="h-10 w-10" />
-                            <p className="text-xs italic">No hay facturas procesadas en este proyecto.</p>
-                          </div>
-                        )}
-                      </ScrollArea>
+                              {projectDups.length > 0 && (
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  className="h-8 text-xs gap-1.5 font-bold shadow-sm animate-pulse"
+                                  onClick={() => handlePurgeDuplicates(editingProject?.id)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  Borrar Repetidas ({projectDups.length})
+                                </Button>
+                              )}
+                            </div>
+
+                            <ScrollArea className="h-[300px] rounded-lg border bg-muted/30 p-4">
+                              {transactions.filter(t => t.projectId === editingProject?.id).length > 0 ? (
+                                <div className="space-y-3">
+                                  {transactions.filter(t => t.projectId === editingProject?.id).map((tx) => {
+                                    const isDup = dupSet.has(tx.id);
+                                    return (
+                                      <div 
+                                        key={tx.id} 
+                                        className={cn(
+                                          "flex flex-col p-3 bg-card rounded-lg border shadow-sm group hover:border-primary cursor-pointer transition-all active:scale-[0.98]",
+                                          isDup && "border-destructive/40 bg-destructive/5"
+                                        )}
+                                        onClick={() => setViewingInvoice(tx)}
+                                        title="Haga clic para ver representación gráfica"
+                                      >
+                                        <div className="flex justify-between items-center mb-2">
+                                          <div className="flex items-center gap-2">
+                                            <ReceiptText className={cn("h-4 w-4", tx.type === 'purchase' ? "text-blue-500" : "text-green-500")} />
+                                            <span className="text-xs font-bold font-mono">{tx.invoiceNumber}</span>
+                                            <Badge variant="outline" className="text-[9px]">{tx.documentType === '03' ? 'CCF' : tx.documentType === '01' ? 'FAC' : 'DTE'}</Badge>
+                                            {isDup && (
+                                              <Badge variant="destructive" className="text-[8px] px-1.5 py-0 font-bold uppercase">
+                                                Repetida
+                                              </Badge>
+                                            )}
+                                          </div>
+                                          <div className="flex items-center gap-1">
+                                            <span className="text-xs font-bold text-foreground mr-1">${tx.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-6 w-6 text-muted-foreground hover:text-primary z-10"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setEditingTransaction(tx);
+                                              }}
+                                              title="Editar factura"
+                                            >
+                                              <Edit2 className="h-3 w-3" />
+                                            </Button>
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-6 w-6 text-muted-foreground hover:text-destructive hover:bg-destructive/10 z-10"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (confirm(`¿Desea borrar definitivamente la factura N° ${tx.invoiceNumber}?`)) {
+                                                  deleteTransaction(db, tx.id);
+                                                  toast({ title: "Factura Borrada", description: `La factura N° ${tx.invoiceNumber} fue eliminada.` });
+                                                }
+                                              }}
+                                              title="Borrar factura"
+                                            >
+                                              <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                                            </Button>
+                                          </div>
+                                        </div>
+                                        <div className="flex justify-between text-[10px] text-muted-foreground">
+                                          <span className="truncate max-w-[200px]">{tx.entityName}</span>
+                                          <span>{new Date(tx.issueDate).toLocaleDateString()}</span>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div className="flex flex-col items-center justify-center h-full text-muted-foreground opacity-50 space-y-2 py-10">
+                                  <ReceiptText className="h-10 w-10" />
+                                  <p className="text-xs italic">No hay facturas procesadas en este proyecto.</p>
+                                </div>
+                              )}
+                            </ScrollArea>
+                          </>
+                        );
+                      })()}
                     </TabsContent>
 
                     <TabsContent value="documents" className="space-y-4">
