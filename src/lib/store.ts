@@ -137,6 +137,7 @@ interface LedgerActions {
   deleteTransaction: (db: Firestore, id: string) => void;
   addToInventory: (db: Firestore, items: Omit<InventoryItem, 'id' | 'dateAdded'>[]) => void;
   removeFromInventory: (db: Firestore, id: string) => void;
+  updateInventoryQuantity: (db: Firestore, id: string, newQuantity: number) => void;
   addDocumentToProject: (db: Firestore, projectId: string, document: Omit<ProjectDocument, 'id' | 'createdAt'>) => void;
   deleteDocumentFromProject: (db: Firestore, projectId: string, documentId: string) => void;
   addReminder: (db: Firestore, reminder: Omit<Reminder, 'id' | 'createdAt' | 'isCompleted'>) => void;
@@ -310,6 +311,14 @@ export const useLedgerStore = create<LedgerState & LedgerActions>((set, get) => 
 
   removeFromInventory: (db, id) => {
     deleteDoc(doc(db, 'inventory', id));
+  },
+
+  updateInventoryQuantity: (db, id, newQuantity) => {
+    if (newQuantity <= 0) {
+      deleteDoc(doc(db, 'inventory', id));
+    } else {
+      updateDoc(doc(db, 'inventory', id), { quantity: newQuantity });
+    }
   },
 
   addDocumentToProject: (db, projectId, document) => {
