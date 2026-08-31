@@ -18,7 +18,7 @@ import { useToast } from "@/hooks/use-toast"
 
 export default function InventoryPage() {
   const { 
-    inventory, projects, removeFromInventory, updateInventoryQuantity, updateProject, addTransaction 
+    inventory, projects, transactions, removeFromInventory, updateInventoryQuantity, updateProject, addTransaction, updateTransaction 
   } = useLedgerStore()
   const db = useFirestore()
   const { toast } = useToast()
@@ -80,32 +80,78 @@ export default function InventoryPage() {
       updateProject(db, selectedProjectId, { expectedProducts: updatedExpected })
     }
 
-    // 2. Add purchase transaction if checked
+    // 2. Add or merge purchase transaction if checked
     if (chargeAsProjectCost) {
-      addTransaction(db, {
-        invoiceNumber: assigningItem.sourceInvoice || `ASIG-${Date.now()}`,
-        numeroControl: '',
-        issueDate: new Date().toISOString(),
-        entityId: 'global_inventory',
-        entityName: 'Traslado desde Inventario Global',
-        projectId: selectedProjectId,
-        type: 'purchase',
-        documentType: 'internal',
-        items: [{
-          code: assigningItem.code || 'S/C',
-          description: assigningItem.description,
-          quantity: qtyToAssign,
-          unitPrice: assigningItem.unitPrice,
-          lineTotal
-        }],
-        subtotal: lineTotal,
-        taxAmount: 0,
-        retentionAmount: 0,
-        perceptionAmount: 0,
-        totalAmount: lineTotal,
-        costBasis: lineTotal,
-        gain: 0
-      })
+      const sourceInv = (assigningItem.sourceInvoice || '').trim()
+
+      const existingTx = sourceInv ? transactions.find(t => 
+        t.projectId === selectedProjectId && 
+        !t.isVoided && 
+        t.invoiceNumber && 
+        t.invoiceNumber.trim().toLowerCase() === sourceInv.toLowerCase()
+      ) : null
+
+      const newItem = {
+        code: assigningItem.code || 'S/C',
+        description: assigningItem.description,
+        quantity: qtyToAssign,
+        unitPrice: assigningItem.unitPrice,
+        lineTotal
+      }
+
+      if (existingTx) {
+        // UNIFY INTO EXISTING INVOICE
+        const currentItems = [...(existingTx.items || [])]
+        const cleanCode = (assigningItem.code || '').trim().toLowerCase()
+        const cleanDesc = (assigningItem.description || '').trim().toLowerCase()
+
+        const existingItemIdx = currentItems.findIndex(i => 
+          (cleanCode && cleanCode !== 's/c' && (i.code || '').trim().toLowerCase() === cleanCode) ||
+          ((i.description || '').trim().toLowerCase() === cleanDesc)
+        )
+
+        if (existingItemIdx >= 0) {
+          const old = currentItems[existingItemIdx]
+          const newQty = (old.quantity || 0) + qtyToAssign
+          currentItems[existingItemIdx] = {
+            ...old,
+            quantity: newQty,
+            lineTotal: newQty * (old.unitPrice || assigningItem.unitPrice)
+          }
+        } else {
+          currentItems.push(newItem)
+        }
+
+        const newSubtotal = currentItems.reduce((sum, item) => sum + (item.lineTotal || 0), 0)
+        const newTotal = newSubtotal + (existingTx.taxAmount || 0) - (existingTx.retentionAmount || 0) + (existingTx.perceptionAmount || 0)
+
+        updateTransaction(db, existingTx.id, {
+          items: currentItems,
+          subtotal: newSubtotal,
+          totalAmount: newTotal,
+          costBasis: newTotal
+        })
+      } else {
+        // Create new single transaction
+        addTransaction(db, {
+          invoiceNumber: sourceInv || `ASIG-${Date.now()}`,
+          numeroControl: '',
+          issueDate: new Date().toISOString(),
+          entityId: 'global_inventory',
+          entityName: 'Traslado desde Inventario Global',
+          projectId: selectedProjectId,
+          type: 'purchase',
+          documentType: 'internal',
+          items: [newItem],
+          subtotal: lineTotal,
+          taxAmount: 0,
+          retentionAmount: 0,
+          perceptionAmount: 0,
+          totalAmount: lineTotal,
+          costBasis: lineTotal,
+          gain: 0
+        })
+      }
     }
 
     // 3. Update or remove from inventory

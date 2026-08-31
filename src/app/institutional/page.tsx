@@ -587,20 +587,18 @@ export default function InstitutionalModule() {
   const getDuplicateTransactionsForProject = (projectId?: string) => {
     if (!projectId) return [];
     const projectTxs = transactions.filter(t => t.projectId === projectId && !t.isVoided);
-    const seenKeys = new Set<string>();
+    const seen = new Set<string>();
     const duplicates: typeof transactions = [];
 
     projectTxs.forEach(tx => {
       const numKey = (tx.numeroControl || tx.invoiceNumber || '').trim().toLowerCase();
-      const entityKey = (tx.entityName || '').trim().toLowerCase();
-      const amountKey = tx.totalAmount.toFixed(2);
+      if (!numKey) return;
+      const key = `${tx.type}:${numKey}`;
       
-      const compositeKey = numKey ? `${tx.type}:${numKey}` : `${tx.type}:${entityKey}:${amountKey}:${tx.issueDate.split('T')[0]}`;
-      
-      if (seenKeys.has(compositeKey)) {
+      if (seen.has(key)) {
         duplicates.push(tx);
       } else {
-        seenKeys.add(compositeKey);
+        seen.add(key);
       }
     });
 
@@ -609,19 +607,88 @@ export default function InstitutionalModule() {
 
   const handlePurgeDuplicates = (projectId?: string) => {
     if (!projectId) return;
-    const duplicates = getDuplicateTransactionsForProject(projectId);
-    if (duplicates.length === 0) {
+    const projectTxs = transactions.filter(t => t.projectId === projectId && !t.isVoided);
+    
+    // Group transactions by type and invoiceNumber
+    const groups = new Map<string, Transaction[]>();
+
+    projectTxs.forEach(tx => {
+      const numKey = (tx.numeroControl || tx.invoiceNumber || '').trim().toLowerCase();
+      if (!numKey) return;
+      const key = `${tx.type}:${numKey}`;
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key)!.push(tx);
+    });
+
+    const duplicateGroups = Array.from(groups.values()).filter(g => g.length > 1);
+
+    if (duplicateGroups.length === 0) {
       toast({ title: "Sin Facturas Repetidas", description: "No se encontraron facturas duplicadas en este proyecto." });
       return;
     }
 
-    if (confirm(`¿Desea eliminar las ${duplicates.length} factura(s) repetida(s) detectadas en este proyecto?`)) {
-      duplicates.forEach(tx => {
-        deleteTransaction(db, tx.id);
+    const totalDuplicatesCount = duplicateGroups.reduce((acc, g) => acc + (g.length - 1), 0);
+
+    if (confirm(`Se encontraron ${duplicateGroups.length} factura(s) con registros divididos/repetidos (${totalDuplicatesCount} duplicados).\n\n¿Desea UNIFICAR todos los productos y montos en la factura principal y eliminar los registros repetidos?`)) {
+      duplicateGroups.forEach(group => {
+        // Sort: main entity first (not global_inventory transfer), oldest date first
+        group.sort((a, b) => {
+          const aIsTransfer = a.entityId === 'global_inventory' || a.entityName?.toLowerCase().includes('traslado');
+          const bIsTransfer = b.entityId === 'global_inventory' || b.entityName?.toLowerCase().includes('traslado');
+          if (aIsTransfer && !bIsTransfer) return 1;
+          if (!aIsTransfer && bIsTransfer) return -1;
+          return new Date(a.issueDate).getTime() - new Date(b.issueDate).getTime();
+        });
+
+        const primaryTx = group[0];
+        const extraTxs = group.slice(1);
+
+        let mergedItems = [...(primaryTx.items || [])];
+
+        extraTxs.forEach(tx => {
+          (tx.items || []).forEach(item => {
+            const cleanCode = (item.code || '').trim().toLowerCase();
+            const cleanDesc = (item.description || '').trim().toLowerCase();
+
+            const existingIdx = mergedItems.findIndex(mi => 
+              (cleanCode && cleanCode !== 's/c' && (mi.code || '').trim().toLowerCase() === cleanCode) ||
+              ((mi.description || '').trim().toLowerCase() === cleanDesc)
+            );
+
+            if (existingIdx >= 0) {
+              const old = mergedItems[existingIdx];
+              const newQty = (old.quantity || 0) + (item.quantity || 0);
+              mergedItems[existingIdx] = {
+                ...old,
+                quantity: newQty,
+                lineTotal: newQty * (old.unitPrice || item.unitPrice || 0)
+              };
+            } else {
+              mergedItems.push({ ...item });
+            }
+          });
+        });
+
+        const newSubtotal = mergedItems.reduce((sum, i) => sum + (i.lineTotal || 0), 0);
+        const newTotal = newSubtotal + (primaryTx.taxAmount || 0) - (primaryTx.retentionAmount || 0) + (primaryTx.perceptionAmount || 0);
+
+        updateTransaction(db, primaryTx.id, {
+          items: mergedItems,
+          subtotal: newSubtotal,
+          totalAmount: newTotal,
+          costBasis: newTotal
+        });
+
+        extraTxs.forEach(tx => {
+          deleteTransaction(db, tx.id);
+        });
       });
+
       toast({
-        title: "Facturas Repetidas Eliminadas",
-        description: `Se han eliminado ${duplicates.length} factura(s) duplicada(s) con éxito.`,
+        title: "Facturas Unificadas Exitosamente",
+        description: `Los productos y montos fueron integrados en la factura principal y se eliminaron ${totalDuplicatesCount} registro(s) repetidos.`,
       });
     }
   };
