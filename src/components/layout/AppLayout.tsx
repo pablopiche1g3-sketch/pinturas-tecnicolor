@@ -16,7 +16,8 @@ import {
   Package,
   Menu,
   ShieldCheck,
-  CalendarDays
+  CalendarDays,
+  Calculator
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -29,6 +30,7 @@ import { useLedgerStore } from "@/lib/store"
 const navItems = [
   { label: "Panel de Control", icon: LayoutDashboard, href: "/" },
   { label: "Institucional", icon: Zap, href: "/institutional", highlight: true },
+  { label: "Cotizador", icon: Calculator, href: "/quotations" },
   { label: "Inventario Global", icon: Package, href: "/inventory" },
   { label: "Calendario", icon: CalendarDays, href: "/calendar" },
   { label: "Proveedores", icon: Truck, href: "/suppliers" },
@@ -57,6 +59,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     switch (path) {
       case "/": return "Panel de Control";
       case "/institutional": return "Gestión Institucional";
+      case "/quotations": return "Cotizador Institucional";
       case "/inventory": return "Inventario de Excedentes";
       case "/calendar": return "Calendario y Notas";
       case "/suppliers": return "Directorio de Proveedores";
