@@ -20,7 +20,9 @@ import {
 } from "@/components/ui/dialog"
 import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project, type ProjectDocument, type Transaction } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput, type AiActionResponse } from "@/ai/flows/ai-json-key-mapper"
-import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders, Edit2, GitMerge, Layers, TrendingUp, Info, PlayCircle, Archive, Search } from "lucide-react"
+import { aiTenderParser, aiTenderAuditor, type AiTenderParserOutput, type TenderAuditorOutput } from "@/ai/flows/ai-tender-parser"
+import { calculateProductMatches } from "@/lib/tender-utils"
+import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders, Edit2, GitMerge, Layers, TrendingUp, Info, PlayCircle, Archive, Search, Sparkles, Link2, Bot, FileSearch, Check, AlertCircle, HelpCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -126,6 +128,22 @@ export default function InstitutionalModule() {
   const [targetProjectIdToMerge, setTargetProjectIdToMerge] = React.useState<string>('')
   const [isMerging, setIsMerging] = React.useState(false)
 
+  // Mapeo interactivo de productos entre Facturas/DTEs y Licitación/Proyecto
+  const [itemMappings, setItemMappings] = React.useState<Record<number, string>>({})
+
+  // Licitación PDF con IA
+  const [isTenderModalOpen, setIsTenderModalOpen] = React.useState(false)
+  const [isAnalyzingTender, setIsAnalyzingTender] = React.useState(false)
+  const [tenderFile, setTenderFile] = React.useState<{ name: string; dataUri: string; size: number } | null>(null)
+  const [tenderParsedData, setTenderParsedData] = React.useState<AiTenderParserOutput | null>(null)
+  const [tenderTargetProjectId, setTenderTargetProjectId] = React.useState<string>('new')
+  const tenderFileInputRef = React.useRef<HTMLInputElement>(null)
+
+  // Auditoría IA de Licitación
+  const [isAuditModalOpen, setIsAuditModalOpen] = React.useState(false)
+  const [isAuditingTender, setIsAuditingTender] = React.useState(false)
+  const [auditResult, setAuditResult] = React.useState<TenderAuditorOutput | null>(null)
+
   React.useEffect(() => {
     setMounted(true)
   }, [])
@@ -151,6 +169,13 @@ export default function InstitutionalModule() {
 
   const getMatchingExpectedProduct = (i: any, expectedProducts: any[]) => {
     if (!expectedProducts || expectedProducts.length === 0) return null;
+
+    // 1. Vinculación explícita (Mapeo seleccionado manualmente o asignado)
+    if (i?.matchedProductCode) {
+      if (i.matchedProductCode === '__UNMATCHED__') return null;
+      const byMatched = expectedProducts.find(ep => cleanStringLower(ep.code) === cleanStringLower(i.matchedProductCode));
+      if (byMatched) return byMatched;
+    }
 
     const iCode = cleanStringLower(i.code);
     if (iCode) {
@@ -693,6 +718,201 @@ export default function InstitutionalModule() {
     }
   };
 
+  // Licitación PDF con IA - Handlers
+  const handleTenderPdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+      toast({ title: 'Formato no válido', description: 'Por favor suba un archivo en formato PDF.', variant: 'destructive' })
+      return
+    }
+
+    try {
+      setIsAnalyzingTender(true)
+      const dataUri = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = (ev) => resolve(ev.target?.result as string)
+        reader.onerror = reject
+        reader.readAsDataURL(file)
+      })
+
+      setTenderFile({ name: file.name, dataUri, size: file.size })
+
+      const resp = await aiTenderParser({
+        pdfDataUri: dataUri,
+        documentName: file.name,
+      })
+
+      if (!resp.success || !resp.data) {
+        throw new Error(resp.error || 'No se pudieron extraer los datos de la licitación.')
+      }
+
+      setTenderParsedData(resp.data)
+      toast({
+        title: 'Licitación Clasificada por IA',
+        description: `Se detectaron ${resp.data.items?.length || 0} renglones de producto en el documento.`,
+      })
+    } catch (err: any) {
+      console.error('Error analizando licitación:', err)
+      toast({
+        title: 'Error de Análisis con IA',
+        description: err.message || 'No se pudo leer el PDF de la licitación.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsAnalyzingTender(false)
+      if (e.target) e.target.value = ''
+    }
+  }
+
+  const handleApplyTenderToProject = async () => {
+    if (!tenderParsedData) return
+
+    const tenderItems: ProjectProduct[] = (tenderParsedData.items || []).map((it, idx) => ({
+      code: cleanString(it.code) || `Renglón ${idx + 1}`,
+      description: cleanString(it.description),
+      quantity: Number(it.quantity) || 1,
+      unitPrice: Number(it.unitPrice) || 0,
+      unit: it.unit || 'Unidad',
+    }))
+
+    if (tenderTargetProjectId === 'new' || !tenderTargetProjectId) {
+      let matchedCustId = ''
+      if (tenderParsedData.customerName) {
+        const cust = entities.find(e => e.type === 'customer' && 
+          (cleanStringLower(e.name).includes(cleanStringLower(tenderParsedData.customerName)) ||
+           cleanStringLower(tenderParsedData.customerName).includes(cleanStringLower(e.name)))
+        )
+        if (cust) matchedCustId = cust.id
+      }
+
+      setNewProject({
+        name: tenderParsedData.projectName || `Licitación ${tenderParsedData.purchaseOrder || ''}`.trim(),
+        purchaseOrder: tenderParsedData.purchaseOrder || 'LP-2026',
+        targetSaleAmount: tenderParsedData.totalBudget || tenderItems.reduce((acc, it) => acc + (it.quantity * it.unitPrice), 0),
+        customerId: matchedCustId || (entities.find(e => e.type === 'customer')?.id || ''),
+        warrantyStartDate: new Date().toISOString().split('T')[0],
+        warrantyMonths: 12,
+      })
+      setNewProjectProducts(tenderItems)
+      setEditingProject(null)
+      setIsProjectDialogOpen(true)
+      setIsTenderModalOpen(false)
+      toast({
+        title: 'Datos aplicados al formulario',
+        description: 'Verifique los detalles del proyecto y haga clic en Guardar Proyecto.',
+      })
+    } else {
+      const targetProj = projects.find(p => p.id === tenderTargetProjectId)
+      if (!targetProj) return
+
+      const updatedProducts = [...targetProj.expectedProducts]
+      tenderItems.forEach(newItem => {
+        const existingIdx = updatedProducts.findIndex(ep => cleanStringLower(ep.code) === cleanStringLower(newItem.code))
+        if (existingIdx >= 0) {
+          updatedProducts[existingIdx] = newItem
+        } else {
+          updatedProducts.push(newItem)
+        }
+      })
+
+      updateProject(db, targetProj.id, {
+        expectedProducts: updatedProducts,
+        targetSaleAmount: tenderParsedData.totalBudget || targetProj.targetSaleAmount,
+      })
+
+      if (tenderFile && storage) {
+        try {
+          const finalName = tenderFile.name || `Licitacion_${Date.now()}.pdf`
+          const storageRef = ref(storage, `projects/${targetProj.id}/documents/${Date.now()}_${finalName}`)
+          await uploadString(storageRef, tenderFile.dataUri, 'data_url')
+          const downloadURL = await getDownloadURL(storageRef)
+          addDocumentToProject(db, targetProj.id, {
+            name: finalName,
+            type: 'application/pdf',
+            size: tenderFile.size,
+            data: downloadURL,
+          })
+        } catch (stErr) {
+          console.warn('No se pudo subir PDF a Storage:', stErr)
+        }
+      }
+
+      setSelectedProjectId(targetProj.id)
+      setIsTenderModalOpen(false)
+      toast({
+        title: 'Licitación vinculada al proyecto',
+        description: `Se actualizaron ${updatedProducts.length} productos en ${targetProj.name}.`,
+      })
+    }
+  }
+
+  const handleRunTenderAudit = async () => {
+    if (!currentProject) return
+
+    try {
+      setIsAuditingTender(true)
+      setIsAuditModalOpen(true)
+      setAuditResult(null)
+
+      const projectTxs = transactions.filter(t => t.projectId === currentProject.id && !t.isVoided)
+      
+      const summaryProgress = (currentProject.expectedProducts || []).map(ep => {
+        const remissionItems = projectTxs.filter(t => t.type === 'remission').flatMap(t => t.items || []).filter(i => {
+          const match = getMatchingExpectedProduct(i, currentProject.expectedProducts)
+          return match && (match.code === ep.code || match.description === ep.description)
+        })
+        const deliveredQty = remissionItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0)
+
+        const saleItems = projectTxs.filter(t => t.type === 'sale').flatMap(t => t.items || []).filter(i => {
+          const match = getMatchingExpectedProduct(i, currentProject.expectedProducts)
+          return match && (match.code === ep.code || match.description === ep.description)
+        })
+        const invoicedQty = saleItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0)
+
+        const purchaseItems = projectTxs.filter(t => t.type === 'purchase').flatMap(t => t.items || []).filter(i => {
+          const match = getMatchingExpectedProduct(i, currentProject.expectedProducts)
+          return match && (match.code === ep.code || match.description === ep.description)
+        })
+        const purchasedQty = purchaseItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0)
+
+        return {
+          code: ep.code,
+          description: ep.description,
+          contractQty: ep.quantity,
+          purchasedQty,
+          deliveredQty,
+          invoicedQty,
+          pendingDeliverQty: Math.max(0, ep.quantity - deliveredQty),
+        }
+      })
+
+      const resp = await aiTenderAuditor({
+        projectName: currentProject.name,
+        purchaseOrder: currentProject.purchaseOrder,
+        customerName: currentProject.customerName,
+        expectedProducts: currentProject.expectedProducts,
+        summaryProgress,
+      })
+
+      if (!resp.success || !resp.data) {
+        throw new Error(resp.error || 'No se pudo generar la auditoría.')
+      }
+
+      setAuditResult(resp.data)
+    } catch (err: any) {
+      console.error('Error al auditar licitación:', err)
+      toast({
+        title: 'Error en Auditoría IA',
+        description: err.message || 'No se pudo procesar la auditoría.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsAuditingTender(false)
+    }
+  }
+
   // AI & Manual Processing Logic...
   const handleProcessData = async (content?: string) => {
     const rawData = content || jsonInput
@@ -734,6 +954,14 @@ export default function InstitutionalModule() {
       }
 
       setMappedData(result)
+
+      // Sugerir vinculación automática de productos con la licitación
+      if (currentProject && currentProject.expectedProducts && currentProject.expectedProducts.length > 0 && result.items) {
+        const autoMatches = calculateProductMatches(result.items as any, currentProject.expectedProducts)
+        setItemMappings(autoMatches)
+      } else {
+        setItemMappings({})
+      }
       
       if (activeTab === 'voided') {
         const targetId = result.relatedDocumentNumber || result.invoiceNumber
@@ -823,16 +1051,27 @@ export default function InstitutionalModule() {
     const validItems: TransactionItem[] = []
     const orphanItems: TransactionItem[] = []
     
-    rawItems.forEach(item => {
-      const ep = getMatchingExpectedProduct(item, currentProject.expectedProducts);
-      const isExpected = !!ep;
+    rawItems.forEach((item, idx) => {
+      const explicitCode = itemMappings[idx];
+      let ep: any = null;
+      const isExplicitUnmatched = explicitCode === '__UNMATCHED__';
+
+      if (explicitCode && !isExplicitUnmatched) {
+        ep = currentProject.expectedProducts.find(p => cleanStringLower(p.code) === cleanStringLower(explicitCode));
+      }
+
+      if (!ep && !isExplicitUnmatched) {
+        ep = getMatchingExpectedProduct(item, currentProject.expectedProducts);
+      }
+      const isExpected = !!ep && !isExplicitUnmatched;
       const unitPrice = item.unitPrice || (ep?.unitPrice || 0);
       const txItem = {
         description: item.description ? cleanString(item.description) : (ep?.description || 'Gasto proveedor'),
         quantity: item.quantity || 1,
         unitPrice: unitPrice,
         lineTotal: item.lineTotal || ((item.quantity || 1) * unitPrice),
-        code: item.code ? cleanString(item.code) : (ep?.code || 'S/C')
+        code: item.code ? cleanString(item.code) : (ep?.code || 'S/C'),
+        matchedProductCode: ep ? ep.code : undefined
       };
       if (isExpected) validItems.push(txItem);
       else orphanItems.push(txItem);
@@ -1075,7 +1314,7 @@ export default function InstitutionalModule() {
       projectId: selectedProjectId,
       type: 'sale',
       documentType: mappedData.documentType || '01',
-      items: (mappedData.items || []).map(i => ({ ...i, description: i.description || '', quantity: i.quantity || 1, unitPrice: i.unitPrice || 0, lineTotal: i.lineTotal || 0 })),
+      items: (mappedData.items || []).map((i, idx) => ({ ...i, description: i.description || '', quantity: i.quantity || 1, unitPrice: i.unitPrice || 0, lineTotal: i.lineTotal || 0, matchedProductCode: itemMappings[idx] || (getMatchingExpectedProduct(i, currentProject.expectedProducts)?.code) })),
       subtotal,
       taxAmount: tax,
       retentionAmount: calculatedRetention,
@@ -1262,7 +1501,19 @@ export default function InstitutionalModule() {
                 <h3 className="text-xl font-bold font-headline text-foreground">Control de Proyectos</h3>
                 <p className="text-sm text-muted-foreground">Gestione presupuestos y suministros autorizados.</p>
               </div>
-              <Dialog open={isProjectDialogOpen} onOpenChange={(open) => {
+              <div className="flex flex-wrap items-center gap-2">
+                <Button 
+                  className="gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-sm font-bold text-xs h-9 w-full sm:w-auto"
+                  onClick={() => {
+                    setTenderParsedData(null);
+                    setTenderFile(null);
+                    setTenderTargetProjectId('new');
+                    setIsTenderModalOpen(true);
+                  }}
+                >
+                  <Sparkles className="h-4 w-4" /> Cargar Licitación (PDF con IA)
+                </Button>
+                <Dialog open={isProjectDialogOpen} onOpenChange={(open) => {
                 setIsProjectDialogOpen(open)
                 if (!open) {
                   setEditingProject(null)
@@ -1333,6 +1584,22 @@ export default function InstitutionalModule() {
                           <div className="flex justify-between items-center gap-2">
                             <h4 className="font-bold text-xs uppercase text-muted-foreground flex-1">Productos de la OC</h4>
                             <div className="flex gap-1">
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                type="button"
+                                className="h-7 text-[10px] px-2 gap-1 text-emerald-600 border-emerald-600/30 hover:bg-emerald-600/10 shrink-0 font-bold" 
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  setTenderParsedData(null);
+                                  setTenderFile(null);
+                                  setTenderTargetProjectId(editingProject ? editingProject.id : 'new');
+                                  setIsTenderModalOpen(true);
+                                }}
+                                title="Extraer y clasificar productos desde PDF de Licitación con IA"
+                              >
+                                <Sparkles className="h-3 w-3 text-emerald-500" /> PDF IA
+                              </Button>
                               <Button 
                                 variant="outline" 
                                 size="sm" 
@@ -1551,6 +1818,7 @@ export default function InstitutionalModule() {
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
+              </div>
 
               <Dialog open={isSuppliesDialogOpen} onOpenChange={setIsSuppliesDialogOpen}>
                 <DialogContent className="sm:max-w-[900px] w-[95vw] max-h-[85vh] flex flex-col p-6 overflow-hidden">
@@ -1966,11 +2234,12 @@ export default function InstitutionalModule() {
                           <Badge variant="secondary" className="bg-primary/10 text-primary uppercase text-[10px]">
                                DTE: {mappedData.documentType === '03' ? 'CRÉDITO FISCAL' : 'FACTURA'}
                           </Badge>
-                          <ScrollArea className="h-[200px] border rounded-lg">
+                          <ScrollArea className="h-[280px] border rounded-lg">
                             <table className="w-full text-[10px]">
                               <thead className="bg-muted sticky top-0">
                                 <tr>
-                                  <th className="p-2 text-left">Item</th>
+                                  <th className="p-2 text-left">Ítem Factura (DTE)</th>
+                                  <th className="p-2 text-left min-w-[210px]">Vincular a Licitación</th>
                                   <th className="p-2 text-right">Cant.</th>
                                   <th className="p-2 text-center">Estado</th>
                                   <th className="p-2 text-right">Acción</th>
@@ -1978,14 +2247,64 @@ export default function InstitutionalModule() {
                               </thead>
                               <tbody className="divide-y">
                                 {mappedData.items?.map((it, idx) => {
-                                  const projectProduct = getMatchingExpectedProduct(it, currentProject?.expectedProducts || []);
-                                  const isExpected = !!projectProduct;
+                                  const explicitCode = itemMappings[idx];
+                                  const isExplicitUnmatched = explicitCode === '__UNMATCHED__';
+
+                                  let projectProduct: any = null;
+                                  if (explicitCode && !isExplicitUnmatched) {
+                                    projectProduct = currentProject?.expectedProducts?.find(ep => cleanStringLower(ep.code) === cleanStringLower(explicitCode));
+                                  }
+                                  if (!projectProduct && !isExplicitUnmatched) {
+                                    projectProduct = getMatchingExpectedProduct(it, currentProject?.expectedProducts || []);
+                                  }
+                                  const isExpected = !!projectProduct && !isExplicitUnmatched;
+                                  const selectedValue = explicitCode !== undefined 
+                                    ? explicitCode 
+                                    : (projectProduct ? projectProduct.code : '__UNMATCHED__');
+                                  const sameProductCount = Object.values(itemMappings).filter(c => c === projectProduct?.code).length;
+                                  const isJoined = isExpected && sameProductCount > 1;
                                   const expectedQty = projectProduct ? projectProduct.quantity : 0;
                                   const hasExcess = isExpected && (it.quantity || 0) > expectedQty;
                                   
                                   return (
                                     <tr key={idx} className={cn(!isExpected && "bg-destructive/5", hasExcess && "bg-amber-500/5")}>
-                                      <td className="p-2 font-medium">{it.description}</td>
+                                      <td className="p-2 font-medium">
+                                        <div className="flex flex-col">
+                                          <span className="font-semibold text-foreground">{it.description}</span>
+                                          {it.code && <span className="text-[9px] text-muted-foreground font-mono">Cód: {it.code}</span>}
+                                          <span className="text-[9px] text-muted-foreground">${(it.unitPrice || 0).toFixed(2)} c/u</span>
+                                        </div>
+                                      </td>
+                                      <td className="p-2">
+                                        <div className="space-y-1">
+                                          <select
+                                            value={selectedValue}
+                                            onChange={(e) => {
+                                              const val = e.target.value;
+                                              setItemMappings(prev => ({ ...prev, [idx]: val }));
+                                            }}
+                                            className="w-full h-7 text-[10px] rounded border bg-background px-2 py-0.5 text-foreground focus:ring-1 focus:ring-primary font-medium"
+                                          >
+                                            <option value="__UNMATCHED__">📦 No pertenece a la licitación (Excedente)</option>
+                                            {currentProject?.expectedProducts?.map((ep) => (
+                                              <option key={ep.code} value={ep.code}>
+                                                🔗 [{ep.code}] {ep.description.length > 30 ? ep.description.slice(0, 30) + '...' : ep.description} (Req: {ep.quantity})
+                                              </option>
+                                            ))}
+                                          </select>
+                                          {isExpected && (
+                                            <div className="flex items-center gap-1.5 text-[9px] text-emerald-600 dark:text-emerald-400 font-bold">
+                                              <Link2 className="h-3 w-3" />
+                                              <span>{projectProduct?.code}</span>
+                                              {isJoined && (
+                                                <Badge variant="outline" className="text-[8px] py-0 px-1 border-emerald-500 text-emerald-700 bg-emerald-50">
+                                                  Unión
+                                                </Badge>
+                                              )}
+                                            </div>
+                                          )}
+                                        </div>
+                                      </td>
                                       <td className="p-2 text-right">
                                         <Input
                                           type="number"
@@ -1997,7 +2316,9 @@ export default function InstitutionalModule() {
                                       </td>
                                       <td className="p-2 text-center">
                                         {!isExpected ? (
-                                          <Badge variant="destructive">NO OC</Badge>
+                                          <Badge variant="outline" className="text-amber-700 bg-amber-50 border-amber-300 text-[9px]">
+                                            EXCEDENTE
+                                          </Badge>
                                         ) : hasExcess ? (
                                           <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-bold" title={`La orden de compra solicitaba ${expectedQty} unidades`}>
                                             EXCESO ({expectedQty})
@@ -2290,6 +2611,36 @@ export default function InstitutionalModule() {
              <div className="py-20 text-center border-2 border-dashed rounded-lg opacity-40 px-4">Seleccione un proyecto.</div>
            ) : (
              <div className="space-y-6">
+               {/* Encabezado y Acción de Auditoría de Licitación */}
+               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 bg-card rounded-xl border shadow-sm">
+                 <div className="space-y-1">
+                   <div className="flex items-center gap-2">
+                     <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
+                       <Briefcase className="h-5 w-5 text-primary" />
+                       {currentProject.name}
+                     </h3>
+                     <Badge variant="outline" className="font-mono text-xs font-bold">
+                       {currentProject.purchaseOrder}
+                     </Badge>
+                   </div>
+                   <p className="text-xs text-muted-foreground">
+                     Cliente / Institución: <strong className="text-foreground">{currentProject.customerName}</strong> • {currentProject.expectedProducts?.length || 0} renglones contratados
+                   </p>
+                 </div>
+                 <div className="flex items-center gap-2 w-full sm:w-auto">
+                   <Button
+                     variant="outline"
+                     size="sm"
+                     className="gap-2 border-emerald-600/40 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 font-bold text-xs w-full sm:w-auto h-9"
+                     onClick={handleRunTenderAudit}
+                     disabled={isAuditingTender}
+                   >
+                     {isAuditingTender ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Bot className="h-3.5 w-3.5 text-emerald-500" />}
+                     Auditoría IA de Licitación
+                   </Button>
+                 </div>
+               </div>
+
                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                  <Card className="bg-primary/5 border-primary/20">
                    <CardContent className="p-4 text-center">
@@ -2383,6 +2734,124 @@ export default function InstitutionalModule() {
 
                   return (
                     <div className="space-y-6">
+                      {/* Tablero de Seguimiento de Suministros de Licitación */}
+                      <Card className="border-t-4 border-t-emerald-600 shadow-sm">
+                        <CardHeader className="pb-3">
+                          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                            <div>
+                              <CardTitle className="text-lg font-bold flex items-center gap-2">
+                                <Sparkles className="h-5 w-5 text-emerald-600" />
+                                Seguimiento y Cumplimiento de Licitación
+                              </CardTitle>
+                              <CardDescription className="text-xs">
+                                Control renglón por renglón: contratado vs. compras vinculadas, remisiones entregadas y saldo pendiente.
+                              </CardDescription>
+                            </div>
+                            <Badge className="bg-emerald-600 text-white font-mono text-xs">
+                              {productRows.filter(r => r.deliveredQty >= r.ep.quantity).length} de {productRows.length} Renglones Cumplidos
+                            </Badge>
+                          </div>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="overflow-x-auto rounded-lg border">
+                            <Table className="text-xs">
+                              <TableHeader className="bg-muted/60">
+                                <TableRow>
+                                  <TableHead className="font-bold">Renglón / Descripción Oficial</TableHead>
+                                  <TableHead className="text-center font-bold">Unidad</TableHead>
+                                  <TableHead className="text-right font-bold bg-muted/40">Contratado</TableHead>
+                                  <TableHead className="text-right font-bold text-rose-700 bg-rose-50/50">Comprado</TableHead>
+                                  <TableHead className="text-right font-bold text-blue-700 bg-blue-50/50">Entregado</TableHead>
+                                  <TableHead className="text-right font-bold text-green-700 bg-green-50/50">Facturado</TableHead>
+                                  <TableHead className="text-right font-bold text-amber-700 bg-amber-50/50">Saldo Pendiente</TableHead>
+                                  <TableHead className="text-center font-bold">Avance</TableHead>
+                                  <TableHead className="text-center font-bold">Estado</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {productRows.map((row, idx) => {
+                                  const reqQty = row.ep.quantity || 1;
+                                  const pctDelivered = Math.min(Math.round((row.deliveredQty / reqQty) * 100), 100);
+                                  const isComplete = row.deliveredQty >= reqQty;
+                                  const isStocked = row.costQty >= reqQty && !isComplete;
+                                  const hasNoPurchases = row.costQty === 0;
+
+                                  return (
+                                    <TableRow key={idx} className={cn(isComplete && "bg-emerald-50/30 dark:bg-emerald-950/10")}>
+                                      <TableCell className="font-medium">
+                                        <div className="flex flex-col">
+                                          <div className="flex items-center gap-1.5">
+                                            <Badge variant="outline" className="font-mono text-[9px] font-bold text-primary">
+                                              {row.ep.code || `R-${idx + 1}`}
+                                            </Badge>
+                                            <span className="font-semibold">{row.ep.description}</span>
+                                          </div>
+                                          {row.ep.unitPrice > 0 && (
+                                            <span className="text-[10px] text-muted-foreground">
+                                              Presupuesto: ${row.ep.unitPrice.toFixed(2)} c/u • Subtotal: ${(reqQty * row.ep.unitPrice).toFixed(2)}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="text-center text-muted-foreground text-[10px]">
+                                        {(row.ep as any).unit || 'Unidad'}
+                                      </TableCell>
+                                      <TableCell className="text-right font-bold bg-muted/20">
+                                        {reqQty}
+                                      </TableCell>
+                                      <TableCell className="text-right font-mono font-bold text-rose-700 bg-rose-50/20">
+                                        {row.costQty}
+                                      </TableCell>
+                                      <TableCell className="text-right font-mono font-bold text-blue-700 bg-blue-50/20">
+                                        {row.deliveredQty}
+                                      </TableCell>
+                                      <TableCell className="text-right font-mono font-bold text-green-700 bg-green-50/20">
+                                        {row.saleQty}
+                                      </TableCell>
+                                      <TableCell className="text-right font-mono font-bold text-amber-700 bg-amber-50/20">
+                                        {Math.max(0, reqQty - row.deliveredQty)}
+                                      </TableCell>
+                                      <TableCell className="text-center w-[120px]">
+                                        <div className="space-y-1">
+                                          <Progress value={pctDelivered} className="h-2" />
+                                          <span className="text-[9px] font-bold text-muted-foreground">{pctDelivered}%</span>
+                                        </div>
+                                      </TableCell>
+                                      <TableCell className="text-center">
+                                        {isComplete ? (
+                                          <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold">
+                                            ✓ CUMPLIDO
+                                          </Badge>
+                                        ) : isStocked ? (
+                                          <Badge className="bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold" title="Comprado en bodega, pendiente de remisión">
+                                            EN BODEGA
+                                          </Badge>
+                                        ) : hasNoPurchases ? (
+                                          <Badge variant="destructive" className="text-[9px] font-bold">
+                                            SIN COMPRAS
+                                          </Badge>
+                                        ) : (
+                                          <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-bold">
+                                            EN PROCESO
+                                          </Badge>
+                                        )}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                })}
+                                {productRows.length === 0 && (
+                                  <TableRow>
+                                    <TableCell colSpan={9} className="text-center py-8 text-muted-foreground italic text-xs">
+                                      No hay renglones registrados en la licitación. Use "Cargar Licitación (PDF con IA)" para importarlos.
+                                    </TableCell>
+                                  </TableRow>
+                                )}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        </CardContent>
+                      </Card>
+
                       {/* 1. Tabla de Margen y Rentabilidad por Producto */}
                       <Card className="border-t-4 border-t-primary shadow-sm">
                         <CardHeader className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 pb-2">
@@ -3282,6 +3751,412 @@ export default function InstitutionalModule() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Modal: Importar Licitación desde PDF con IA */}
+      <Dialog open={isTenderModalOpen} onOpenChange={setIsTenderModalOpen}>
+        <DialogContent className="sm:max-w-[850px] w-[95vw] max-h-[90vh] flex flex-col p-6 overflow-hidden">
+          <DialogHeader className="pb-3 border-b">
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold font-headline text-foreground">
+              <Sparkles className="h-5 w-5 text-emerald-500" />
+              Cargar Licitación / Proyecto desde PDF con IA
+            </DialogTitle>
+            <CardDescription>
+              Gemini analizará el documento de licitación, extraerá la orden de compra, cliente y clasificará todos los renglones de producto automáticamente.
+            </CardDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto space-y-4 py-2 pr-1">
+            {/* Dropzone */}
+            <div
+              className={cn(
+                "border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all",
+                tenderFile ? "bg-emerald-50/20 border-emerald-500/40" : "hover:border-primary/50 bg-muted/20"
+              )}
+              onClick={() => tenderFileInputRef.current?.click()}
+            >
+              <input
+                type="file"
+                ref={tenderFileInputRef}
+                className="hidden"
+                accept=".pdf,application/pdf"
+                onChange={handleTenderPdfUpload}
+              />
+              {isAnalyzingTender ? (
+                <div className="flex flex-col items-center gap-3 py-4 text-center">
+                  <Loader2 className="h-10 w-10 text-emerald-500 animate-spin" />
+                  <div>
+                    <p className="font-bold text-sm text-foreground">Interpretando Documento de Licitación...</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Gemini está clasificando renglones, presentaciones, cantidades y precios.</p>
+                  </div>
+                </div>
+              ) : tenderFile ? (
+                <div className="flex items-center justify-between w-full">
+                  <div className="flex items-center gap-3 overflow-hidden">
+                    <div className="h-10 w-10 rounded-lg bg-red-100 dark:bg-red-950/40 flex items-center justify-center shrink-0">
+                      <FileText className="h-5 w-5 text-red-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-bold text-xs text-foreground truncate">{tenderFile.name}</p>
+                      <p className="text-[10px] text-muted-foreground">{(tenderFile.size / 1024).toFixed(1)} KB • Documento cargado</p>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="text-xs gap-1.5 shrink-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      tenderFileInputRef.current?.click();
+                    }}
+                  >
+                    <Upload className="h-3 w-3" /> Cambiar PDF
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-2 py-4 text-center">
+                  <div className="h-12 w-12 rounded-full bg-emerald-100 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600">
+                    <Upload className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-bold text-sm text-foreground">Haga clic o arrastre el PDF de la Licitación</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Bases de licitación, Orden de Compra, Contrato o Lista de Requerimientos</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Resultado de la IA */}
+            {tenderParsedData && (
+              <div className="space-y-4 animate-in fade-in duration-300">
+                {tenderParsedData.summary && (
+                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-xs flex items-start gap-2">
+                    <Sparkles className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                    <p className="text-foreground leading-relaxed">{tenderParsedData.summary}</p>
+                  </div>
+                )}
+
+                {/* Datos generales extraídos */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-muted/30 p-3 rounded-lg border">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold">Proyecto / Licitación</Label>
+                    <Input
+                      value={tenderParsedData.projectName || ''}
+                      onChange={(e) => setTenderParsedData({ ...tenderParsedData, projectName: e.target.value })}
+                      className="h-8 text-xs"
+                      placeholder="Nombre del proyecto"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold">No. Licitación / OC</Label>
+                    <Input
+                      value={tenderParsedData.purchaseOrder || ''}
+                      onChange={(e) => setTenderParsedData({ ...tenderParsedData, purchaseOrder: e.target.value })}
+                      className="h-8 text-xs font-mono font-bold"
+                      placeholder="Ej: LP-01/2026"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold">Cliente / Institución</Label>
+                    <Input
+                      value={tenderParsedData.customerName || ''}
+                      onChange={(e) => setTenderParsedData({ ...tenderParsedData, customerName: e.target.value })}
+                      className="h-8 text-xs"
+                      placeholder="Ej: Ministerio de Salud"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-bold">Presupuesto / Total ($)</Label>
+                    <Input
+                      type="number"
+                      value={tenderParsedData.totalBudget || ''}
+                      onChange={(e) => setTenderParsedData({ ...tenderParsedData, totalBudget: Number(e.target.value) })}
+                      className="h-8 text-xs font-bold"
+                      placeholder="0.00"
+                    />
+                  </div>
+                </div>
+
+                {/* Destino de la Licitación */}
+                <div className="bg-card p-3 rounded-lg border space-y-2">
+                  <Label className="text-xs font-bold">¿Dónde desea aplicar estos datos?</Label>
+                  <Select value={tenderTargetProjectId} onValueChange={setTenderTargetProjectId}>
+                    <SelectTrigger className="h-9 text-xs">
+                      <SelectValue placeholder="Seleccione el destino" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new" className="text-xs font-bold text-emerald-600">
+                        ✨ Crear como un NUEVO Proyecto
+                      </SelectItem>
+                      {projects.map((p) => (
+                        <SelectItem key={p.id} value={p.id} className="text-xs">
+                          Actualizar en: {p.name} ({p.purchaseOrder})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Tabla de Productos Clasificados */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center">
+                    <Label className="text-xs font-bold flex items-center gap-1.5">
+                      <Package className="h-3.5 w-3.5 text-primary" />
+                      Renglones y Productos Clasificados ({tenderParsedData.items?.length || 0})
+                    </Label>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-[10px] gap-1"
+                      onClick={() => {
+                        const newItems = [...(tenderParsedData.items || [])];
+                        newItems.push({
+                          code: `Renglón ${newItems.length + 1}`,
+                          description: 'Nuevo Producto',
+                          quantity: 1,
+                          unitPrice: 0,
+                          lineTotal: 0,
+                          unit: 'Galón',
+                        });
+                        setTenderParsedData({ ...tenderParsedData, items: newItems });
+                      }}
+                    >
+                      <Plus className="h-3 w-3" /> Añadir Renglón
+                    </Button>
+                  </div>
+
+                  <ScrollArea className="h-[230px] rounded-lg border">
+                    <Table className="text-[11px]">
+                      <TableHeader className="bg-muted sticky top-0">
+                        <TableRow>
+                          <TableHead className="w-[100px]">Renglón/Cód</TableHead>
+                          <TableHead>Descripción Técnica</TableHead>
+                          <TableHead className="w-[90px] text-center">Unidad</TableHead>
+                          <TableHead className="w-[80px] text-right">Cant.</TableHead>
+                          <TableHead className="w-[90px] text-right">Precio ($)</TableHead>
+                          <TableHead className="w-[90px] text-right">Total ($)</TableHead>
+                          <TableHead className="w-[50px]"></TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {tenderParsedData.items?.map((it, idx) => (
+                          <TableRow key={idx}>
+                            <TableCell className="p-1.5">
+                              <Input
+                                value={it.code}
+                                onChange={(e) => {
+                                  const updated = [...(tenderParsedData.items || [])];
+                                  updated[idx] = { ...updated[idx], code: e.target.value };
+                                  setTenderParsedData({ ...tenderParsedData, items: updated });
+                                }}
+                                className="h-7 text-[10px] font-mono font-bold"
+                              />
+                            </TableCell>
+                            <TableCell className="p-1.5">
+                              <Input
+                                value={it.description}
+                                onChange={(e) => {
+                                  const updated = [...(tenderParsedData.items || [])];
+                                  updated[idx] = { ...updated[idx], description: e.target.value };
+                                  setTenderParsedData({ ...tenderParsedData, items: updated });
+                                }}
+                                className="h-7 text-[10px]"
+                              />
+                            </TableCell>
+                            <TableCell className="p-1.5 text-center">
+                              <Input
+                                value={it.unit || ''}
+                                onChange={(e) => {
+                                  const updated = [...(tenderParsedData.items || [])];
+                                  updated[idx] = { ...updated[idx], unit: e.target.value };
+                                  setTenderParsedData({ ...tenderParsedData, items: updated });
+                                }}
+                                placeholder="Cubeta, Galón"
+                                className="h-7 text-[10px] text-center"
+                              />
+                            </TableCell>
+                            <TableCell className="p-1.5 text-right">
+                              <Input
+                                type="number"
+                                value={it.quantity}
+                                onChange={(e) => {
+                                  const qty = Number(e.target.value);
+                                  const updated = [...(tenderParsedData.items || [])];
+                                  const up = updated[idx].unitPrice || 0;
+                                  updated[idx] = { ...updated[idx], quantity: qty, lineTotal: qty * up };
+                                  setTenderParsedData({ ...tenderParsedData, items: updated });
+                                }}
+                                className="h-7 text-[10px] text-right font-bold"
+                              />
+                            </TableCell>
+                            <TableCell className="p-1.5 text-right">
+                              <Input
+                                type="number"
+                                value={it.unitPrice || 0}
+                                onChange={(e) => {
+                                  const pr = Number(e.target.value);
+                                  const updated = [...(tenderParsedData.items || [])];
+                                  const q = updated[idx].quantity || 0;
+                                  updated[idx] = { ...updated[idx], unitPrice: pr, lineTotal: q * pr };
+                                  setTenderParsedData({ ...tenderParsedData, items: updated });
+                                }}
+                                className="h-7 text-[10px] text-right"
+                              />
+                            </TableCell>
+                            <TableCell className="p-1.5 text-right font-mono font-bold">
+                              ${((it.quantity || 0) * (it.unitPrice || 0)).toFixed(2)}
+                            </TableCell>
+                            <TableCell className="p-1.5 text-center">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 text-destructive hover:bg-destructive/10"
+                                onClick={() => {
+                                  const updated = (tenderParsedData.items || []).filter((_, i) => i !== idx);
+                                  setTenderParsedData({ ...tenderParsedData, items: updated });
+                                }}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="mt-4 gap-2 pt-3 border-t">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsTenderModalOpen(false)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 font-bold"
+              disabled={!tenderParsedData || !tenderParsedData.items || tenderParsedData.items.length === 0}
+              onClick={handleApplyTenderToProject}
+            >
+              <Check className="h-4 w-4" />
+              Aplicar y Vincular al Proyecto
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Auditoría IA de Licitación */}
+      <Dialog open={isAuditModalOpen} onOpenChange={setIsAuditModalOpen}>
+        <DialogContent className="sm:max-w-[700px] w-[95vw] max-h-[85vh] flex flex-col p-6 overflow-hidden">
+          <DialogHeader className="pb-3 border-b">
+            <DialogTitle className="flex items-center gap-2 text-xl font-bold font-headline text-foreground">
+              <Bot className="h-5 w-5 text-emerald-500" />
+              Auditoría y Diagnóstico de Licitación con IA
+            </DialogTitle>
+            <CardDescription>
+              Evaluación inteligente de compras vinculadas, remisiones al cliente y saldos pendientes por suministrar.
+            </CardDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-y-auto space-y-4 py-3 pr-1">
+            {isAuditingTender ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                <Loader2 className="h-10 w-10 text-emerald-500 animate-spin" />
+                <p className="font-bold text-sm text-foreground">Auditando cumplimiento de licitación...</p>
+                <p className="text-xs text-muted-foreground">Analizando facturas de compras, remisiones y márgenes presupuestarios.</p>
+              </div>
+            ) : auditResult ? (
+              <div className="space-y-4 animate-in fade-in duration-300">
+                {/* Score y Estado */}
+                <div className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Estado General</span>
+                    <p className="text-base font-bold text-foreground mt-0.5">{auditResult.overallStatus}</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Cumplimiento Global</span>
+                    <p className="text-2xl font-black text-emerald-600">{auditResult.completionPercentage}%</p>
+                  </div>
+                </div>
+
+                {/* Resumen Ejecutivo */}
+                <div className="p-4 bg-card rounded-xl border shadow-sm space-y-1.5">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
+                    <Info className="h-3.5 w-3.5 text-primary" />
+                    Resumen Ejecutivo
+                  </h4>
+                  <p className="text-xs text-foreground leading-relaxed">{auditResult.executiveSummary}</p>
+                </div>
+
+                {/* Alertas por Renglón */}
+                {auditResult.itemAlerts && auditResult.itemAlerts.length > 0 && (
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                      Diagnóstico por Renglón
+                    </h4>
+                    <div className="space-y-2">
+                      {auditResult.itemAlerts.map((alt, idx) => (
+                        <div
+                          key={idx}
+                          className={cn(
+                            "p-3 rounded-lg border text-xs flex items-start gap-2.5",
+                            alt.status === 'OK' && "bg-emerald-50/40 border-emerald-300 text-emerald-900 dark:text-emerald-200 dark:bg-emerald-950/20",
+                            alt.status === 'PENDIENTE' && "bg-amber-50/40 border-amber-300 text-amber-900 dark:text-amber-200 dark:bg-amber-950/20",
+                            (alt.status === 'CRITICO' || alt.status === 'EXCESO') && "bg-rose-50/40 border-rose-300 text-rose-900 dark:text-rose-200 dark:bg-rose-950/20"
+                          )}
+                        >
+                          <Badge
+                            className={cn(
+                              "text-[9px] font-mono font-bold shrink-0",
+                              alt.status === 'OK' && "bg-emerald-600 text-white",
+                              alt.status === 'PENDIENTE' && "bg-amber-500 text-white",
+                              (alt.status === 'CRITICO' || alt.status === 'EXCESO') && "bg-rose-600 text-white"
+                            )}
+                          >
+                            {alt.code}: {alt.status}
+                          </Badge>
+                          <p className="flex-1 leading-relaxed">{alt.observation}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recomendaciones Accionables */}
+                {auditResult.actionRecommendations && auditResult.actionRecommendations.length > 0 && (
+                  <div className="p-4 bg-primary/5 rounded-xl border border-primary/20 space-y-2">
+                    <h4 className="text-xs font-bold text-primary flex items-center gap-1.5 uppercase tracking-wider">
+                      <Sparkles className="h-3.5 w-3.5" />
+                      Recomendaciones Accionables
+                    </h4>
+                    <ul className="space-y-1.5 text-xs text-foreground">
+                      {auditResult.actionRecommendations.map((rec, idx) => (
+                        <li key={idx} className="flex items-start gap-2">
+                          <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                          <span>{rec}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          <DialogFooter className="mt-3 pt-3 border-t">
+            <Button size="sm" onClick={() => setIsAuditModalOpen(false)}>
+              Entendido
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </AppLayout>
   )
 }

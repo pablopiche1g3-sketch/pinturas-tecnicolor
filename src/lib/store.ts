@@ -29,6 +29,7 @@ export interface ProjectProduct {
   description: string;
   quantity: number;
   unitPrice: number;
+  unit?: string;
 }
 
 export interface ProjectDocument {
@@ -88,6 +89,7 @@ export interface TransactionItem {
   quantity: number;
   unitPrice: number;
   lineTotal: number;
+  matchedProductCode?: string;
 }
 
 export interface Transaction {
