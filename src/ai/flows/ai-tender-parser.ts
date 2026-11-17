@@ -2,29 +2,35 @@
 
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
+import mammoth from 'mammoth';
 
 const TenderProductSchema = z.object({
   code: z.string().describe('Código, número de renglón o ítem (ej. "Renglón 1", "01", "PINT-01").'),
-  description: z.string().describe('Descripción detallada y especificación del producto o pintura licitada.'),
+  description: z.string().describe('Descripción detallada y especificación del producto o pintura solicitada en la orden de compra / licitación.'),
   unit: z.string().optional().describe('Unidad de medida (ej. Cubeta 5 Gal, Galón, Caneca, Litro, Kit, Unidad).'),
-  quantity: z.number().describe('Cantidad requerida o adjudicada.'),
-  unitPrice: z.number().optional().describe('Precio unitario contratado o presupuestado con o sin IVA según el documento.'),
+  quantity: z.number().describe('Cantidad requerida o adjudicada en la orden de compra.'),
+  unitPrice: z.number().optional().describe('Precio unitario contratado o adjudicado según la orden de compra.'),
   lineTotal: z.number().optional().describe('Monto total de este renglón.'),
 });
 
 const AiTenderParserInputSchema = z.object({
-  pdfDataUri: z.string().describe('Data URI del archivo PDF o documento de licitación (data:application/pdf;base64,...).'),
+  pdfDataUri: z.string().describe('Data URI del archivo Word (.docx/.doc) o PDF de la orden de compra / licitación.'),
   documentName: z.string().optional().describe('Nombre del archivo subido.'),
 });
 export type AiTenderParserInput = z.infer<typeof AiTenderParserInputSchema>;
 
 const AiTenderParserOutputSchema = z.object({
-  projectName: z.string().optional().describe('Nombre del proyecto, licitación pública, concurso o libre gestión.'),
-  purchaseOrder: z.string().optional().describe('Número de orden de compra, contrato, código de licitación (ej. LP-01/2026).'),
-  customerName: z.string().optional().describe('Nombre de la institución gubernamental, alcaldía, ministerio o cliente convocante.'),
-  totalBudget: z.number().optional().describe('Monto total presupuestado o adjudicado del proyecto.'),
-  items: z.array(TenderProductSchema).describe('Lista clasificada de productos, pinturas, solventes y suministros de la licitación.'),
-  summary: z.string().optional().describe('Breve resumen explicativo de lo que se extrajo del documento.'),
+  projectName: z.string().optional().describe('Nombre del proyecto, objeto contractual, licitación o suministro según la orden de compra.'),
+  purchaseOrder: z.string().optional().describe('Número de Orden de Compra (OC), contrato o código de proceso (ej. OC-01/2026, LP-01/2026).'),
+  customerName: z.string().optional().describe('Nombre de la institución gubernamental, alcaldía, ministerio o empresa compradora.'),
+  totalBudget: z.number().optional().describe('Monto total de la Orden de Compra o presupuesto adjudicado.'),
+  deliveryDeadline: z.string().optional().describe('Plazo o fecha límite de entrega requerido en la Orden de Compra (ej. "15 días hábiles", "30 de noviembre 2026").'),
+  deliveryAddress: z.string().optional().describe('Lugar, bodega o dirección exacta de entrega estipulada en la Orden de Compra.'),
+  paymentTerms: z.string().optional().describe('Forma o condición de pago (ej. "Crédito 30 días", "Quedan", "Contra entrega").'),
+  warrantyMonths: z.number().optional().describe('Meses de garantía de cumplimiento o buena calidad solicitados (si se indica, ej. 12).'),
+  orderRequirements: z.string().optional().describe('Requisitos especiales de la Orden de Compra: documentos para facturación, horarios de recepción, contacto de bodega, administrador de contrato o condiciones técnicas.'),
+  items: z.array(TenderProductSchema).describe('Lista clasificada de todos los renglones/productos requeridos en la Orden de Compra.'),
+  summary: z.string().optional().describe('Breve resumen explicativo de los requisitos de la orden de compra extraídos del documento.'),
 });
 export type AiTenderParserOutput = z.infer<typeof AiTenderParserOutputSchema>;
 
@@ -35,7 +41,7 @@ export type AiTenderResponse = {
 };
 
 /**
- * Server Action que analiza un documento de licitación en PDF utilizando Gemini multimodal.
+ * Server Action que analiza un documento de Orden de Compra / Licitación en formato Word (.docx/.doc) [Prioridad] o PDF utilizando Gemini.
  */
 export async function aiTenderParser(input: AiTenderParserInput): Promise<AiTenderResponse> {
   try {
@@ -50,51 +56,96 @@ export async function aiTenderParser(input: AiTenderParserInput): Promise<AiTend
     if (!input.pdfDataUri || !input.pdfDataUri.includes('base64,')) {
       return {
         success: false,
-        error: 'El archivo PDF no tiene un formato Data URI Base64 válido.',
+        error: 'El archivo no tiene un formato Base64 válido.',
       };
     }
 
-    // Normalizar data URI para asegurar formato de PDF o imagen
-    let cleanDataUri = input.pdfDataUri;
-    if (cleanDataUri.startsWith('data:application/pdf;filename=')) {
-      cleanDataUri = cleanDataUri.replace(/^data:application\/pdf;filename=[^;]+;base64,/, 'data:application/pdf;base64,');
-    }
+    const fileNameLower = (input.documentName || '').toLowerCase();
+    const isWordDoc =
+      fileNameLower.endsWith('.docx') ||
+      fileNameLower.endsWith('.doc') ||
+      input.pdfDataUri.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document') ||
+      input.pdfDataUri.includes('application/msword');
 
-    const mimeMatch = cleanDataUri.match(/^data:([^;]+);base64,/);
-    const contentType = mimeMatch ? mimeMatch[1] : 'application/pdf';
+    const systemPrompt = `Eres un experto en compras públicas, órdenes de compra (OC), licitaciones institucionales y contratos de suministros de pinturas en El Salvador y Centroamérica.
 
-    const systemPrompt = `Eres un experto en compras públicas, licitaciones institucionales y contratos de suministros de pinturas en El Salvador y Centroamérica.
-
-Tu objetivo es leer minuciosamente el documento adjunto (Bases de Licitación, Orden de Compra, Contrato de Adjudicación o Lista de Requerimientos) y extraer de forma estructurada y clasificada toda la información del proyecto:
-1. Nombre o Título de la Licitación / Proyecto.
-2. Número de Licitación / Orden de Compra / Contrato.
-3. Institución, Ministerio, Alcaldía o Cliente contratante.
-4. Lista completa de TODOS los renglones / productos adjudicados:
+Tu objetivo es leer minuciosamente la Orden de Compra, Bases de Licitación o Contrato adjunto y extraer de forma estructurada todos los requisitos para crear el proyecto automáticamente:
+1. "projectName": Nombre o título del proyecto / suministro según la Orden de Compra (si no tiene nombre explícito, constrúyelo con el suministro principal y la institución).
+2. "purchaseOrder": Número exacto de la Orden de Compra (OC), Contrato o Licitación.
+3. "customerName": Nombre oficial de la institución, alcaldía, ministerio o empresa cliente que emite la Orden de Compra.
+4. "totalBudget": Monto total de la Orden de Compra ($).
+5. Requisitos operativos de la Orden de Compra:
+   - "deliveryDeadline": Plazo o tiempo de entrega requerido (ej. "15 días hábiles después de recibir la OC").
+   - "deliveryAddress": Lugar o bodega de recepción donde se debe entregar el producto.
+   - "paymentTerms": Condiciones de pago o trámite de Quedan.
+   - "warrantyMonths": Meses de garantía requeridos (en número, ej. 12).
+   - "orderRequirements": Cualquier otro requisito clave de la Orden de Compra (administrador de la orden de compra, teléfono/correo de contacto, requisitos de facturación, muestras, certificados de calidad, etc.).
+6. "items": Lista completa de TODOS los renglones / productos solicitados en la Orden de Compra:
    - "code": Código oficial, número de renglón o ítem (ej. "Renglón 1", "001", "Ítem 3"). Si no trae código específico, usa "Renglón 1", "Renglón 2", etc.
-   - "description": Nombre y especificación técnica clara (incluye color, tipo de pintura como látex, esmalte, anticorrosivo, tráfico, etc.).
-   - "unit": Unidad de medida identificada (ej. "Cubeta 5 Gal", "Galón", "Kit", "Litro", etc.).
-   - "quantity": Cantidad exacta solicitada o contratada (número).
-   - "unitPrice": Precio unitario presupuestado o adjudicado si está disponible.
-   - "lineTotal": Total del renglón si está disponible.
-5. Monto total adjudicado o presupuestado si está indicado.
-6. Un breve resumen explicativo del resultado del análisis.
+   - "description": Nombre y especificación técnica clara (incluye color, acabado, tipo de pintura como látex, esmalte, anticorrosivo, tráfico, marca o norma si se especifica).
+   - "unit": Unidad de medida (ej. "Cubeta 5 Gal", "Galón", "Kit", "Litro", "Unidad").
+   - "quantity": Cantidad exacta solicitada en la OC (número).
+   - "unitPrice": Precio unitario adjudicado en la OC.
+   - "lineTotal": Monto total del renglón.
+7. "summary": Breve resumen ejecutivo de la Orden de Compra y sus requisitos principales.
 
-Si el documento contiene tablas con múltiples páginas, revisa todas las páginas para no omitir ningún renglón.
-Devuelve los datos estrictamente estructurados conforme al esquema.`;
+Revisa todas las tablas y cláusulas del documento para no omitir ningún renglón ni requisito de la Orden de Compra.`;
+
+    let promptPayload: any[];
+
+    if (isWordDoc) {
+      const base64Data = input.pdfDataUri.split('base64,')[1];
+      const buffer = Buffer.from(base64Data, 'base64');
+
+      let extractedContent = '';
+      try {
+        // Extraemos tanto HTML (para conservar estructura de tablas de los renglones) como texto plano
+        const htmlResult = await mammoth.convertToHtml({ buffer });
+        const rawTextResult = await mammoth.extractRawText({ buffer });
+        extractedContent = `--- CONTENIDO ESTRUCTURADO (TABLAS Y TEXTO DEL WORD) ---\n${htmlResult.value}\n\n--- TEXTO PLANO DEL DOCUMENTO WORD ---\n${rawTextResult.value}`;
+      } catch (wordErr: any) {
+        // Fallback para archivos .doc antiguos: extraer cadenas legibles del buffer
+        const fallbackText = buffer
+          .toString('utf8')
+          .replace(/[^\x20-\x7E\xA0-\xFF\n\r\t]/g, ' ')
+          .replace(/\s+/g, ' ');
+        extractedContent = `--- TEXTO EXTRAÍDO DEL DOCUMENTO WORD (${input.documentName || 'OC.doc'}) ---\n${fallbackText}`;
+      }
+
+      promptPayload = [
+        {
+          text: `${systemPrompt}\n\nA continuación se presenta el contenido íntegro extraído del archivo Word (${input.documentName || 'Orden_de_Compra.docx'}):\n\n${extractedContent}`,
+        },
+      ];
+    } else {
+      // Documento PDF o Imagen
+      let cleanDataUri = input.pdfDataUri;
+      if (cleanDataUri.startsWith('data:application/pdf;filename=')) {
+        cleanDataUri = cleanDataUri.replace(
+          /^data:application\/pdf;filename=[^;]+;base64,/,
+          'data:application/pdf;base64,'
+        );
+      }
+
+      const mimeMatch = cleanDataUri.match(/^data:([^;]+);base64,/);
+      const contentType = mimeMatch ? mimeMatch[1] : 'application/pdf';
+
+      promptPayload = [
+        { text: systemPrompt },
+        { media: { url: cleanDataUri, contentType } },
+      ];
+    }
 
     const result = await ai.generate({
       model: 'googleai/gemini-2.5-flash',
-      prompt: [
-        { text: systemPrompt },
-        { media: { url: cleanDataUri, contentType } },
-      ],
+      prompt: promptPayload,
       output: { schema: AiTenderParserOutputSchema },
     });
 
     if (!result.output) {
       return {
         success: false,
-        error: 'La IA no pudo estructurar los datos del documento de licitación. Verifique que sea un documento legible.',
+        error: 'La IA no pudo estructurar los datos del documento. Verifique que el archivo Word o PDF contenga la Orden de Compra o Licitación legible.',
       };
     }
 
@@ -103,10 +154,10 @@ Devuelve los datos estrictamente estructurados conforme al esquema.`;
       data: result.output,
     };
   } catch (error: any) {
-    console.error('Error al procesar licitación con IA:', error);
+    console.error('Error al procesar documento de OC/licitación con IA:', error);
     return {
       success: false,
-      error: error.message || 'Error inesperado al conectar con el motor de IA de lectura de licitaciones.',
+      error: error.message || 'Error inesperado al conectar con el motor de IA para leer la Orden de Compra.',
     };
   }
 }

@@ -42,7 +42,7 @@ import { jsPDF } from "jspdf"
 
 export default function InstitutionalModule() {
   const { 
-    entities, projects, transactions, addProject, updateProject, deleteProject, mergeProjects,
+    entities, projects, transactions, addEntity, addProject, updateProject, deleteProject, mergeProjects,
     addTransaction, updateTransaction, voidTransaction, deleteTransaction, addToInventory, addDocumentToProject, deleteDocumentFromProject 
   } = useLedgerStore()
   const db = useFirestore()
@@ -71,7 +71,11 @@ export default function InstitutionalModule() {
     targetSaleAmount: 0,
     customerId: '',
     warrantyStartDate: '',
-    warrantyMonths: 0
+    warrantyMonths: 0,
+    deliveryDeadline: '',
+    deliveryAddress: '',
+    paymentTerms: '',
+    orderRequirements: ''
   })
   const [newProjectProducts, setNewProjectProducts] = React.useState<ProjectProduct[]>([])
   const [tempProduct, setTempProduct] = React.useState<ProjectProduct>({
@@ -267,6 +271,10 @@ export default function InstitutionalModule() {
         expectedProducts: newProjectProducts,
         warrantyStartDate: newProject.warrantyStartDate || null,
         warrantyMonths: newProject.warrantyMonths || null,
+        deliveryDeadline: newProject.deliveryDeadline || null,
+        deliveryAddress: newProject.deliveryAddress || null,
+        paymentTerms: newProject.paymentTerms || null,
+        orderRequirements: newProject.orderRequirements || null,
       })
       toast({ title: "Proyecto Actualizado", description: "Cambios guardados exitosamente." })
     } else {
@@ -280,11 +288,15 @@ export default function InstitutionalModule() {
         status: 'active',
         warrantyStartDate: newProject.warrantyStartDate || null,
         warrantyMonths: newProject.warrantyMonths || null,
+        deliveryDeadline: newProject.deliveryDeadline || null,
+        deliveryAddress: newProject.deliveryAddress || null,
+        paymentTerms: newProject.paymentTerms || null,
+        orderRequirements: newProject.orderRequirements || null,
       })
       toast({ title: "Proyecto Creado", description: "El proyecto se ha registrado exitosamente." })
     }
 
-    setNewProject({ name: '', purchaseOrder: '', targetSaleAmount: 0, customerId: '', warrantyStartDate: '', warrantyMonths: 0 })
+    setNewProject({ name: '', purchaseOrder: '', targetSaleAmount: 0, customerId: '', warrantyStartDate: '', warrantyMonths: 0, deliveryDeadline: '', deliveryAddress: '', paymentTerms: '', orderRequirements: '' })
     setNewProjectProducts([])
     setEditingProject(null)
     setIsProjectDialogOpen(false)
@@ -299,7 +311,11 @@ export default function InstitutionalModule() {
       targetSaleAmount: project.targetSaleAmount,
       customerId: project.customerId,
       warrantyStartDate: project.warrantyStartDate || '',
-      warrantyMonths: project.warrantyMonths || 0
+      warrantyMonths: project.warrantyMonths || 0,
+      deliveryDeadline: project.deliveryDeadline || '',
+      deliveryAddress: project.deliveryAddress || '',
+      paymentTerms: project.paymentTerms || '',
+      orderRequirements: project.orderRequirements || '',
     })
     setNewProjectProducts(project.expectedProducts)
     setIsProjectDialogOpen(true)
@@ -400,8 +416,13 @@ export default function InstitutionalModule() {
     const file = e.target.files?.[0]
     if (!file || !editingProject) return
 
-    if (!file.type.startsWith('image/') && file.type !== 'application/pdf') {
-      toast({ title: "Formato no válido", description: "Solo se permiten imágenes y archivos PDF.", variant: "destructive" })
+    const fileNameLower = file.name.toLowerCase();
+    const isWordDoc = fileNameLower.endsWith('.docx') || fileNameLower.endsWith('.doc') ||
+      file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      file.type === 'application/msword';
+
+    if (!file.type.startsWith('image/') && file.type !== 'application/pdf' && !isWordDoc) {
+      toast({ title: "Formato no válido", description: "Solo se permiten documentos Word (.docx/.doc), PDF e imágenes.", variant: "destructive" })
       return
     }
 
@@ -410,6 +431,9 @@ export default function InstitutionalModule() {
     try {
       let finalDataUrl = "";
       let finalName = file.name;
+      let finalMimeType = isWordDoc
+        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        : 'application/pdf';
 
       if (file.type.startsWith('image/')) {
         // Comprimir y convertir a PDF
@@ -461,7 +485,7 @@ export default function InstitutionalModule() {
         pdf.addImage(compressedDataUrl, "JPEG", 0, 0, width, height);
         finalDataUrl = pdf.output("datauristring");
       } else {
-        // Es un PDF, leerlo tal cual
+        // Es un Word o PDF, leerlo tal cual
         finalDataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (e) => resolve(e.target?.result as string);
@@ -478,7 +502,7 @@ export default function InstitutionalModule() {
       // Guardar en Firestore con la URL (NO el base64 gigante)
       addDocumentToProject(db, editingProject.id, {
         name: finalName,
-        type: 'application/pdf',
+        type: finalMimeType,
         size: file.size, 
         data: downloadURL
       })
@@ -718,13 +742,23 @@ export default function InstitutionalModule() {
     }
   };
 
-  // Licitación PDF con IA - Handlers
+  // Licitación / Orden de Compra (Word o PDF) con IA - Handlers
   const handleTenderPdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
 
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      toast({ title: 'Formato no válido', description: 'Por favor suba un archivo en formato PDF.', variant: 'destructive' })
+    const fileNameLower = file.name.toLowerCase()
+    const isWord = fileNameLower.endsWith('.docx') || fileNameLower.endsWith('.doc') ||
+      file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      file.type === 'application/msword'
+    const isPdf = file.type === 'application/pdf' || fileNameLower.endsWith('.pdf')
+
+    if (!isWord && !isPdf) {
+      toast({
+        title: 'Formato no válido',
+        description: 'Por favor suba un archivo en formato Word (.docx / .doc) [Recomendado] o PDF.',
+        variant: 'destructive',
+      })
       return
     }
 
@@ -745,19 +779,19 @@ export default function InstitutionalModule() {
       })
 
       if (!resp.success || !resp.data) {
-        throw new Error(resp.error || 'No se pudieron extraer los datos de la licitación.')
+        throw new Error(resp.error || 'No se pudieron extraer los datos de la Orden de Compra.')
       }
 
       setTenderParsedData(resp.data)
       toast({
-        title: 'Licitación Clasificada por IA',
-        description: `Se detectaron ${resp.data.items?.length || 0} renglones de producto en el documento.`,
+        title: isWord ? 'Orden de Compra (Word) Clasificada por IA' : 'Orden de Compra (PDF) Clasificada por IA',
+        description: `Se detectaron ${resp.data.items?.length || 0} renglones y los requisitos de la orden de compra.`,
       })
     } catch (err: any) {
-      console.error('Error analizando licitación:', err)
+      console.error('Error analizando licitación/OC:', err)
       toast({
         title: 'Error de Análisis con IA',
-        description: err.message || 'No se pudo leer el PDF de la licitación.',
+        description: err.message || 'No se pudo leer el archivo Word o PDF de la Orden de Compra.',
         variant: 'destructive',
       })
     } finally {
@@ -777,32 +811,96 @@ export default function InstitutionalModule() {
       unit: it.unit || 'Unidad',
     }))
 
+    const calculatedBudget = tenderParsedData.totalBudget || tenderItems.reduce((acc, it) => acc + (it.quantity * it.unitPrice), 0)
+
     if (tenderTargetProjectId === 'new' || !tenderTargetProjectId) {
       let matchedCustId = ''
+      let matchedCustName = tenderParsedData.customerName?.trim() || 'Institución / Cliente OC'
+
       if (tenderParsedData.customerName) {
         const cust = entities.find(e => e.type === 'customer' && 
           (cleanStringLower(e.name).includes(cleanStringLower(tenderParsedData.customerName)) ||
            cleanStringLower(tenderParsedData.customerName).includes(cleanStringLower(e.name)))
         )
-        if (cust) matchedCustId = cust.id
+        if (cust) {
+          matchedCustId = cust.id
+          matchedCustName = cust.name
+        } else {
+          // Crear automáticamente el cliente si no existe en el directorio
+          try {
+            matchedCustId = await addEntity(db, {
+              name: matchedCustName,
+              type: 'customer',
+              isGranContribuyente: true,
+            })
+          } catch (e) {
+            console.warn('No se pudo crear entidad cliente automáticamente:', e)
+          }
+        }
       }
 
-      setNewProject({
-        name: tenderParsedData.projectName || `Licitación ${tenderParsedData.purchaseOrder || ''}`.trim(),
-        purchaseOrder: tenderParsedData.purchaseOrder || 'LP-2026',
-        targetSaleAmount: tenderParsedData.totalBudget || tenderItems.reduce((acc, it) => acc + (it.quantity * it.unitPrice), 0),
-        customerId: matchedCustId || (entities.find(e => e.type === 'customer')?.id || ''),
-        warrantyStartDate: new Date().toISOString().split('T')[0],
-        warrantyMonths: 12,
-      })
-      setNewProjectProducts(tenderItems)
-      setEditingProject(null)
-      setIsProjectDialogOpen(true)
-      setIsTenderModalOpen(false)
-      toast({
-        title: 'Datos aplicados al formulario',
-        description: 'Verifique los detalles del proyecto y haga clic en Guardar Proyecto.',
-      })
+      if (!matchedCustId) {
+        const fallbackCust = entities.find(e => e.type === 'customer')
+        if (fallbackCust) {
+          matchedCustId = fallbackCust.id
+          matchedCustName = fallbackCust.name
+        }
+      }
+
+      const projectTitle = tenderParsedData.projectName || `Orden de Compra ${tenderParsedData.purchaseOrder || ''}`.trim() || 'Nuevo Proyecto OC'
+      const poNumber = tenderParsedData.purchaseOrder || `OC-${new Date().getFullYear()}`
+
+      try {
+        const createdProjectId = await addProject(db, {
+          name: projectTitle,
+          purchaseOrder: poNumber,
+          targetSaleAmount: calculatedBudget,
+          customerId: matchedCustId || 'institucional',
+          customerName: matchedCustName,
+          expectedProducts: tenderItems,
+          status: 'active',
+          warrantyStartDate: new Date().toISOString().split('T')[0],
+          warrantyMonths: tenderParsedData.warrantyMonths || 12,
+          deliveryDeadline: tenderParsedData.deliveryDeadline || null,
+          deliveryAddress: tenderParsedData.deliveryAddress || null,
+          paymentTerms: tenderParsedData.paymentTerms || null,
+          orderRequirements: tenderParsedData.orderRequirements || tenderParsedData.summary || null,
+        })
+
+        if (tenderFile && storage && createdProjectId) {
+          try {
+            const finalName = tenderFile.name || `Orden_Compra_${Date.now()}.docx`
+            const isWordFile = finalName.toLowerCase().endsWith('.docx') || finalName.toLowerCase().endsWith('.doc')
+            const storageRef = ref(storage, `projects/${createdProjectId}/documents/${Date.now()}_${finalName}`)
+            await uploadString(storageRef, tenderFile.dataUri, 'data_url')
+            const downloadURL = await getDownloadURL(storageRef)
+            addDocumentToProject(db, createdProjectId, {
+              name: finalName,
+              type: isWordFile ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf',
+              size: tenderFile.size,
+              data: downloadURL,
+            })
+          } catch (stErr) {
+            console.warn('No se pudo subir documento al proyecto recién creado:', stErr)
+          }
+        }
+
+        if (createdProjectId) {
+          setSelectedProjectId(createdProjectId)
+        }
+        setIsTenderModalOpen(false)
+        toast({
+          title: 'Proyecto Creado desde Orden de Compra',
+          description: `Se creó "${projectTitle}" (${poNumber}) con ${tenderItems.length} renglones y sus requisitos.`,
+        })
+      } catch (err: any) {
+        console.error('Error creando proyecto desde OC:', err)
+        toast({
+          title: 'Error al crear proyecto',
+          description: err.message || 'No se pudo guardar el proyecto.',
+          variant: 'destructive',
+        })
+      }
     } else {
       const targetProj = projects.find(p => p.id === tenderTargetProjectId)
       if (!targetProj) return
@@ -820,30 +918,35 @@ export default function InstitutionalModule() {
       updateProject(db, targetProj.id, {
         expectedProducts: updatedProducts,
         targetSaleAmount: tenderParsedData.totalBudget || targetProj.targetSaleAmount,
+        deliveryDeadline: tenderParsedData.deliveryDeadline || targetProj.deliveryDeadline || null,
+        deliveryAddress: tenderParsedData.deliveryAddress || targetProj.deliveryAddress || null,
+        paymentTerms: tenderParsedData.paymentTerms || targetProj.paymentTerms || null,
+        orderRequirements: tenderParsedData.orderRequirements || targetProj.orderRequirements || null,
       })
 
       if (tenderFile && storage) {
         try {
-          const finalName = tenderFile.name || `Licitacion_${Date.now()}.pdf`
+          const finalName = tenderFile.name || `Orden_Compra_${Date.now()}.docx`
+          const isWordFile = finalName.toLowerCase().endsWith('.docx') || finalName.toLowerCase().endsWith('.doc')
           const storageRef = ref(storage, `projects/${targetProj.id}/documents/${Date.now()}_${finalName}`)
           await uploadString(storageRef, tenderFile.dataUri, 'data_url')
           const downloadURL = await getDownloadURL(storageRef)
           addDocumentToProject(db, targetProj.id, {
             name: finalName,
-            type: 'application/pdf',
+            type: isWordFile ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf',
             size: tenderFile.size,
             data: downloadURL,
           })
         } catch (stErr) {
-          console.warn('No se pudo subir PDF a Storage:', stErr)
+          console.warn('No se pudo subir documento a Storage:', stErr)
         }
       }
 
       setSelectedProjectId(targetProj.id)
       setIsTenderModalOpen(false)
       toast({
-        title: 'Licitación vinculada al proyecto',
-        description: `Se actualizaron ${updatedProducts.length} productos en ${targetProj.name}.`,
+        title: 'Orden de Compra vinculada al proyecto',
+        description: `Se actualizaron ${updatedProducts.length} renglones y requisitos en ${targetProj.name}.`,
       })
     }
   }
@@ -1503,7 +1606,7 @@ export default function InstitutionalModule() {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <Button 
-                  className="gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-sm font-bold text-xs h-9 w-full sm:w-auto"
+                  className="gap-2 bg-gradient-to-r from-blue-600 to-emerald-600 hover:from-blue-700 hover:to-emerald-700 text-white shadow-sm font-bold text-xs h-9 w-full sm:w-auto"
                   onClick={() => {
                     setTenderParsedData(null);
                     setTenderFile(null);
@@ -1511,13 +1614,13 @@ export default function InstitutionalModule() {
                     setIsTenderModalOpen(true);
                   }}
                 >
-                  <Sparkles className="h-4 w-4" /> Cargar Licitación (PDF con IA)
+                  <Sparkles className="h-4 w-4" /> Cargar Orden de Compra (Word / PDF con IA)
                 </Button>
                 <Dialog open={isProjectDialogOpen} onOpenChange={(open) => {
                 setIsProjectDialogOpen(open)
                 if (!open) {
                   setEditingProject(null)
-                  setNewProject({ name: '', purchaseOrder: '', targetSaleAmount: 0, customerId: '', warrantyStartDate: '', warrantyMonths: 0 })
+                  setNewProject({ name: '', purchaseOrder: '', targetSaleAmount: 0, customerId: '', warrantyStartDate: '', warrantyMonths: 0, deliveryDeadline: '', deliveryAddress: '', paymentTerms: '', orderRequirements: '' })
                   setNewProjectProducts([])
                 }
               }}>
@@ -1536,7 +1639,7 @@ export default function InstitutionalModule() {
                     <TabsList className="grid w-full grid-cols-3 mb-4">
                       <TabsTrigger value="general" className="text-xs">General</TabsTrigger>
                       <TabsTrigger value="history" className="text-xs">Historial DTE</TabsTrigger>
-                      <TabsTrigger value="documents" className="text-xs">Docs (PDF)</TabsTrigger>
+                      <TabsTrigger value="documents" className="text-xs">Docs (Word / PDF)</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="general" className="space-y-6">
@@ -1566,7 +1669,7 @@ export default function InstitutionalModule() {
                           </div>
                           
                           <div className="pt-4 border-t space-y-4">
-                            <h4 className="font-bold text-xs uppercase text-muted-foreground">Garantía del Proyecto</h4>
+                            <h4 className="font-bold text-xs uppercase text-muted-foreground">Garantía y Requisitos de la OC</h4>
                             <div className="grid grid-cols-2 gap-4">
                               <div className="space-y-2">
                                 <Label>Inicio de Garantía</Label>
@@ -1576,6 +1679,22 @@ export default function InstitutionalModule() {
                                 <Label>Duración (Meses)</Label>
                                 <Input type="number" placeholder="Ej. 12" value={newProject.warrantyMonths || ''} onChange={e => setNewProject({...newProject, warrantyMonths: Number(e.target.value)})} />
                               </div>
+                              <div className="space-y-2">
+                                <Label className="text-xs">Plazo de Entrega OC</Label>
+                                <Input className="h-8 text-xs" placeholder="Ej. 15 días hábiles" value={newProject.deliveryDeadline || ''} onChange={e => setNewProject({...newProject, deliveryDeadline: e.target.value})} />
+                              </div>
+                              <div className="space-y-2">
+                                <Label className="text-xs">Condición de Pago</Label>
+                                <Input className="h-8 text-xs" placeholder="Ej. Crédito 30 días" value={newProject.paymentTerms || ''} onChange={e => setNewProject({...newProject, paymentTerms: e.target.value})} />
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs">Lugar / Bodega de Entrega</Label>
+                              <Input className="h-8 text-xs" placeholder="Dirección o bodega según Orden de Compra" value={newProject.deliveryAddress || ''} onChange={e => setNewProject({...newProject, deliveryAddress: e.target.value})} />
+                            </div>
+                            <div className="space-y-2">
+                              <Label className="text-xs">Requisitos Especiales de la Orden de Compra</Label>
+                              <Input className="h-8 text-xs" placeholder="Contacto administrador, requisitos de facturación, etc." value={newProject.orderRequirements || ''} onChange={e => setNewProject({...newProject, orderRequirements: e.target.value})} />
                             </div>
                           </div>
                         </div>
@@ -1588,7 +1707,7 @@ export default function InstitutionalModule() {
                                 variant="outline" 
                                 size="sm" 
                                 type="button"
-                                className="h-7 text-[10px] px-2 gap-1 text-emerald-600 border-emerald-600/30 hover:bg-emerald-600/10 shrink-0 font-bold" 
+                                className="h-7 text-[10px] px-2 gap-1 text-blue-600 border-blue-600/30 hover:bg-blue-600/10 shrink-0 font-bold" 
                                 onClick={(e) => {
                                   e.preventDefault();
                                   setTenderParsedData(null);
@@ -1596,9 +1715,9 @@ export default function InstitutionalModule() {
                                   setTenderTargetProjectId(editingProject ? editingProject.id : 'new');
                                   setIsTenderModalOpen(true);
                                 }}
-                                title="Extraer y clasificar productos desde PDF de Licitación con IA"
+                                title="Extraer y clasificar productos desde Word o PDF de Orden de Compra con IA"
                               >
-                                <Sparkles className="h-3 w-3 text-emerald-500" /> PDF IA
+                                <Sparkles className="h-3 w-3 text-blue-500" /> Word / PDF IA
                               </Button>
                               <Button 
                                 variant="outline" 
@@ -1762,7 +1881,7 @@ export default function InstitutionalModule() {
 
                     <TabsContent value="documents" className="space-y-4">
                       <div className="flex items-center justify-between">
-                        <h4 className="text-sm font-bold text-foreground">Archivos Adjuntos</h4>
+                        <h4 className="text-sm font-bold text-foreground">Archivos Adjuntos (Word / PDF)</h4>
                         <Button 
                           size="sm" 
                           variant="outline" 
@@ -1771,9 +1890,9 @@ export default function InstitutionalModule() {
                           onClick={() => docInputRef.current?.click()}
                         >
                           {isUploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
-                          Subir PDF
+                          Subir Word / PDF
                         </Button>
-                        <input type="file" ref={docInputRef} className="hidden" accept=".pdf,image/*" onChange={handleDocUpload} />
+                        <input type="file" ref={docInputRef} className="hidden" accept=".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,.pdf,application/pdf,image/*" onChange={handleDocUpload} />
                       </div>
 
                       <ScrollArea className="h-[300px] rounded-lg border bg-muted/30 p-4">
@@ -2114,10 +2233,15 @@ export default function InstitutionalModule() {
                                   </div>
                                 ))}
                                 {p.documents.length > 0 && (
-                                  <div className="flex items-center gap-1 pt-2">
+                                  <div className="flex flex-wrap items-center gap-1 pt-2">
                                     <Badge variant="secondary" className="text-[8px] gap-1 px-1.5 h-4">
                                       <FileText className="h-2 w-2" /> {p.documents.length} Docs
                                     </Badge>
+                                    {p.deliveryDeadline && (
+                                      <Badge variant="outline" className="text-[8px] px-1.5 h-4 border-blue-500/40 text-blue-500 truncate max-w-[140px]">
+                                        Plazo: {p.deliveryDeadline}
+                                      </Badge>
+                                    )}
                                   </div>
                                 )}
                               </div>
@@ -3752,16 +3876,16 @@ export default function InstitutionalModule() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal: Importar Licitación desde PDF con IA */}
+      {/* Modal: Importar Orden de Compra / Licitación desde Word o PDF con IA */}
       <Dialog open={isTenderModalOpen} onOpenChange={setIsTenderModalOpen}>
-        <DialogContent className="sm:max-w-[850px] w-[95vw] max-h-[90vh] flex flex-col p-6 overflow-hidden">
+        <DialogContent className="sm:max-w-[900px] w-[95vw] max-h-[92vh] flex flex-col p-6 overflow-hidden">
           <DialogHeader className="pb-3 border-b">
             <DialogTitle className="flex items-center gap-2 text-xl font-bold font-headline text-foreground">
-              <Sparkles className="h-5 w-5 text-emerald-500" />
-              Cargar Licitación / Proyecto desde PDF con IA
+              <Sparkles className="h-5 w-5 text-blue-500" />
+              Cargar Orden de Compra / Licitación (Word Prioritario o PDF) con IA
             </DialogTitle>
             <CardDescription>
-              Gemini analizará el documento de licitación, extraerá la orden de compra, cliente y clasificará todos los renglones de producto automáticamente.
+              Suba el archivo <strong>Word (.docx / .doc) [Prioridad Recomendada]</strong> o PDF de la Orden de Compra. Gemini extraerá los requisitos, plazos, institución y renglones para crear el proyecto automáticamente.
             </CardDescription>
           </DialogHeader>
 
@@ -3770,7 +3894,7 @@ export default function InstitutionalModule() {
             <div
               className={cn(
                 "border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all",
-                tenderFile ? "bg-emerald-50/20 border-emerald-500/40" : "hover:border-primary/50 bg-muted/20"
+                tenderFile ? "bg-blue-50/20 border-blue-500/40" : "hover:border-blue-500/50 bg-muted/20"
               )}
               onClick={() => tenderFileInputRef.current?.click()}
             >
@@ -3778,26 +3902,36 @@ export default function InstitutionalModule() {
                 type="file"
                 ref={tenderFileInputRef}
                 className="hidden"
-                accept=".pdf,application/pdf"
+                accept=".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,.pdf,application/pdf"
                 onChange={handleTenderPdfUpload}
               />
               {isAnalyzingTender ? (
                 <div className="flex flex-col items-center gap-3 py-4 text-center">
-                  <Loader2 className="h-10 w-10 text-emerald-500 animate-spin" />
+                  <Loader2 className="h-10 w-10 text-blue-500 animate-spin" />
                   <div>
-                    <p className="font-bold text-sm text-foreground">Interpretando Documento de Licitación...</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Gemini está clasificando renglones, presentaciones, cantidades y precios.</p>
+                    <p className="font-bold text-sm text-foreground">Analizando Requisitos de la Orden de Compra...</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Gemini está extrayendo renglones, plazos de entrega, condiciones y precios del documento.</p>
                   </div>
                 </div>
               ) : tenderFile ? (
                 <div className="flex items-center justify-between w-full">
                   <div className="flex items-center gap-3 overflow-hidden">
-                    <div className="h-10 w-10 rounded-lg bg-red-100 dark:bg-red-950/40 flex items-center justify-center shrink-0">
-                      <FileText className="h-5 w-5 text-red-600" />
+                    <div className={cn(
+                      "h-10 w-10 rounded-lg flex items-center justify-center shrink-0",
+                      tenderFile.name.toLowerCase().endsWith('.doc') || tenderFile.name.toLowerCase().endsWith('.docx')
+                        ? "bg-blue-100 dark:bg-blue-950/40 text-blue-600"
+                        : "bg-red-100 dark:bg-red-950/40 text-red-600"
+                    )}>
+                      <FileText className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
-                      <p className="font-bold text-xs text-foreground truncate">{tenderFile.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{(tenderFile.size / 1024).toFixed(1)} KB • Documento cargado</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-bold text-xs text-foreground truncate">{tenderFile.name}</p>
+                        <Badge variant="outline" className="text-[9px] font-bold">
+                          {tenderFile.name.toLowerCase().endsWith('.doc') || tenderFile.name.toLowerCase().endsWith('.docx') ? 'WORD (Prioritario)' : 'PDF'}
+                        </Badge>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground">{(tenderFile.size / 1024).toFixed(1)} KB • Documento listo</p>
                     </div>
                   </div>
                   <Button
@@ -3810,17 +3944,26 @@ export default function InstitutionalModule() {
                       tenderFileInputRef.current?.click();
                     }}
                   >
-                    <Upload className="h-3 w-3" /> Cambiar PDF
+                    <Upload className="h-3 w-3" /> Cambiar Archivo
                   </Button>
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-2 py-4 text-center">
-                  <div className="h-12 w-12 rounded-full bg-emerald-100 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600">
-                    <Upload className="h-6 w-6" />
+                  <div className="flex items-center gap-2">
+                    <div className="h-12 w-12 rounded-full bg-blue-100 dark:bg-blue-950/40 flex items-center justify-center text-blue-600 shadow-sm">
+                      <FileText className="h-6 w-6" />
+                    </div>
+                    <div className="h-10 w-10 rounded-full bg-emerald-100 dark:bg-emerald-950/40 flex items-center justify-center text-emerald-600">
+                      <Upload className="h-5 w-5" />
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-bold text-sm text-foreground">Haga clic o arrastre el PDF de la Licitación</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Bases de licitación, Orden de Compra, Contrato o Lista de Requerimientos</p>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-center gap-1.5">
+                      <Badge className="bg-blue-600 hover:bg-blue-700 text-white text-[10px] px-2 py-0">PRIORIDAD: WORD (.DOCX / .DOC)</Badge>
+                      <Badge variant="outline" className="text-[10px] px-2 py-0">También acepta .PDF</Badge>
+                    </div>
+                    <p className="font-bold text-sm text-foreground pt-1">Haga clic para seleccionar el archivo Word o PDF de la Orden de Compra</p>
+                    <p className="text-xs text-muted-foreground">Se creará el proyecto automáticamente de acuerdo a los requisitos y renglones de la OC</p>
                   </div>
                 </div>
               )}
@@ -3830,8 +3973,8 @@ export default function InstitutionalModule() {
             {tenderParsedData && (
               <div className="space-y-4 animate-in fade-in duration-300">
                 {tenderParsedData.summary && (
-                  <div className="p-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg text-xs flex items-start gap-2">
-                    <Sparkles className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                  <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg text-xs flex items-start gap-2">
+                    <Sparkles className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
                     <p className="text-foreground leading-relaxed">{tenderParsedData.summary}</p>
                   </div>
                 )}
@@ -3839,25 +3982,25 @@ export default function InstitutionalModule() {
                 {/* Datos generales extraídos */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-muted/30 p-3 rounded-lg border">
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-bold">Proyecto / Licitación</Label>
+                    <Label className="text-[11px] font-bold">Nombre del Proyecto / Suministro</Label>
                     <Input
                       value={tenderParsedData.projectName || ''}
                       onChange={(e) => setTenderParsedData({ ...tenderParsedData, projectName: e.target.value })}
                       className="h-8 text-xs"
-                      placeholder="Nombre del proyecto"
+                      placeholder="Nombre según Orden de Compra"
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-bold">No. Licitación / OC</Label>
+                    <Label className="text-[11px] font-bold">No. Orden de Compra (OC)</Label>
                     <Input
                       value={tenderParsedData.purchaseOrder || ''}
                       onChange={(e) => setTenderParsedData({ ...tenderParsedData, purchaseOrder: e.target.value })}
                       className="h-8 text-xs font-mono font-bold"
-                      placeholder="Ej: LP-01/2026"
+                      placeholder="Ej: OC-01/2026"
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-bold">Cliente / Institución</Label>
+                    <Label className="text-[11px] font-bold">Cliente / Institución Compradora</Label>
                     <Input
                       value={tenderParsedData.customerName || ''}
                       onChange={(e) => setTenderParsedData({ ...tenderParsedData, customerName: e.target.value })}
@@ -3866,7 +4009,7 @@ export default function InstitutionalModule() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-bold">Presupuesto / Total ($)</Label>
+                    <Label className="text-[11px] font-bold">Monto Total OC ($)</Label>
                     <Input
                       type="number"
                       value={tenderParsedData.totalBudget || ''}
@@ -3877,20 +4020,66 @@ export default function InstitutionalModule() {
                   </div>
                 </div>
 
-                {/* Destino de la Licitación */}
+                {/* Requisitos de la Orden de Compra */}
+                <div className="bg-blue-950/15 border border-blue-500/25 p-3 rounded-lg space-y-2.5">
+                  <Label className="text-xs font-bold flex items-center gap-1.5 text-blue-400">
+                    <FileSearch className="h-3.5 w-3.5" />
+                    Requisitos Extraídos de la Orden de Compra
+                  </Label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-muted-foreground font-semibold">Plazo / Fecha de Entrega</Label>
+                      <Input
+                        value={tenderParsedData.deliveryDeadline || ''}
+                        onChange={(e) => setTenderParsedData({ ...tenderParsedData, deliveryDeadline: e.target.value })}
+                        className="h-7 text-xs"
+                        placeholder="Ej: 15 días hábiles"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-muted-foreground font-semibold">Lugar / Bodega de Entrega</Label>
+                      <Input
+                        value={tenderParsedData.deliveryAddress || ''}
+                        onChange={(e) => setTenderParsedData({ ...tenderParsedData, deliveryAddress: e.target.value })}
+                        className="h-7 text-xs"
+                        placeholder="Bodega institucional o dirección"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[10px] text-muted-foreground font-semibold">Condiciones de Pago / Garantía</Label>
+                      <Input
+                        value={tenderParsedData.paymentTerms || ''}
+                        onChange={(e) => setTenderParsedData({ ...tenderParsedData, paymentTerms: e.target.value })}
+                        className="h-7 text-xs"
+                        placeholder="Ej: Crédito 30 días / Quedan"
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-[10px] text-muted-foreground font-semibold">Requisitos Especiales / Administrador de OC / Notas</Label>
+                    <Input
+                      value={tenderParsedData.orderRequirements || ''}
+                      onChange={(e) => setTenderParsedData({ ...tenderParsedData, orderRequirements: e.target.value })}
+                      className="h-7 text-xs"
+                      placeholder="Documentos requeridos al entregar, contacto de administrador de contrato, etc."
+                    />
+                  </div>
+                </div>
+
+                {/* Destino de la Orden de Compra */}
                 <div className="bg-card p-3 rounded-lg border space-y-2">
-                  <Label className="text-xs font-bold">¿Dónde desea aplicar estos datos?</Label>
+                  <Label className="text-xs font-bold">Acción con la Orden de Compra:</Label>
                   <Select value={tenderTargetProjectId} onValueChange={setTenderTargetProjectId}>
                     <SelectTrigger className="h-9 text-xs">
                       <SelectValue placeholder="Seleccione el destino" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="new" className="text-xs font-bold text-emerald-600">
-                        ✨ Crear como un NUEVO Proyecto
+                        ✨ Crear automáticamente NUEVO Proyecto con los requisitos de esta OC
                       </SelectItem>
                       {projects.map((p) => (
                         <SelectItem key={p.id} value={p.id} className="text-xs">
-                          Actualizar en: {p.name} ({p.purchaseOrder})
+                          Actualizar requisitos y productos en: {p.name} ({p.purchaseOrder})
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -4045,7 +4234,9 @@ export default function InstitutionalModule() {
               onClick={handleApplyTenderToProject}
             >
               <Check className="h-4 w-4" />
-              Aplicar y Vincular al Proyecto
+              {tenderTargetProjectId === 'new' || !tenderTargetProjectId
+                ? 'Crear Proyecto con Requisitos de la OC'
+                : 'Actualizar Requisitos en el Proyecto'}
             </Button>
           </DialogFooter>
         </DialogContent>

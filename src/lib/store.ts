@@ -64,6 +64,10 @@ export interface Project {
   status: 'active' | 'completed';
   warrantyStartDate?: string | null;
   warrantyMonths?: number | null;
+  deliveryDeadline?: string | null;
+  deliveryAddress?: string | null;
+  paymentTerms?: string | null;
+  orderRequirements?: string | null;
 }
 
 export interface Reminder {
@@ -127,9 +131,9 @@ interface LedgerState {
 
 interface LedgerActions {
   initListeners: (db: Firestore) => () => void;
-  addEntity: (db: Firestore, entity: Omit<Entity, 'id' | 'createdAt'>) => void;
+  addEntity: (db: Firestore, entity: Omit<Entity, 'id' | 'createdAt'>) => Promise<string>;
   deleteEntity: (db: Firestore, id: string) => void;
-  addProject: (db: Firestore, project: Omit<Project, 'id' | 'createdAt' | 'documents'>) => void;
+  addProject: (db: Firestore, project: Omit<Project, 'id' | 'createdAt' | 'documents'>) => Promise<string>;
   updateProject: (db: Firestore, id: string, updates: Partial<Project>) => void;
   deleteProject: (db: Firestore, id: string) => void;
   mergeProjects: (db: Firestore, sourceProjectId: string, targetProjectId: string, sourceProject: Project, targetProject: Project, transactions: Transaction[]) => Promise<void>;
@@ -201,23 +205,25 @@ export const useLedgerStore = create<LedgerState & LedgerActions>((set, get) => 
     };
   },
 
-  addEntity: (db, entity) => {
-    addDoc(collection(db, 'entities'), {
+  addEntity: async (db, entity) => {
+    const docRef = await addDoc(collection(db, 'entities'), {
       ...entity,
       createdAt: new Date().toISOString()
     });
+    return docRef.id;
   },
 
   deleteEntity: (db, id) => {
     deleteDoc(doc(db, 'entities', id));
   },
 
-  addProject: (db, project) => {
-    addDoc(collection(db, 'projects'), {
+  addProject: async (db, project) => {
+    const docRef = await addDoc(collection(db, 'projects'), {
       ...project,
       documents: [],
       createdAt: new Date().toISOString()
     });
+    return docRef.id;
   },
 
   updateProject: (db, id, updates) => {
