@@ -630,3 +630,131 @@ Responde de manera ejecutiva, concisa y profesional.`;
     return { success: false, error: error.message || 'Error al conectar con la IA de auditoría.' };
   }
 }
+
+const InvoiceMatcherInputSchema = z.object({
+  projectName: z.string(),
+  purchaseOrder: z.string().optional(),
+  expectedProducts: z.array(z.object({
+    code: z.string(),
+    description: z.string(),
+    quantity: z.number(),
+    unitPrice: z.number().optional(),
+    unit: z.string().optional(),
+  })),
+  invoiceItems: z.array(z.object({
+    index: z.number(),
+    code: z.string().optional(),
+    description: z.string(),
+    quantity: z.number(),
+    unitPrice: z.number().optional(),
+    lineTotal: z.number().optional(),
+  })),
+});
+export type InvoiceMatcherInput = z.infer<typeof InvoiceMatcherInputSchema>;
+
+const InvoiceMatcherOutputSchema = z.object({
+  matches: z.array(z.object({
+    invoiceItemIndex: z.number().describe('Índice exacto del ítem de la factura (0, 1, 2...).'),
+    matchedProjectCode: z.string().describe('Código exacto del renglón/ítem de la Orden de Compra (expectedProducts[].code) al que pertenece o en el que se unifica este producto.'),
+    reason: z.string().describe('Explicación breve en español de por qué este producto de proveedor se unifica en ese ítem de la Orden de Compra.'),
+    confidence: z.number().nullable().optional().describe('Porcentaje de confianza (0 a 100).'),
+  })),
+  unificationSummary: z.string().describe('Resumen claro explicando cómo se unificaron los productos de la factura del proveedor dentro de los ítems de la Orden de Compra.'),
+});
+export type InvoiceMatcherOutput = z.infer<typeof InvoiceMatcherOutputSchema>;
+
+export type InvoiceMatcherResponse = {
+  success: boolean;
+  data?: InvoiceMatcherOutput;
+  error?: string;
+};
+
+/**
+ * Server Action con IA (Gemini) que interpreta las descripciones comerciales de las facturas de proveedores
+ * y las unifica/vincula con el ítem o renglones correspondientes de la Orden de Compra del proyecto,
+ * especialmente cuando un solo ítem de la Orden de Compra agrupa varios productos distintos.
+ */
+export async function aiInvoiceProjectMatcher(input: InvoiceMatcherInput): Promise<InvoiceMatcherResponse> {
+  try {
+    const apiKey = process.env.GOOGLE_GENAI_API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return { success: false, error: 'Falta configurar GEMINI_API_KEY.' };
+    }
+
+    if (!input.expectedProducts || input.expectedProducts.length === 0) {
+      return { success: false, error: 'El proyecto no tiene renglones configurados en su Orden de Compra.' };
+    }
+
+    if (!input.invoiceItems || input.invoiceItems.length === 0) {
+      return { success: false, error: 'La factura no contiene ítems para analizar.' };
+    }
+
+    const validCodes = input.expectedProducts.map((ep) => ep.code);
+
+    const systemPrompt = `Eres un experto en suministros de pinturas, licitaciones y órdenes de compra institucionales en El Salvador (Pinturas Tecnicolor).
+
+CONTEXTO DEL PROBLEMA QUE DEBES RESOLVER:
+Muchas veces la Orden de Compra (OC) del cliente/institución viene con UN SOLO ÍTEM (o pocos renglones generales/compuestos) donde van incluidos varios productos distintos (por ejemplo: un lote de pinturas de varios colores, kits de resina + catalizador + solvente, o un ítem general de suministro de pintura y accesorios).
+En cambio, las facturas de los proveedores (Sherwin Williams, Sur, Protecto, ferreterías, etc.) vienen desglosadas con nombres comerciales o códigos de fábrica para cada producto individual.
+
+TU OBJETIVO:
+Interpretar semánticamente cada producto de la factura del proveedor y UNIFICARLO (vincularlo) con el renglón/ítem correspondiente de la Orden de Compra del proyecto: "${input.projectName}" (${input.purchaseOrder || 'OC'}).
+
+RENGLONES / ÍTEMS DE LA ORDEN DE COMPRA DEL PROYECTO (Usa únicamente estos códigos exactos en "matchedProjectCode"):
+${JSON.stringify(input.expectedProducts, null, 2)}
+
+PRODUCTOS EN LA FACTURA DEL PROVEEDOR A INTERPRETAR Y UNIFICAR:
+${JSON.stringify(input.invoiceItems, null, 2)}
+
+REGLAS DE INTERPRETACIÓN Y UNIFICACIÓN:
+1. Si la Orden de Compra tiene UN SOLO ÍTEM (${validCodes.length === 1 ? `código "${validCodes[0]}"` : 'o un ítem global/compuesto'}), TODOS los productos de pintura, solventes, catalizadores, bases o accesorios de la factura que formen parte del suministro deben unificarse en ese ítem ("matchedProjectCode": "${validCodes[0]}").
+2. Si la Orden de Compra tiene varios renglones, analiza la descripción comercial del proveedor:
+   - Vincula cada producto (látex, acrílica, esmalte, aceite, anticorrosivo, epóxico, catalizador, thinner/reductor, tráfico, impermeabilizante, brochas/rodillos) con el renglón de la Orden de Compra al que corresponde técnicamente o del cual es componente/accesorio.
+   - Si varios productos de la factura del proveedor pertenecen a un mismo renglón de la Orden de Compra (ej. distintos tonos, o resina + catalizador + reductor para un mismo ítem, o varios productos dentro de un ítem compuesto), asígnales el MISMO "matchedProjectCode" para que queden UNIFICADOS bajo ese renglón de la OC.
+3. En "matchedProjectCode" DEBES usar estrictamente uno de estos códigos exactos de la OC: ${JSON.stringify(validCodes)}. (Solo usa "__UNMATCHED__" si un ítem no tiene absolutamente ninguna relación con el proyecto).
+4. En "reason", explica brevemente la equivalencia o unificación (ej. "Unificado en ${validCodes[0]}: Pintura látex comercial que forma parte del ítem de la OC").`;
+
+    const result = await ai.generate({
+      model: 'googleai/gemini-2.5-flash',
+      prompt: systemPrompt,
+      config: { temperature: 0 },
+      output: { schema: InvoiceMatcherOutputSchema },
+    });
+
+    if (!result.output) {
+      return { success: false, error: 'No se pudo completar la interpretación con IA.' };
+    }
+
+    // Asegurar que todos los códigos devueltos existan en expectedProducts
+    const fallbackCode = validCodes[0];
+    const normalizedMatches = result.output.matches.map((m) => {
+      const codeExists = validCodes.some(
+        (vc) => vc.trim().toLowerCase() === (m.matchedProjectCode || '').trim().toLowerCase()
+      );
+      const exactCode =
+        validCodes.find((vc) => vc.trim().toLowerCase() === (m.matchedProjectCode || '').trim().toLowerCase()) ||
+        (m.matchedProjectCode === '__UNMATCHED__' ? '__UNMATCHED__' : fallbackCode);
+
+      return {
+        invoiceItemIndex: m.invoiceItemIndex,
+        matchedProjectCode: codeExists ? exactCode : exactCode,
+        reason: m.reason || `Unificado al renglón ${exactCode} de la Orden de Compra`,
+        confidence: m.confidence ?? 95,
+      };
+    });
+
+    return {
+      success: true,
+      data: {
+        matches: normalizedMatches,
+        unificationSummary: result.output.unificationSummary,
+      },
+    };
+  } catch (error: any) {
+    console.error('Error en aiInvoiceProjectMatcher:', error);
+    return {
+      success: false,
+      error: error.message || 'Error al interpretar y unificar los ítems de la factura con la IA.',
+    };
+  }
+}

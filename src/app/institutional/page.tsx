@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dialog"
 import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project, type ProjectDocument, type Transaction } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput, type AiActionResponse } from "@/ai/flows/ai-json-key-mapper"
-import { aiTenderParser, aiTenderAuditor, type AiTenderParserOutput, type TenderAuditorOutput } from "@/ai/flows/ai-tender-parser"
+import { aiTenderParser, aiTenderAuditor, aiInvoiceProjectMatcher, type AiTenderParserOutput, type TenderAuditorOutput } from "@/ai/flows/ai-tender-parser"
 import { calculateProductMatches } from "@/lib/tender-utils"
 import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders, Edit2, GitMerge, Layers, TrendingUp, Info, PlayCircle, Archive, Search, Sparkles, Link2, Bot, FileSearch, Check, AlertCircle, HelpCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
@@ -132,8 +132,12 @@ export default function InstitutionalModule() {
   const [targetProjectIdToMerge, setTargetProjectIdToMerge] = React.useState<string>('')
   const [isMerging, setIsMerging] = React.useState(false)
 
-  // Mapeo interactivo de productos entre Facturas/DTEs y Licitación/Proyecto
+  // Mapeo interactivo e interpretación con IA de productos entre Facturas/DTEs y Orden de Compra
   const [itemMappings, setItemMappings] = React.useState<Record<number, string>>({})
+  const [isMatchingInvoiceAI, setIsMatchingInvoiceAI] = React.useState(false)
+  const [aiMatchReasons, setAiMatchReasons] = React.useState<Record<number, string>>({})
+  const [aiUnificationSummary, setAiUnificationSummary] = React.useState<string>('')
+  const [isBatchUnifyingProject, setIsBatchUnifyingProject] = React.useState(false)
 
   // Licitación / Orden de Compra (Word o PDF) con IA
   const [isTenderModalOpen, setIsTenderModalOpen] = React.useState(false)
@@ -176,11 +180,17 @@ export default function InstitutionalModule() {
   const getMatchingExpectedProduct = (i: any, expectedProducts: any[]) => {
     if (!expectedProducts || expectedProducts.length === 0) return null;
 
-    // 1. Vinculación explícita (Mapeo seleccionado manualmente o asignado)
+    // 1. Vinculación explícita (Mapeo seleccionado manualmente o asignado por IA)
     if (i?.matchedProductCode) {
       if (i.matchedProductCode === '__UNMATCHED__') return null;
       const byMatched = expectedProducts.find(ep => cleanStringLower(ep.code) === cleanStringLower(i.matchedProductCode));
       if (byMatched) return byMatched;
+    }
+
+    // 2. Si la Orden de Compra tiene UN SOLO ÍTEM (donde se agrupan varios productos de facturas de proveedores),
+    // todo producto del proyecto se unifica en ese único ítem de la OC salvo que haya sido marcado explícitamente como excedente.
+    if (expectedProducts.length === 1) {
+      return expectedProducts[0];
     }
 
     const iCode = cleanStringLower(i.code);
@@ -190,7 +200,7 @@ export default function InstitutionalModule() {
     }
 
     const iDesc = cleanStringLower(i.description);
-    if (!iDesc) return null;
+    if (!iDesc) return expectedProducts[0];
 
     const exactDesc = expectedProducts.find(ep => cleanStringLower(ep.description) === iDesc);
     if (exactDesc) return exactDesc;
@@ -216,6 +226,16 @@ export default function InstitutionalModule() {
         const diffCurr = Math.abs(cleanStringLower(current.description).length - iDesc.length);
         return diffPrev < diffCurr ? prev : current;
       });
+    }
+
+    // 3. Fallback semántico por sinónimos de pinturas (látex, esmalte, epóxico, thinner, etc.)
+    const semanticMatch = calculateProductMatches(
+      [{ code: i.code, description: i.description || '', quantity: i.quantity || 1 }],
+      expectedProducts
+    );
+    if (semanticMatch[0]) {
+      const bySemantic = expectedProducts.find(ep => cleanStringLower(ep.code) === cleanStringLower(semanticMatch[0]));
+      if (bySemantic) return bySemantic;
     }
 
     return null;
@@ -1152,6 +1172,222 @@ export default function InstitutionalModule() {
     }
   }
 
+  // Interpretación semántica de facturas de proveedor contra ítems de la Orden de Compra con IA (Gemini)
+  const runAiInvoiceInterpretation = async (rawItems: any[], proj: Project | undefined) => {
+    if (!proj || !proj.expectedProducts || proj.expectedProducts.length === 0 || !rawItems || rawItems.length === 0) return
+
+    try {
+      setIsMatchingInvoiceAI(true)
+      const resp = await aiInvoiceProjectMatcher({
+        projectName: proj.name,
+        purchaseOrder: proj.purchaseOrder,
+        expectedProducts: proj.expectedProducts.map(ep => ({
+          code: ep.code,
+          description: ep.description,
+          quantity: ep.quantity,
+          unitPrice: ep.unitPrice,
+          unit: ep.unit,
+        })),
+        invoiceItems: rawItems.map((it, idx) => ({
+          index: idx,
+          code: it.code || '',
+          description: it.description || '',
+          quantity: Number(it.quantity) || 1,
+          unitPrice: Number(it.unitPrice) || 0,
+          lineTotal: Number(it.lineTotal) || 0,
+        })),
+      })
+
+      if (resp.success && resp.data) {
+        const newMappings: Record<number, string> = {}
+        const newReasons: Record<number, string> = {}
+
+        resp.data.matches.forEach(m => {
+          newMappings[m.invoiceItemIndex] = m.matchedProjectCode
+          newReasons[m.invoiceItemIndex] = m.reason
+        })
+
+        // Rellenar cualquier índice faltante con el primer renglón de la OC
+        rawItems.forEach((_, idx) => {
+          if (!newMappings[idx]) {
+            newMappings[idx] = proj.expectedProducts[0].code
+          }
+        })
+
+        setItemMappings(newMappings)
+        setAiMatchReasons(newReasons)
+        setAiUnificationSummary(resp.data.unificationSummary || '')
+      }
+    } catch (e) {
+      console.warn('No se pudo completar la interpretación IA de ítems:', e)
+    } finally {
+      setIsMatchingInvoiceAI(false)
+    }
+  }
+
+  // Fusionar múltiples productos de la factura del proveedor en 1 sola línea del ítem de la Orden de Compra
+  const handleMergeUnifiedInvoiceRows = () => {
+    if (!mappedData || !mappedData.items || !currentProject) return
+
+    const grouped = new Map<string, { items: any[]; indices: number[] }>()
+    const unmappedRows: any[] = []
+
+    mappedData.items.forEach((it, idx) => {
+      const code = itemMappings[idx] || getMatchingExpectedProduct(it, currentProject.expectedProducts)?.code || '__UNMATCHED__'
+      if (code === '__UNMATCHED__') {
+        unmappedRows.push(it)
+      } else {
+        if (!grouped.has(code)) {
+          grouped.set(code, { items: [], indices: [] })
+        }
+        grouped.get(code)!.items.push(it)
+        grouped.get(code)!.indices.push(idx)
+      }
+    })
+
+    const mergedItems: any[] = []
+    const newMappings: Record<number, string> = {}
+    const newReasons: Record<number, string> = {}
+
+    grouped.forEach((group, ocCode) => {
+      const ep = currentProject.expectedProducts.find(p => cleanStringLower(p.code) === cleanStringLower(ocCode))
+      if (group.items.length === 1 && currentProject.expectedProducts.length > 1) {
+        const single = group.items[0]
+        const newIdx = mergedItems.length
+        mergedItems.push(single)
+        newMappings[newIdx] = ocCode
+        newReasons[newIdx] = `Vinculado a ${ocCode}`
+      } else {
+        // Unificar todos los productos de este grupo en 1 sola línea del ítem de la OC
+        const totalCost = Number(
+          group.items.reduce((sum, it) => sum + (Number(it.lineTotal) || (Number(it.quantity) || 1) * (Number(it.unitPrice) || 0)), 0).toFixed(2)
+        )
+        const targetQty = ep?.quantity || 1
+        const subDescriptions = group.items
+          .map(it => `${it.quantity || 1}x ${cleanString(it.description)}`)
+          .join(' + ')
+        const unifiedDesc = ep
+          ? `${ep.description} [Unificado (${group.items.length} prods): ${subDescriptions}]`
+          : `Lote Unificado (${group.items.length} prods): ${subDescriptions}`
+
+        const newIdx = mergedItems.length
+        mergedItems.push({
+          code: ep?.code || ocCode,
+          description: unifiedDesc,
+          quantity: targetQty,
+          unitPrice: Number((totalCost / targetQty).toFixed(4)),
+          lineTotal: totalCost,
+        })
+        newMappings[newIdx] = ep?.code || ocCode
+        newReasons[newIdx] = `Unificados ${group.items.length} productos de proveedor en ${ep?.code || ocCode} (Costo total: $${totalCost.toFixed(2)})`
+      }
+    })
+
+    unmappedRows.forEach(ur => {
+      const newIdx = mergedItems.length
+      mergedItems.push(ur)
+      newMappings[newIdx] = '__UNMATCHED__'
+    })
+
+    setMappedData({
+      ...mappedData,
+      items: mergedItems,
+    })
+    setItemMappings(newMappings)
+    setAiMatchReasons(newReasons)
+    toast({
+      title: '🔗 Productos Unificados en el Ítem de la OC',
+      description: `Los productos del proveedor se consolidaron bajo el renglón de la Orden de Compra conservando el costo exacto.`,
+    })
+  }
+
+  // Unificar con IA todas las facturas de compra ya registradas en el proyecto actual contra la OC
+  const handleBatchUnifyProjectInvoicesWithAI = async () => {
+    if (!currentProject || !currentProject.expectedProducts || currentProject.expectedProducts.length === 0) return
+
+    const purchaseTxs = transactions.filter(t => t.projectId === currentProject.id && !t.isVoided && t.type === 'purchase')
+    if (purchaseTxs.length === 0) {
+      toast({ title: 'Sin facturas de compra', description: 'Este proyecto aún no tiene facturas de compra registradas.' })
+      return
+    }
+
+    setIsBatchUnifyingProject(true)
+    try {
+      // Construir lista plana de todos los ítems de las facturas de compra del proyecto
+      const flatItems: { txId: string; itemIdx: number; code?: string; description: string; quantity: number; unitPrice: number; lineTotal: number }[] = []
+      purchaseTxs.forEach(tx => {
+        ;(tx.items || []).forEach((it, itemIdx) => {
+          flatItems.push({
+            txId: tx.id,
+            itemIdx,
+            code: it.code,
+            description: it.description,
+            quantity: it.quantity,
+            unitPrice: it.unitPrice,
+            lineTotal: it.lineTotal,
+          })
+        })
+      })
+
+      if (flatItems.length === 0) return
+
+      // Si la OC tiene 1 solo ítem, unificar todo directamente a ese ítem; si tiene varios, consultar a Gemini
+      const matchMap = new Map<number, string>()
+
+      if (currentProject.expectedProducts.length === 1) {
+        const singleCode = currentProject.expectedProducts[0].code
+        flatItems.forEach((_, idx) => matchMap.set(idx, singleCode))
+      } else {
+        const resp = await aiInvoiceProjectMatcher({
+          projectName: currentProject.name,
+          purchaseOrder: currentProject.purchaseOrder,
+          expectedProducts: currentProject.expectedProducts,
+          invoiceItems: flatItems.map((fi, idx) => ({
+            index: idx,
+            code: fi.code || '',
+            description: fi.description,
+            quantity: fi.quantity,
+            unitPrice: fi.unitPrice,
+            lineTotal: fi.lineTotal,
+          })),
+        })
+
+        if (resp.success && resp.data) {
+          resp.data.matches.forEach(m => {
+            matchMap.set(m.invoiceItemIndex, m.matchedProjectCode)
+          })
+        }
+      }
+
+      // Actualizar cada factura de compra con su matchedProductCode unificado
+      purchaseTxs.forEach(tx => {
+        const updatedTxItems = (tx.items || []).map((it, itemIdx) => {
+          const flatIdx = flatItems.findIndex(fi => fi.txId === tx.id && fi.itemIdx === itemIdx)
+          const assignedCode = flatIdx >= 0 ? matchMap.get(flatIdx) : undefined
+          return {
+            ...it,
+            matchedProductCode: assignedCode || it.matchedProductCode || currentProject.expectedProducts[0].code,
+          }
+        })
+        updateTransaction(db, tx.id, { items: updatedTxItems })
+      })
+
+      toast({
+        title: '✅ Facturas Unificadas con la Orden de Compra (IA)',
+        description: `Se interpretaron y unificaron ${flatItems.length} productos de ${purchaseTxs.length} factura(s) de proveedor con los ítems de la OC.`,
+      })
+    } catch (err: any) {
+      console.error('Error unificando facturas del proyecto:', err)
+      toast({
+        title: 'Error en Unificación IA',
+        description: err.message || 'No se pudieron unificar las facturas.',
+        variant: 'destructive',
+      })
+    } finally {
+      setIsBatchUnifyingProject(false)
+    }
+  }
+
   // AI & Manual Processing Logic...
   const handleProcessData = async (content?: string) => {
     const rawData = content || jsonInput
@@ -1161,6 +1397,8 @@ export default function InstitutionalModule() {
     }
     try {
       setIsProcessing(true)
+      setAiMatchReasons({})
+      setAiUnificationSummary('')
       const response: AiActionResponse = await aiJsonKeyMapper({ invoiceJsonString: rawData })
       
       if (!response.success) {
@@ -1194,10 +1432,12 @@ export default function InstitutionalModule() {
 
       setMappedData(result)
 
-      // Sugerir vinculación automática de productos con la licitación
+      // 1. Sugerir vinculación inicial inmediata y 2. Ejecutar interpretación semántica con IA (Gemini)
       if (currentProject && currentProject.expectedProducts && currentProject.expectedProducts.length > 0 && result.items) {
         const autoMatches = calculateProductMatches(result.items as any, currentProject.expectedProducts)
         setItemMappings(autoMatches)
+        // Llamar a la IA en segundo plano para interpretar descripciones de proveedores y unificar con la OC
+        runAiInvoiceInterpretation(result.items as any, currentProject)
       } else {
         setItemMappings({})
       }
@@ -2516,19 +2756,108 @@ export default function InstitutionalModule() {
                   </Card>
 
                   <Card>
-                    <CardHeader><CardTitle className="text-lg">Validación de Items</CardTitle></CardHeader>
+                    <CardHeader className="pb-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <CardTitle className="text-lg flex items-center gap-2">
+                          Validación y Unificación con OC
+                        </CardTitle>
+                        {mappedData && (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              disabled={isMatchingInvoiceAI}
+                              onClick={() => runAiInvoiceInterpretation(mappedData.items || [], currentProject)}
+                              className="h-7 text-[10px] gap-1 border-blue-500/40 text-blue-500 hover:bg-blue-500/10 font-bold"
+                              title="La IA analiza las descripciones del proveedor y las unifica con los ítems de la Orden de Compra"
+                            >
+                              {isMatchingInvoiceAI ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                              Interpretar con IA
+                            </Button>
+                            {(mappedData.items?.length || 0) > 1 && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={handleMergeUnifiedInvoiceRows}
+                                className="h-7 text-[10px] gap-1 border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10 font-bold"
+                                title="Une varios productos de esta factura que pertenecen al mismo ítem de la OC en 1 sola línea consolidada"
+                              >
+                                <GitMerge className="h-3 w-3" />
+                                Fusionar en 1 Ítem OC
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </CardHeader>
                     <CardContent>
                       {mappedData ? (
-                        <div className="space-y-4">
-                          <Badge variant="secondary" className="bg-primary/10 text-primary uppercase text-[10px]">
-                               DTE: {mappedData.documentType === '03' ? 'CRÉDITO FISCAL' : 'FACTURA'}
-                          </Badge>
+                        <div className="space-y-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <Badge variant="secondary" className="bg-primary/10 text-primary uppercase text-[10px]">
+                              DTE: {mappedData.documentType === '03' ? 'CRÉDITO FISCAL' : 'FACTURA'} • {mappedData.items?.length || 0} productos
+                            </Badge>
+                            {currentProject?.expectedProducts && currentProject.expectedProducts.length > 0 && (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[10px] font-bold text-muted-foreground">Unificar toda la factura en:</span>
+                                <select
+                                  value=""
+                                  onChange={(e) => {
+                                    const targetCode = e.target.value;
+                                    if (!targetCode) return;
+                                    const allMap: Record<number, string> = {};
+                                    (mappedData.items || []).forEach((_, i) => {
+                                      allMap[i] = targetCode;
+                                    });
+                                    setItemMappings(allMap);
+                                    toast({
+                                      title: 'Factura Unificada al Renglón',
+                                      description: `Todos los productos de esta factura se unificaron en [${targetCode}].`,
+                                    });
+                                  }}
+                                  className="h-7 text-[10px] rounded border bg-background px-2 font-bold text-primary"
+                                >
+                                  <option value="">-- Seleccionar Ítem OC --</option>
+                                  {currentProject.expectedProducts.map((ep) => (
+                                    <option key={ep.code} value={ep.code}>
+                                      🔗 Unificar todo en [{ep.code}] {ep.description.slice(0, 28)}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Banner de Interpretación Semántica de la IA */}
+                          {(isMatchingInvoiceAI || aiUnificationSummary) && (
+                            <div className="p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/30 text-[11px] flex items-start gap-2">
+                              {isMatchingInvoiceAI ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 text-blue-500 animate-spin shrink-0 mt-0.5" />
+                                  <span className="text-foreground font-medium">
+                                    Gemini está interpretando las descripciones comerciales del proveedor para unificarlas con la Orden de Compra...
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <Bot className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
+                                  <div className="space-y-0.5">
+                                    <span className="font-bold text-blue-500 block text-[10px] uppercase">Interpretación y Unificación IA:</span>
+                                    <p className="text-foreground leading-snug">{aiUnificationSummary}</p>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
+
                           <ScrollArea className="h-[280px] border rounded-lg">
                             <table className="w-full text-[10px]">
-                              <thead className="bg-muted sticky top-0">
+                              <thead className="bg-muted sticky top-0 z-10">
                                 <tr>
-                                  <th className="p-2 text-left">Ítem Factura (DTE)</th>
-                                  <th className="p-2 text-left min-w-[210px]">Vincular a Licitación</th>
+                                  <th className="p-2 text-left">Producto en Factura Proveedor</th>
+                                  <th className="p-2 text-left min-w-[220px]">Unificar en Ítem de la OC</th>
                                   <th className="p-2 text-right">Cant.</th>
                                   <th className="p-2 text-center">Estado</th>
                                   <th className="p-2 text-right">Acción</th>
@@ -2550,18 +2879,26 @@ export default function InstitutionalModule() {
                                   const selectedValue = explicitCode !== undefined 
                                     ? explicitCode 
                                     : (projectProduct ? projectProduct.code : '__UNMATCHED__');
-                                  const sameProductCount = Object.values(itemMappings).filter(c => c === projectProduct?.code).length;
-                                  const isJoined = isExpected && sameProductCount > 1;
+                                  const sameProductCount = (mappedData.items || []).filter((_, iIdx) => {
+                                    const c = itemMappings[iIdx] !== undefined
+                                      ? itemMappings[iIdx]
+                                      : getMatchingExpectedProduct(mappedData.items![iIdx], currentProject?.expectedProducts || [])?.code;
+                                    return c && projectProduct && cleanStringLower(c) === cleanStringLower(projectProduct.code);
+                                  }).length;
+                                  const isJoined = isExpected && (sameProductCount > 1 || (currentProject?.expectedProducts?.length === 1));
                                   const expectedQty = projectProduct ? projectProduct.quantity : 0;
-                                  const hasExcess = isExpected && (it.quantity || 0) > expectedQty;
+                                  const hasExcess = isExpected && !isJoined && (it.quantity || 0) > expectedQty;
+                                  const aiReason = aiMatchReasons[idx];
                                   
                                   return (
-                                    <tr key={idx} className={cn(!isExpected && "bg-destructive/5", hasExcess && "bg-amber-500/5")}>
+                                    <tr key={idx} className={cn(!isExpected && "bg-destructive/5", isJoined && "bg-blue-500/5", hasExcess && "bg-amber-500/5")}>
                                       <td className="p-2 font-medium">
                                         <div className="flex flex-col">
                                           <span className="font-semibold text-foreground">{it.description}</span>
-                                          {it.code && <span className="text-[9px] text-muted-foreground font-mono">Cód: {it.code}</span>}
-                                          <span className="text-[9px] text-muted-foreground">${(it.unitPrice || 0).toFixed(2)} c/u</span>
+                                          {it.code && <span className="text-[9px] text-muted-foreground font-mono">Cód Prov: {it.code}</span>}
+                                          <span className="text-[9px] text-muted-foreground">
+                                            ${(it.unitPrice || 0).toFixed(2)} c/u • Total: <strong className="text-foreground">${(it.lineTotal || (it.quantity || 0) * (it.unitPrice || 0)).toFixed(2)}</strong>
+                                          </span>
                                         </div>
                                       </td>
                                       <td className="p-2">
@@ -2574,23 +2911,29 @@ export default function InstitutionalModule() {
                                             }}
                                             className="w-full h-7 text-[10px] rounded border bg-background px-2 py-0.5 text-foreground focus:ring-1 focus:ring-primary font-medium"
                                           >
-                                            <option value="__UNMATCHED__">📦 No pertenece a la licitación (Excedente)</option>
+                                            <option value="__UNMATCHED__">📦 No pertenece al proyecto (Enviar a Excedente)</option>
                                             {currentProject?.expectedProducts?.map((ep) => (
                                               <option key={ep.code} value={ep.code}>
-                                                🔗 [{ep.code}] {ep.description.length > 30 ? ep.description.slice(0, 30) + '...' : ep.description} (Req: {ep.quantity})
+                                                🔗 [{ep.code}] {ep.description.length > 35 ? ep.description.slice(0, 35) + '...' : ep.description} (OC: {ep.quantity})
                                               </option>
                                             ))}
                                           </select>
                                           {isExpected && (
-                                            <div className="flex items-center gap-1.5 text-[9px] text-emerald-600 dark:text-emerald-400 font-bold">
-                                              <Link2 className="h-3 w-3" />
+                                            <div className="flex flex-wrap items-center gap-1 text-[9px] text-emerald-600 dark:text-emerald-400 font-bold">
+                                              <Link2 className="h-3 w-3 shrink-0" />
                                               <span>{projectProduct?.code}</span>
                                               {isJoined && (
-                                                <Badge variant="outline" className="text-[8px] py-0 px-1 border-emerald-500 text-emerald-700 bg-emerald-50">
-                                                  Unión
+                                                <Badge variant="outline" className="text-[8px] py-0 px-1.5 border-blue-500/40 text-blue-500 bg-blue-500/10">
+                                                  Unificado ({sameProductCount} prods → {projectProduct?.code})
                                                 </Badge>
                                               )}
                                             </div>
+                                          )}
+                                          {aiReason && (
+                                            <p className="text-[9px] text-muted-foreground leading-tight flex items-center gap-1">
+                                              <Sparkles className="h-2.5 w-2.5 text-blue-500 shrink-0" />
+                                              <span className="truncate max-w-[230px]" title={aiReason}>{aiReason}</span>
+                                            </p>
                                           )}
                                         </div>
                                       </td>
@@ -2607,6 +2950,10 @@ export default function InstitutionalModule() {
                                         {!isExpected ? (
                                           <Badge variant="outline" className="text-amber-700 bg-amber-50 border-amber-300 text-[9px]">
                                             EXCEDENTE
+                                          </Badge>
+                                        ) : isJoined ? (
+                                          <Badge className="bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold" title={`Unificado dentro del ítem ${projectProduct?.code} de la Orden de Compra`}>
+                                            UNIFICADO
                                           </Badge>
                                         ) : hasExcess ? (
                                           <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-bold" title={`La orden de compra solicitaba ${expectedQty} unidades`}>
@@ -2635,13 +2982,55 @@ export default function InstitutionalModule() {
                               </tbody>
                             </table>
                           </ScrollArea>
+
+                          {/* Resumen de Grupos Unificados por Ítem de la OC */}
+                          {(() => {
+                            const groups = new Map<string, { ep: any; count: number; totalCost: number }>();
+                            (mappedData.items || []).forEach((it, idx) => {
+                              const explicitCode = itemMappings[idx];
+                              if (explicitCode === '__UNMATCHED__') return;
+                              const ep = explicitCode
+                                ? currentProject?.expectedProducts?.find(p => cleanStringLower(p.code) === cleanStringLower(explicitCode))
+                                : getMatchingExpectedProduct(it, currentProject?.expectedProducts || []);
+                              if (!ep) return;
+                              const curr = groups.get(ep.code) || { ep, count: 0, totalCost: 0 };
+                              curr.count += 1;
+                              curr.totalCost += Number(it.lineTotal) || (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0);
+                              groups.set(ep.code, curr);
+                            });
+                            const groupList = Array.from(groups.values());
+                            if (groupList.length === 0) return null;
+
+                            return (
+                              <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 space-y-1.5 text-[10px]">
+                                <div className="flex items-center justify-between font-bold text-emerald-500">
+                                  <span className="flex items-center gap-1">
+                                    <Link2 className="h-3.5 w-3.5" />
+                                    Resumen de Unificación hacia la Orden de Compra:
+                                  </span>
+                                  <span>{groupList.length} ítem(s) de la OC</span>
+                                </div>
+                                {groupList.map(g => (
+                                  <div key={g.ep.code} className="flex items-center justify-between text-foreground bg-background/60 px-2 py-1 rounded border">
+                                    <span className="truncate max-w-[260px]">
+                                      <strong>[{g.ep.code}]</strong> {g.ep.description}
+                                    </span>
+                                    <span className="font-mono font-bold text-emerald-500 shrink-0">
+                                      {g.count} prod(s) unificados • Costo: ${g.totalCost.toFixed(2)}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            );
+                          })()}
+
                           <div className="bg-muted p-3 rounded-lg border text-xs">
                             <div className="flex justify-between"><span>IVA (13%):</span><span className="font-bold">${mappedData.taxAmount?.toFixed(2)}</span></div>
                             <div className="flex justify-between text-base font-black border-t mt-2 pt-2"><span>TOTAL:</span><span>${mappedData.totalAmount?.toFixed(2)}</span></div>
                           </div>
-                          <Button className="w-full bg-primary" onClick={handleSavePurchase}>Confirmar Ingreso</Button>
+                          <Button className="w-full bg-primary font-bold" onClick={handleSavePurchase}>Confirmar Ingreso Unificado al Proyecto</Button>
                         </div>
-                      ) : <div className="py-20 text-center text-muted-foreground italic text-xs">Cargue el JSON para validar suministros.</div>}
+                      ) : <div className="py-20 text-center text-muted-foreground italic text-xs">Cargue el JSON para interpretar y unificar suministros con la OC.</div>}
                     </CardContent>
                   </Card>
                 </div>
@@ -2916,7 +3305,18 @@ export default function InstitutionalModule() {
                      Cliente / Institución: <strong className="text-foreground">{currentProject.customerName}</strong> • {currentProject.expectedProducts?.length || 0} renglones contratados
                    </p>
                  </div>
-                 <div className="flex items-center gap-2 w-full sm:w-auto">
+                 <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                   <Button
+                     variant="outline"
+                     size="sm"
+                     className="gap-2 border-blue-600/40 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/20 font-bold text-xs w-full sm:w-auto h-9"
+                     onClick={handleBatchUnifyProjectInvoicesWithAI}
+                     disabled={isBatchUnifyingProject}
+                     title="Analiza todas las facturas de compra del proyecto y unifica sus productos con los ítems de la Orden de Compra"
+                   >
+                     {isBatchUnifyingProject ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 text-blue-500" />}
+                     Unificar Facturas con OC (IA)
+                   </Button>
                    <Button
                      variant="outline"
                      size="sm"
@@ -2999,6 +3399,8 @@ export default function InstitutionalModule() {
                     const costQty = costItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
                     const costTotal = costItems.reduce((acc, curr) => acc + (curr?.lineTotal || (curr?.quantity * curr?.unitPrice) || 0), 0);
                     const costAvgUnitPrice = costQty > 0 ? costTotal / costQty : 0;
+                    const costItemsCount = costItems.length;
+                    const unifiedDescriptions = Array.from(new Set(costItems.map(ci => ci.description).filter(Boolean)));
 
                     const pendingDeliver = ep.quantity - deliveredQty;
                     const pendingInvoice = deliveredQty - saleQty;
@@ -3014,6 +3416,8 @@ export default function InstitutionalModule() {
                       costQty,
                       costTotal,
                       costAvgUnitPrice,
+                      costItemsCount,
+                      unifiedDescriptions,
                       pendingDeliver,
                       pendingInvoice,
                       marginAmount,
@@ -3079,6 +3483,26 @@ export default function InstitutionalModule() {
                                             <span className="text-[10px] text-muted-foreground">
                                               Presupuesto: ${row.ep.unitPrice.toFixed(2)} c/u • Subtotal: ${(reqQty * row.ep.unitPrice).toFixed(2)}
                                             </span>
+                                          )}
+                                          {row.costItemsCount > 0 && (
+                                            <div
+                                              className="mt-1 inline-flex flex-wrap items-center gap-1.5 text-[10px] text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
+                                              onClick={() => setViewingProductDetail({
+                                                code: row.ep.code,
+                                                description: row.ep.description,
+                                                expectedQty: row.ep.quantity,
+                                                expectedPrice: row.ep.unitPrice
+                                              })}
+                                              title="Haga clic para ver el desglose de productos de facturas de proveedor unificados en este ítem"
+                                            >
+                                              <Badge variant="outline" className="text-[9px] py-0 px-1.5 border-blue-500/40 text-blue-600 dark:text-blue-400 bg-blue-500/10 gap-1">
+                                                <Link2 className="h-2.5 w-2.5" />
+                                                {row.costItemsCount} prod(s) proveedor unificados (${row.costTotal.toFixed(2)})
+                                              </Badge>
+                                              <span className="text-[9px] text-muted-foreground truncate max-w-[280px]">
+                                                {row.unifiedDescriptions.slice(0, 3).join(' • ')}
+                                              </span>
+                                            </div>
                                           )}
                                         </div>
                                       </TableCell>
@@ -3753,7 +4177,8 @@ export default function InstitutionalModule() {
                     <tr>
                       <th className="p-2 text-left font-bold text-muted-foreground w-20">Cant.</th>
                       <th className="p-2 text-left font-bold text-muted-foreground">Código</th>
-                      <th className="p-2 text-left font-bold text-muted-foreground">Descripción</th>
+                      <th className="p-2 text-left font-bold text-muted-foreground">Descripción en Factura</th>
+                      <th className="p-2 text-left font-bold text-muted-foreground min-w-[180px]">Unificar a Ítem OC</th>
                       <th className="p-2 text-right font-bold text-muted-foreground">P.U.</th>
                       <th className="p-2 text-right font-bold text-muted-foreground">Subtotal</th>
                     </tr>
@@ -3795,6 +4220,24 @@ export default function InstitutionalModule() {
                               setEditingTransaction({ ...editingTransaction, items: newItems });
                             }} 
                           />
+                        </td>
+                        <td className="p-2">
+                          <select
+                            value={item?.matchedProductCode || getMatchingExpectedProduct(item, currentProject?.expectedProducts || [])?.code || '__UNMATCHED__'}
+                            onChange={(e) => {
+                              const newItems = [...(editingTransaction.items || [])];
+                              newItems[idx] = { ...item, matchedProductCode: e.target.value };
+                              setEditingTransaction({ ...editingTransaction, items: newItems });
+                            }}
+                            className="w-full h-8 text-[11px] rounded border bg-background px-2 text-foreground"
+                          >
+                            <option value="__UNMATCHED__">📦 Sin vincular (Excedente)</option>
+                            {(currentProject?.expectedProducts || []).map((ep) => (
+                              <option key={ep.code} value={ep.code}>
+                                🔗 [{ep.code}] {ep.description.slice(0, 28)}
+                              </option>
+                            ))}
+                          </select>
                         </td>
                         <td className="p-2">
                           <Input 
@@ -3859,11 +4302,11 @@ export default function InstitutionalModule() {
       </Dialog>
       {/* Modal: Detalle de Entregas e Historial por Producto */}
       <Dialog open={!!viewingProductDetail} onOpenChange={(open) => !open && setViewingProductDetail(null)}>
-        <DialogContent className="sm:max-w-[700px] w-[95vw] max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[820px] w-[95vw] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-lg font-bold">
               <Eye className="h-5 w-5 text-primary" />
-              Historial de Entregas y Facturas Parciales
+              Desglose de Productos Unificados, Compras y Entregas del Renglón
             </DialogTitle>
             <CardDescription className="text-xs">
               {viewingProductDetail?.code ? `[${viewingProductDetail.code}] ` : ''}{viewingProductDetail?.description}
@@ -3912,10 +4355,11 @@ export default function InstitutionalModule() {
                   <TableHeader className="bg-muted/60">
                     <TableRow>
                       <TableHead>Fecha</TableHead>
-                      <TableHead>Comprobante / N° Doc</TableHead>
+                      <TableHead>Factura / Doc</TableHead>
+                      <TableHead>Descripción en Factura / Proveedor</TableHead>
                       <TableHead className="text-center">Tipo</TableHead>
                       <TableHead className="text-right">Cant.</TableHead>
-                      <TableHead className="text-right">P. Unit / Costo</TableHead>
+                      <TableHead className="text-right">P. Unit</TableHead>
                       <TableHead className="text-right font-bold">Total ($)</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -3933,6 +4377,9 @@ export default function InstitutionalModule() {
                           txId: tx.id,
                           date: tx.issueDate,
                           docNum: tx.invoiceNumber || 'S/N',
+                          entityName: tx.entityName || '',
+                          itemCode: item.code || '',
+                          itemDescription: item.description || '',
                           docType: tx.documentType,
                           type: tx.type,
                           quantity: item.quantity,
@@ -3944,8 +4391,8 @@ export default function InstitutionalModule() {
                       if (matchingEvents.length === 0) {
                         return (
                           <TableRow>
-                            <TableCell colSpan={6} className="h-24 text-center text-muted-foreground italic">
-                              No hay movimientos ni comprobantes registrados para este producto aún.
+                            <TableCell colSpan={7} className="h-24 text-center text-muted-foreground italic">
+                              No hay productos de facturas ni movimientos unificados en este renglón aún.
                             </TableCell>
                           </TableRow>
                         );
@@ -3953,12 +4400,19 @@ export default function InstitutionalModule() {
 
                       return matchingEvents.map((evt, idx) => (
                         <TableRow key={idx}>
-                          <TableCell className="text-muted-foreground">{new Date(evt.date).toLocaleDateString()}</TableCell>
-                          <TableCell className="font-mono font-bold text-foreground">{evt.docNum}</TableCell>
+                          <TableCell className="text-muted-foreground whitespace-nowrap">{new Date(evt.date).toLocaleDateString()}</TableCell>
+                          <TableCell className="font-mono font-bold text-foreground text-[10px]">
+                            <div>{evt.docNum}</div>
+                            {evt.entityName && <div className="text-[9px] text-muted-foreground font-sans font-normal truncate max-w-[120px]">{evt.entityName}</div>}
+                          </TableCell>
+                          <TableCell className="text-xs font-medium text-foreground max-w-[230px]">
+                            <div className="truncate" title={evt.itemDescription}>{evt.itemDescription}</div>
+                            {evt.itemCode && <div className="text-[9px] font-mono text-muted-foreground">Cód: {evt.itemCode}</div>}
+                          </TableCell>
                           <TableCell className="text-center">
-                            {evt.type === 'remission' && <Badge className="bg-blue-500 text-[9px]">Remisión Parcial</Badge>}
-                            {evt.type === 'sale' && <Badge className="bg-green-600 text-[9px]">{evt.docType === '03' ? 'CCF Factura' : 'FAC Venta'}</Badge>}
-                            {evt.type === 'purchase' && <Badge variant="outline" className="text-[9px]">Compra / Insumo</Badge>}
+                            {evt.type === 'remission' && <Badge className="bg-blue-500 text-[9px]">Remisión</Badge>}
+                            {evt.type === 'sale' && <Badge className="bg-green-600 text-[9px]">{evt.docType === '03' ? 'CCF Venta' : 'FAC Venta'}</Badge>}
+                            {evt.type === 'purchase' && <Badge variant="outline" className="text-[9px] border-blue-500/40 text-blue-500">Unificado Compra</Badge>}
                           </TableCell>
                           <TableCell className="text-right font-bold">{evt.quantity}</TableCell>
                           <TableCell className="text-right text-muted-foreground">${evt.unitPrice.toFixed(2)}</TableCell>
