@@ -14,6 +14,8 @@ const TenderProductSchema = z.object({
   quantity: z.number().nullable().optional().describe('Cantidad numérica exacta solicitada en ese renglón.'),
   unitPrice: z.number().nullable().optional().describe('Precio unitario ($) de 1 unidad de ese renglón. No confundir con el total de la línea.'),
   lineTotal: z.number().nullable().optional().describe('Monto total ($) de este renglón (cantidad * precio unitario).'),
+  parentCode: z.string().nullable().optional().describe('Código del renglón principal al que pertenece si este ítem es un insumo, accesorio o subcomponente desglosado.'),
+  isKit: z.boolean().nullable().optional().describe('true si este renglón es un kit o combo que incluye accesorios/insumos desglosados.'),
 });
 
 const AiTenderParserInputSchema = z.object({
@@ -47,6 +49,8 @@ export type TenderProductItem = {
   quantity: number;
   unitPrice?: number;
   lineTotal?: number;
+  parentCode?: string;
+  isKit?: boolean;
 };
 
 export type AiTenderParserOutput = {

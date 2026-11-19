@@ -41,6 +41,9 @@ export interface ProjectProduct {
   quantity: number;
   unitPrice: number;
   unit?: string;
+  parentCode?: string;
+  quantityPerParent?: number;
+  isKit?: boolean;
 }
 
 export interface ProjectDocument {

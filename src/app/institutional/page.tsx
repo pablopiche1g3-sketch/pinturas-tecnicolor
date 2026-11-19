@@ -22,7 +22,7 @@ import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput, type AiActionResponse } from "@/ai/flows/ai-json-key-mapper"
 import { aiTenderParser, aiTenderAuditor, aiInvoiceProjectMatcher, type AiTenderParserOutput, type TenderAuditorOutput } from "@/ai/flows/ai-tender-parser"
 import { calculateProductMatches } from "@/lib/tender-utils"
-import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders, Edit2, GitMerge, Layers, TrendingUp, Info, PlayCircle, Archive, Search, Sparkles, Link2, Bot, FileSearch, Check, AlertCircle, HelpCircle } from "lucide-react"
+import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders, Edit2, GitMerge, Layers, TrendingUp, Info, PlayCircle, Archive, Search, Sparkles, Link2, Bot, FileSearch, Check, AlertCircle, HelpCircle, ChevronDown, ChevronUp, ChevronRight, Boxes } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -60,6 +60,12 @@ export default function InstitutionalModule() {
   const [isSuppliesDialogOpen, setIsSuppliesDialogOpen] = React.useState(false)
   const [projectFilterTab, setProjectFilterTab] = React.useState<'active' | 'completed' | 'all'>('active')
   const [projectSearchQuery, setProjectSearchQuery] = React.useState<string>('')
+
+  // Kits y Componentes de Bodega
+  const [expandedKitCodes, setExpandedKitCodes] = React.useState<Record<string, boolean>>({})
+  const [isKitConfigOpen, setIsKitConfigOpen] = React.useState(false)
+  const [kitTargetParentCode, setKitTargetParentCode] = React.useState<string>('')
+  const [kitSelectedChildCodes, setKitSelectedChildCodes] = React.useState<string[]>([])
 
   const handleUpdateProductProperty = (idx: number, key: keyof ProjectProduct, value: any) => {
     setNewProjectProducts(prev => prev.map((p, i) => i === idx ? { ...p, [key]: value } : p))
@@ -164,6 +170,67 @@ export default function InstitutionalModule() {
   const projectTransactions = transactions.filter(t => t.projectId === selectedProjectId && !t.isVoided)
   
   const projectCosts = projectTransactions.filter(t => t.type === 'purchase').reduce((acc, curr) => acc + curr.totalAmount, 0)
+
+  const toggleExpandKit = (code: string) => {
+    setExpandedKitCodes(prev => ({ ...prev, [code]: !prev[code] }))
+  }
+
+  const handleLinkItemsToParent = async (childCodes: string[], parentCode: string, autoAdjustBudget = false) => {
+    if (!currentProject) return
+    const updatedProducts = (currentProject.expectedProducts || []).map(p => {
+      if (childCodes.includes(p.code) || childCodes.includes(p.description)) {
+        return { ...p, parentCode }
+      }
+      if (p.code === parentCode) {
+        return { ...p, isKit: true }
+      }
+      return p
+    })
+
+    const officialTotal = updatedProducts
+      .filter(p => !p.parentCode)
+      .reduce((acc, curr) => acc + (curr.quantity * curr.unitPrice), 0)
+
+    const updatePayload: any = { expectedProducts: updatedProducts }
+    if (autoAdjustBudget && officialTotal > 0) {
+      updatePayload.targetSaleAmount = officialTotal
+    }
+
+    try {
+      await updateProject(db, currentProject.id, updatePayload)
+      toast({
+        title: "Kits e Insumos Actualizados",
+        description: `Se vincularon ${childCodes.length} insumos de bodega al Renglón Principal [${parentCode}].`
+      })
+      setIsKitConfigOpen(false)
+    } catch (err: any) {
+      toast({
+        title: "Error al actualizar",
+        description: err.message || "No se pudo actualizar el proyecto.",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleUnlinkItem = async (childCodeOrDesc: string) => {
+    if (!currentProject) return
+    const updatedProducts = (currentProject.expectedProducts || []).map(p => {
+      if (p.code === childCodeOrDesc || p.description === childCodeOrDesc) {
+        const { parentCode, quantityPerParent, ...rest } = p
+        return rest
+      }
+      return p
+    })
+    try {
+      await updateProject(db, currentProject.id, { expectedProducts: updatedProducts })
+      toast({
+        title: "Insumo Desvinculado",
+        description: "El producto ahora es un renglón independiente de la licitación."
+      })
+    } catch (err: any) {
+      toast({ title: "Error", description: err.message, variant: "destructive" })
+    }
+  }
 
   const cleanString = (str: any) => {
     if (!str) return '';
@@ -2357,12 +2424,13 @@ export default function InstitutionalModule() {
                     <Table>
                       <TableHeader className="bg-muted/50 sticky top-0 z-10">
                         <TableRow>
-                          <TableHead className="w-[120px]">Código SV</TableHead>
-                          <TableHead className="w-[300px]">Descripción</TableHead>
-                          <TableHead className="w-[90px] text-right">Cantidad</TableHead>
-                          <TableHead className="w-[110px] text-right">Precio Venta ($)</TableHead>
-                          <TableHead className="w-[110px] text-right">Total ($)</TableHead>
-                          <TableHead className="w-[60px] text-center">Acción</TableHead>
+                          <TableHead className="w-[110px]">Código SV</TableHead>
+                          <TableHead className="w-[260px]">Descripción</TableHead>
+                          <TableHead className="w-[80px] text-right">Cantidad</TableHead>
+                          <TableHead className="w-[95px] text-right">Precio Venta ($)</TableHead>
+                          <TableHead className="w-[95px] text-right">Total ($)</TableHead>
+                          <TableHead className="w-[140px]">Jerarquía / Tipo</TableHead>
+                          <TableHead className="w-[50px] text-center">Acción</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -2404,6 +2472,25 @@ export default function InstitutionalModule() {
                               <TableCell className="p-2 text-right text-xs font-bold text-foreground">
                                 ${(p.quantity * p.unitPrice).toFixed(2)}
                               </TableCell>
+                              <TableCell className="p-2">
+                                <select
+                                  className="w-full h-8 text-[11px] rounded border bg-background px-1 text-foreground"
+                                  value={p.parentCode || '__PARENT__'}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    handleUpdateProductProperty(idx, 'parentCode', val === '__PARENT__' ? undefined : val);
+                                  }}
+                                >
+                                  <option value="__PARENT__">🌟 Renglón Oficial</option>
+                                  {newProjectProducts
+                                    .filter((_, i) => i !== idx && !_.parentCode)
+                                    .map(op => (
+                                      <option key={op.code} value={op.code}>
+                                        📦 Insumo de: [{op.code}]
+                                      </option>
+                                    ))}
+                                </select>
+                              </TableCell>
                               <TableCell className="p-2 text-center">
                                 <Button 
                                   variant="ghost" 
@@ -2419,7 +2506,7 @@ export default function InstitutionalModule() {
                           ))
                         ) : (
                           <TableRow>
-                            <TableCell colSpan={6} className="h-32 text-center text-muted-foreground italic text-xs">
+                            <TableCell colSpan={7} className="h-32 text-center text-muted-foreground italic text-xs">
                               No hay productos en esta Orden de Compra. Agregue uno abajo.
                             </TableCell>
                           </TableRow>
@@ -2471,10 +2558,15 @@ export default function InstitutionalModule() {
                         <Plus className="h-3.5 w-3.5" /> Añadir Artículo
                       </Button>
                       <div className="text-right">
-                        <span className="text-[10px] text-muted-foreground uppercase font-bold block leading-none mb-1">Valor Estimado de la OC</span>
+                        <span className="text-[10px] text-muted-foreground uppercase font-bold block leading-none mb-1">Valor Oficial de la OC (Renglones Principales)</span>
                         <span className="text-lg font-black text-primary">
-                          ${newProjectProducts.reduce((acc, curr) => acc + (curr.quantity * curr.unitPrice), 0).toFixed(2)}
+                          ${newProjectProducts.filter(p => !p.parentCode).reduce((acc, curr) => acc + (curr.quantity * curr.unitPrice), 0).toFixed(2)}
                         </span>
+                        {newProjectProducts.filter(p => !!p.parentCode).length > 0 && (
+                          <span className="block text-[9px] text-muted-foreground">
+                            ({newProjectProducts.filter(p => !!p.parentCode).length} insumos de bodega vinculados)
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -2482,6 +2574,167 @@ export default function InstitutionalModule() {
                   <DialogFooter className="mt-4 gap-2 pt-4 border-t shrink-0">
                     <Button type="button" className="w-full bg-primary font-bold text-white hover:bg-primary/90" onClick={() => setIsSuppliesDialogOpen(false)}>
                       Confirmar y Regresar
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              {/* Diálogo de Configuración de Kits e Insumos de Bodega */}
+              <Dialog open={isKitConfigOpen} onOpenChange={setIsKitConfigOpen}>
+                <DialogContent className="sm:max-w-[850px] w-[95vw] max-h-[85vh] flex flex-col p-6 overflow-hidden">
+                  <DialogHeader className="pb-3 border-b shrink-0">
+                    <DialogTitle className="flex items-center gap-2 text-xl font-bold font-headline text-foreground">
+                      <Layers className="h-5 w-5 text-primary" />
+                      Estructuración de Licitación: Kits y Componentes de Bodega
+                    </DialogTitle>
+                    <CardDescription className="text-xs">
+                      Defina los Renglones Oficiales contratados con el cliente y asigne cuáles productos son insumos de bodega que componen cada renglón.
+                    </CardDescription>
+                  </DialogHeader>
+
+                  <div className="flex-1 overflow-y-auto my-3 space-y-4 pr-1">
+                    {/* Tarjeta de Asignación Automática Inteligente */}
+                    {currentProject?.expectedProducts && currentProject.expectedProducts.length > 2 && (
+                      <div className="p-3.5 bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+                        <div className="text-xs space-y-0.5">
+                          <span className="font-bold text-blue-900 dark:text-blue-300 flex items-center gap-1.5">
+                            <Sparkles className="h-3.5 w-3.5 text-blue-600" /> Auto-Agrupar Insumos en Renglón 1
+                          </span>
+                          <p className="text-muted-foreground text-[11px] max-w-xl">
+                            Conservar los 2 primeros ítems como los únicos Renglones Oficiales y asignar automáticamente los {currentProject.expectedProducts.length - 2} productos restantes como insumos de bodega de [{currentProject.expectedProducts[0].code}].
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="h-8 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shrink-0 gap-1.5"
+                          onClick={() => {
+                            const firstParent = currentProject.expectedProducts[0]?.code;
+                            const childCodes = currentProject.expectedProducts.slice(2).map(p => p.code);
+                            handleLinkItemsToParent(childCodes, firstParent, true);
+                          }}
+                        >
+                          <Sparkles className="h-3.5 w-3.5" /> Vincular Ahora
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Tabla de asignación producto por producto */}
+                    <div className="border rounded-xl overflow-hidden bg-card">
+                      <Table className="text-xs">
+                        <TableHeader className="bg-muted/50 sticky top-0 z-10">
+                          <TableRow>
+                            <TableHead className="w-[110px]">Código</TableHead>
+                            <TableHead>Descripción del Producto</TableHead>
+                            <TableHead className="w-[80px] text-right">Cant.</TableHead>
+                            <TableHead className="w-[230px]">Tipo / Pertenencia</TableHead>
+                            <TableHead className="w-[70px] text-center">Acción</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {(currentProject?.expectedProducts || []).map((p, idx) => {
+                            const isChild = !!p.parentCode;
+                            return (
+                              <TableRow key={idx} className={cn(isChild ? "bg-muted/10" : "font-semibold")}>
+                                <TableCell className="font-mono text-primary font-bold">
+                                  {p.code || `R-${idx + 1}`}
+                                </TableCell>
+                                <TableCell>
+                                  <div className="flex flex-col">
+                                    <span className={cn(isChild ? "text-muted-foreground text-[11px]" : "font-bold text-foreground")}>
+                                      {isChild && "↳ Insumo: "} {p.description}
+                                    </span>
+                                    {p.unitPrice > 0 && (
+                                      <span className="text-[10px] text-muted-foreground">
+                                        Precio: ${p.unitPrice.toFixed(2)} c/u • Subtotal: ${(p.quantity * p.unitPrice).toFixed(2)}
+                                      </span>
+                                    )}
+                                  </div>
+                                </TableCell>
+                                <TableCell className="text-right font-mono">{p.quantity}</TableCell>
+                                <TableCell>
+                                  <select
+                                    className="w-full h-8 text-xs rounded-md border border-input bg-background px-2 py-1 shadow-sm text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                                    value={p.parentCode || '__PARENT__'}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      const updated = (currentProject?.expectedProducts || []).map((it, i) => {
+                                        if (i === idx) {
+                                          if (val === '__PARENT__' || !val) {
+                                            const { parentCode, quantityPerParent, ...rest } = it;
+                                            return rest;
+                                          } else {
+                                            return { ...it, parentCode: val };
+                                          }
+                                        }
+                                        if (it.code === val) {
+                                          return { ...it, isKit: true };
+                                        }
+                                        return it;
+                                      });
+                                      if (currentProject) {
+                                        updateProject(db, currentProject.id, { expectedProducts: updated });
+                                      }
+                                    }}
+                                  >
+                                    <option value="__PARENT__">🌟 Renglón Oficial (Licitación)</option>
+                                    {(currentProject?.expectedProducts || [])
+                                      .filter((_, i) => i !== idx && !_.parentCode)
+                                      .map(op => (
+                                        <option key={op.code} value={op.code}>
+                                          📦 Insumo de: [{op.code}] {op.description.slice(0, 22)}...
+                                        </option>
+                                      ))}
+                                  </select>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  {isChild && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-7 text-[10px] text-destructive hover:bg-destructive/10 px-2"
+                                      onClick={() => handleUnlinkItem(p.code)}
+                                      title="Desvincular (volver a convertir en Renglón Oficial)"
+                                    >
+                                      Desvincular
+                                    </Button>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+
+                  <DialogFooter className="border-t pt-3 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 shrink-0">
+                    <div className="text-xs text-muted-foreground flex items-center gap-2">
+                      <span>Monto Oficial OC (Renglones Principales):</span>
+                      <strong className="text-primary font-mono text-sm">
+                        ${(currentProject?.expectedProducts || [])
+                          .filter(p => !p.parentCode)
+                          .reduce((acc, curr) => acc + (curr.quantity * curr.unitPrice), 0)
+                          .toFixed(2)}
+                      </strong>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 text-[10px] px-2 text-blue-600 hover:bg-blue-50"
+                        onClick={() => {
+                          const officialTotal = (currentProject?.expectedProducts || [])
+                            .filter(p => !p.parentCode)
+                            .reduce((acc, curr) => acc + (curr.quantity * curr.unitPrice), 0);
+                          if (currentProject && officialTotal > 0) {
+                            updateProject(db, currentProject.id, { targetSaleAmount: officialTotal });
+                            toast({ title: "Monto OC Ajustado", description: `Presupuesto del proyecto actualizado a $${officialTotal.toFixed(2)}.` });
+                          }
+                        }}
+                      >
+                        Sincronizar Presupuesto
+                      </Button>
+                    </div>
+                    <Button className="bg-primary text-white w-full sm:w-auto" onClick={() => setIsKitConfigOpen(false)}>
+                      Listo / Cerrar
                     </Button>
                   </DialogFooter>
                 </DialogContent>
@@ -2914,7 +3167,9 @@ export default function InstitutionalModule() {
                                             <option value="__UNMATCHED__">📦 No pertenece al proyecto (Enviar a Excedente)</option>
                                             {currentProject?.expectedProducts?.map((ep) => (
                                               <option key={ep.code} value={ep.code}>
-                                                🔗 [{ep.code}] {ep.description.length > 35 ? ep.description.slice(0, 35) + '...' : ep.description} (OC: {ep.quantity})
+                                                {ep.parentCode 
+                                                  ? `  ↳ [Insumo: ${ep.code}] ${ep.description.length > 30 ? ep.description.slice(0, 30) + '...' : ep.description} (Req: ${ep.quantity})`
+                                                  : `🌟 [Oficial: ${ep.code}] ${ep.description.length > 30 ? ep.description.slice(0, 30) + '...' : ep.description} (OC: ${ep.quantity})`}
                                               </option>
                                             ))}
                                           </select>
@@ -3373,60 +3628,160 @@ export default function InstitutionalModule() {
 
                 {(() => {
                   const projectTxs = transactions.filter(t => t.projectId === currentProject.id && !t.isVoided);
+                  const allExpectedProducts = currentProject.expectedProducts || [];
+                  const officialProducts = allExpectedProducts.filter(ep => !ep.parentCode);
+                  const allChildComponents = allExpectedProducts.filter(ep => !!ep.parentCode);
                   
-                  const productRows = (currentProject.expectedProducts || []).map(ep => {
+                  const productRows = officialProducts.map(ep => {
                     const remissionItems = projectTxs.filter(t => t.type === 'remission').flatMap(t => t.items || []).filter(i => {
                       if (!i) return false;
-                      const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
+                      const match = getMatchingExpectedProduct(i, allExpectedProducts);
                       return match && (match.code === ep.code || match.description === ep.description);
                     });
                     const deliveredQty = remissionItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
 
                     const saleItems = projectTxs.filter(t => t.type === 'sale').flatMap(t => t.items || []).filter(i => {
                       if (!i) return false;
-                      const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
+                      const match = getMatchingExpectedProduct(i, allExpectedProducts);
                       return match && (match.code === ep.code || match.description === ep.description);
                     });
                     const saleQty = saleItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
                     const saleTotal = saleItems.reduce((acc, curr) => acc + (curr?.lineTotal || (curr?.quantity * curr?.unitPrice) || 0), 0);
                     const saleAvgUnitPrice = saleQty > 0 ? saleTotal / saleQty : ep.unitPrice;
 
-                    const costItems = projectTxs.filter(t => t.type === 'purchase').flatMap(t => t.items || []).filter(i => {
+                    // Compras directas al renglón
+                    const directCostItems = projectTxs.filter(t => t.type === 'purchase').flatMap(t => t.items || []).filter(i => {
                       if (!i) return false;
-                      const match = getMatchingExpectedProduct(i, currentProject.expectedProducts);
+                      const match = getMatchingExpectedProduct(i, allExpectedProducts);
                       return match && (match.code === ep.code || match.description === ep.description);
                     });
-                    const costQty = costItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
-                    const costTotal = costItems.reduce((acc, curr) => acc + (curr?.lineTotal || (curr?.quantity * curr?.unitPrice) || 0), 0);
+                    const directCostQty = directCostItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
+                    const directCostTotal = directCostItems.reduce((acc, curr) => acc + (curr?.lineTotal || (curr?.quantity * curr?.unitPrice) || 0), 0);
+
+                    // Insumos o componentes de bodega asociados a este Renglón Oficial
+                    const myComponents = allChildComponents.filter(c => c.parentCode === ep.code);
+                    const isKit = !!ep.isKit || myComponents.length > 0;
+
+                    const componentsDetail = myComponents.map(comp => {
+                      const compCostItems = projectTxs.filter(t => t.type === 'purchase').flatMap(t => t.items || []).filter(i => {
+                        if (!i) return false;
+                        const match = getMatchingExpectedProduct(i, allExpectedProducts);
+                        return match && (match.code === comp.code || match.description === comp.description);
+                      });
+                      const compCostQty = compCostItems.reduce((acc, curr) => acc + (curr?.quantity || 0), 0);
+                      const compCostTotal = compCostItems.reduce((acc, curr) => acc + (curr?.lineTotal || (curr?.quantity * curr?.unitPrice) || 0), 0);
+                      const compAvgCost = compCostQty > 0 ? compCostTotal / compCostQty : (comp.unitPrice || 0);
+                      const qtyPerParent = comp.quantityPerParent || 1;
+                      const requiredTotal = comp.quantity || (ep.quantity * qtyPerParent);
+                      const kitsStock = Math.floor(compCostQty / qtyPerParent);
+                      const missingQty = Math.max(0, requiredTotal - compCostQty);
+                      const compUnifiedDescs = Array.from(new Set(compCostItems.map(ci => ci.description).filter(Boolean)));
+
+                      return {
+                        comp,
+                        costQty: compCostQty,
+                        costTotal: compCostTotal,
+                        avgCost: compAvgCost,
+                        qtyPerParent,
+                        requiredTotal,
+                        kitsStock,
+                        missingQty,
+                        costItemsCount: compCostItems.length,
+                        unifiedDescriptions: compUnifiedDescs
+                      };
+                    });
+
+                    const componentsCostTotal = componentsDetail.reduce((acc, cd) => acc + cd.costTotal, 0);
+                    const totalCost = directCostTotal + componentsCostTotal;
+
+                    // Kits completos disponibles según insumos comprados
+                    let assembledKits = directCostQty;
+                    if (componentsDetail.length > 0) {
+                      const minKits = Math.min(...componentsDetail.map(cd => cd.kitsStock));
+                      assembledKits = Math.max(directCostQty, minKits);
+                    }
+
+                    const costQty = assembledKits;
+                    const costTotal = totalCost;
                     const costAvgUnitPrice = costQty > 0 ? costTotal / costQty : 0;
-                    const costItemsCount = costItems.length;
-                    const unifiedDescriptions = Array.from(new Set(costItems.map(ci => ci.description).filter(Boolean)));
+                    const allCostItemsCount = directCostItems.length + componentsDetail.reduce((acc, cd) => acc + cd.costItemsCount, 0);
+                    const unifiedDescriptions = Array.from(new Set([
+                      ...directCostItems.map(ci => ci.description).filter(Boolean),
+                      ...componentsDetail.flatMap(cd => cd.unifiedDescriptions)
+                    ]));
 
                     const pendingDeliver = ep.quantity - deliveredQty;
                     const pendingInvoice = deliveredQty - saleQty;
-                    const marginAmount = saleTotal - costTotal;
-                    const marginPercent = saleTotal > 0 ? (marginAmount / saleTotal) * 100 : 0;
+                    const baseSaleValue = saleTotal > 0 ? saleTotal : (ep.quantity * ep.unitPrice);
+                    const marginAmount = baseSaleValue - costTotal;
+                    const marginPercent = baseSaleValue > 0 ? (marginAmount / baseSaleValue) * 100 : 0;
 
                     return {
                       ep,
+                      isKit,
+                      childComponents: componentsDetail,
                       deliveredQty,
                       saleQty,
                       saleTotal,
                       saleAvgUnitPrice,
                       costQty,
                       costTotal,
+                      directCostTotal,
+                      componentsCostTotal,
                       costAvgUnitPrice,
-                      costItemsCount,
+                      costItemsCount: allCostItemsCount,
                       unifiedDescriptions,
                       pendingDeliver,
                       pendingInvoice,
                       marginAmount,
-                      marginPercent
+                      marginPercent,
+                      assembledKits
                     };
                   });
 
                   return (
                     <div className="space-y-6">
+                      {/* Banner Sugerencia de Estructuración Rápida si hay insumos sin agrupar */}
+                      {allChildComponents.length === 0 && currentProject.expectedProducts?.length > 2 && (
+                        <div className="bg-gradient-to-r from-blue-500/10 via-indigo-500/10 to-emerald-500/10 border border-blue-500/30 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-3 shadow-sm">
+                          <div className="flex items-start gap-3">
+                            <div className="p-2.5 bg-blue-600/15 rounded-lg text-blue-600 dark:text-blue-400 shrink-0 mt-0.5">
+                              <Layers className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <h4 className="text-xs font-bold text-foreground flex items-center gap-2">
+                                Estructuración de Licitación: Renglones Principales vs. Insumos de Bodega
+                                <Badge variant="outline" className="text-[9px] py-0 border-blue-500/40 text-blue-600 bg-blue-500/10">Sugerencia Inteligente</Badge>
+                              </h4>
+                              <p className="text-[11px] text-muted-foreground mt-0.5 max-w-2xl">
+                                Hay {currentProject.expectedProducts.length} renglones en la tabla. Si los 2 primeros son los ítems únicos de la orden ({currentProject.expectedProducts[0]?.description?.slice(0, 30)}... y {currentProject.expectedProducts[1]?.description?.slice(0, 30)}...) y los demás son sus insumos de bodega, puedes unificarlos con un solo clic.
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 shrink-0 w-full md:w-auto">
+                            <Button 
+                              size="sm" 
+                              className="h-8 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white gap-1.5 w-full sm:w-auto"
+                              onClick={() => {
+                                const firstParent = currentProject.expectedProducts[0]?.code;
+                                const childCodes = currentProject.expectedProducts.slice(2).map(p => p.code);
+                                handleLinkItemsToParent(childCodes, firstParent, true);
+                              }}
+                            >
+                              <Sparkles className="h-3.5 w-3.5" /> Auto-vincular al Renglón 1
+                            </Button>
+                            <Button 
+                              variant="outline" 
+                              size="sm" 
+                              className="h-8 text-xs font-semibold gap-1.5 w-full sm:w-auto"
+                              onClick={() => setIsKitConfigOpen(true)}
+                            >
+                              <Sliders className="h-3.5 w-3.5" /> Configurar Personalizado
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Tablero de Seguimiento de Suministros de Licitación */}
                       <Card className="border-t-4 border-t-emerald-600 shadow-sm">
                         <CardHeader className="pb-3">
@@ -3440,9 +3795,21 @@ export default function InstitutionalModule() {
                                 Control renglón por renglón: contratado vs. compras vinculadas, remisiones entregadas y saldo pendiente.
                               </CardDescription>
                             </div>
-                            <Badge className="bg-emerald-600 text-white font-mono text-xs">
-                              {productRows.filter(r => r.deliveredQty >= r.ep.quantity).length} de {productRows.length} Renglones Cumplidos
-                            </Badge>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs font-semibold gap-1.5 border-primary/30 text-primary hover:bg-primary/10"
+                                onClick={() => setIsKitConfigOpen(true)}
+                              >
+                                <Layers className="h-3.5 w-3.5" />
+                                Estructurar Kits e Insumos
+                              </Button>
+                              <Badge className="bg-emerald-600 text-white font-mono text-xs">
+                                {productRows.filter(r => r.deliveredQty >= r.ep.quantity).length} de {productRows.length} Renglones Cumplidos
+                                {allChildComponents.length > 0 && ` (${allChildComponents.length} Insumos de Bodega)`}
+                              </Badge>
+                            </div>
                           </div>
                         </CardHeader>
                         <CardContent>
@@ -3466,90 +3833,275 @@ export default function InstitutionalModule() {
                                   const reqQty = row.ep.quantity || 1;
                                   const pctDelivered = Math.min(Math.round((row.deliveredQty / reqQty) * 100), 100);
                                   const isComplete = row.deliveredQty >= reqQty;
-                                  const isStocked = row.costQty >= reqQty && !isComplete;
-                                  const hasNoPurchases = row.costQty === 0;
+                                  const isExpanded = !!expandedKitCodes[row.ep.code];
+
+                                  let isStocked = false;
+                                  let statusBadge = null;
+
+                                  if (isComplete) {
+                                    statusBadge = (
+                                      <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold">
+                                        ✓ CUMPLIDO
+                                      </Badge>
+                                    );
+                                  } else if (row.isKit && row.childComponents.length > 0) {
+                                    if (row.assembledKits >= reqQty) {
+                                      isStocked = true;
+                                      statusBadge = (
+                                        <Badge className="bg-emerald-600 text-white text-[9px] font-bold" title="Todos los insumos de bodega completos para los kits contratados">
+                                          EN BODEGA (LISTO)
+                                        </Badge>
+                                      );
+                                    } else if (row.assembledKits > 0) {
+                                      statusBadge = (
+                                        <Badge className="bg-blue-600 text-white text-[9px] font-bold" title={`${row.assembledKits} de ${reqQty} kits completos armados con insumos de bodega`}>
+                                          EN BODEGA ({row.assembledKits}/{reqQty})
+                                        </Badge>
+                                      );
+                                    } else if (row.costTotal > 0) {
+                                      statusBadge = (
+                                        <Badge className="bg-amber-500 text-white text-[9px] font-bold" title="Insumos comprados en bodega pero pendientes de completar kit">
+                                          INSUMOS PARCIALES
+                                        </Badge>
+                                      );
+                                    } else {
+                                      statusBadge = (
+                                        <Badge variant="destructive" className="text-[9px] font-bold">
+                                          SIN COMPRAS
+                                        </Badge>
+                                      );
+                                    }
+                                  } else {
+                                    isStocked = row.costQty >= reqQty;
+                                    if (isStocked) {
+                                      statusBadge = (
+                                        <Badge className="bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold" title="Comprado en bodega, pendiente de remisión">
+                                          EN BODEGA
+                                        </Badge>
+                                      );
+                                    } else if (row.costQty === 0) {
+                                      statusBadge = (
+                                        <Badge variant="destructive" className="text-[9px] font-bold">
+                                          SIN COMPRAS
+                                        </Badge>
+                                      );
+                                    } else {
+                                      statusBadge = (
+                                        <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-bold">
+                                          EN PROCESO
+                                        </Badge>
+                                      );
+                                    }
+                                  }
 
                                   return (
-                                    <TableRow key={idx} className={cn(isComplete && "bg-emerald-50/30 dark:bg-emerald-950/10")}>
-                                      <TableCell className="font-medium">
-                                        <div className="flex flex-col">
-                                          <div className="flex items-center gap-1.5">
-                                            <Badge variant="outline" className="font-mono text-[9px] font-bold text-primary">
-                                              {row.ep.code || `R-${idx + 1}`}
-                                            </Badge>
-                                            <span className="font-semibold">{row.ep.description}</span>
-                                          </div>
-                                          {row.ep.unitPrice > 0 && (
-                                            <span className="text-[10px] text-muted-foreground">
-                                              Presupuesto: ${row.ep.unitPrice.toFixed(2)} c/u • Subtotal: ${(reqQty * row.ep.unitPrice).toFixed(2)}
-                                            </span>
-                                          )}
-                                          {row.costItemsCount > 0 && (
-                                            <div
-                                              className="mt-1 inline-flex flex-wrap items-center gap-1.5 text-[10px] text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
-                                              onClick={() => setViewingProductDetail({
-                                                code: row.ep.code,
-                                                description: row.ep.description,
-                                                expectedQty: row.ep.quantity,
-                                                expectedPrice: row.ep.unitPrice
-                                              })}
-                                              title="Haga clic para ver el desglose de productos de facturas de proveedor unificados en este ítem"
-                                            >
-                                              <Badge variant="outline" className="text-[9px] py-0 px-1.5 border-blue-500/40 text-blue-600 dark:text-blue-400 bg-blue-500/10 gap-1">
-                                                <Link2 className="h-2.5 w-2.5" />
-                                                {row.costItemsCount} prod(s) proveedor unificados (${row.costTotal.toFixed(2)})
+                                    <React.Fragment key={idx}>
+                                      <TableRow className={cn(isComplete && "bg-emerald-50/30 dark:bg-emerald-950/10")}>
+                                        <TableCell className="font-medium">
+                                          <div className="flex flex-col">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <Badge variant="outline" className="font-mono text-[9px] font-bold text-primary">
+                                                {row.ep.code || `R-${idx + 1}`}
                                               </Badge>
-                                              <span className="text-[9px] text-muted-foreground truncate max-w-[280px]">
-                                                {row.unifiedDescriptions.slice(0, 3).join(' • ')}
-                                              </span>
+                                              <span className="font-semibold">{row.ep.description}</span>
+                                              {row.isKit && (
+                                                <Badge variant="outline" className="text-[9px] py-0 px-1.5 border-indigo-500/40 text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 gap-1 font-semibold">
+                                                  <Layers className="h-2.5 w-2.5" />
+                                                  Kit ({row.childComponents.length} insumos)
+                                                </Badge>
+                                              )}
                                             </div>
+                                            {row.ep.unitPrice > 0 && (
+                                              <span className="text-[10px] text-muted-foreground mt-0.5">
+                                                Presupuesto Venta: ${row.ep.unitPrice.toFixed(2)} c/u • Subtotal: ${(reqQty * row.ep.unitPrice).toFixed(2)}
+                                              </span>
+                                            )}
+                                            {row.isKit && row.childComponents.length > 0 && (
+                                              <div className="mt-1 flex flex-wrap items-center gap-2">
+                                                <Button
+                                                  variant="ghost"
+                                                  size="sm"
+                                                  className="h-6 text-[10px] px-2 py-0 gap-1 text-primary hover:bg-primary/10 font-bold"
+                                                  onClick={() => toggleExpandKit(row.ep.code)}
+                                                >
+                                                  {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                                                  {isExpanded ? 'Ocultar Insumos de Bodega' : `Ver ${row.childComponents.length} Insumos de Bodega`}
+                                                </Button>
+                                                {row.costTotal > 0 && (
+                                                  <span className="text-[10px] text-muted-foreground font-mono">
+                                                    Inversión en insumos: <strong className="text-foreground">${row.costTotal.toFixed(2)}</strong>
+                                                  </span>
+                                                )}
+                                              </div>
+                                            )}
+                                            {!row.isKit && row.costItemsCount > 0 && (
+                                              <div
+                                                className="mt-1 inline-flex flex-wrap items-center gap-1.5 text-[10px] text-blue-600 dark:text-blue-400 cursor-pointer hover:underline"
+                                                onClick={() => setViewingProductDetail({
+                                                  code: row.ep.code,
+                                                  description: row.ep.description,
+                                                  expectedQty: row.ep.quantity,
+                                                  expectedPrice: row.ep.unitPrice
+                                                })}
+                                                title="Haga clic para ver el desglose de productos de facturas de proveedor unificados en este ítem"
+                                              >
+                                                <Badge variant="outline" className="text-[9px] py-0 px-1.5 border-blue-500/40 text-blue-600 dark:text-blue-400 bg-blue-500/10 gap-1">
+                                                  <Link2 className="h-2.5 w-2.5" />
+                                                  {row.costItemsCount} prod(s) proveedor unificados (${row.costTotal.toFixed(2)})
+                                                </Badge>
+                                                <span className="text-[9px] text-muted-foreground truncate max-w-[280px]">
+                                                  {row.unifiedDescriptions.slice(0, 3).join(' • ')}
+                                                </span>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </TableCell>
+                                        <TableCell className="text-center text-muted-foreground text-[10px]">
+                                          {(row.ep as any).unit || (row.isKit ? 'Kit' : 'Unidad')}
+                                        </TableCell>
+                                        <TableCell className="text-right font-bold bg-muted/20">
+                                          {reqQty}
+                                        </TableCell>
+                                        <TableCell className="text-right font-mono font-bold text-rose-700 bg-rose-50/20">
+                                          {row.isKit && row.childComponents.length > 0 ? (
+                                            <div>
+                                              <span>{row.assembledKits}</span>
+                                              <span className="block text-[8px] text-muted-foreground font-normal">kits listos</span>
+                                            </div>
+                                          ) : (
+                                            row.costQty
                                           )}
-                                        </div>
-                                      </TableCell>
-                                      <TableCell className="text-center text-muted-foreground text-[10px]">
-                                        {(row.ep as any).unit || 'Unidad'}
-                                      </TableCell>
-                                      <TableCell className="text-right font-bold bg-muted/20">
-                                        {reqQty}
-                                      </TableCell>
-                                      <TableCell className="text-right font-mono font-bold text-rose-700 bg-rose-50/20">
-                                        {row.costQty}
-                                      </TableCell>
-                                      <TableCell className="text-right font-mono font-bold text-blue-700 bg-blue-50/20">
-                                        {row.deliveredQty}
-                                      </TableCell>
-                                      <TableCell className="text-right font-mono font-bold text-green-700 bg-green-50/20">
-                                        {row.saleQty}
-                                      </TableCell>
-                                      <TableCell className="text-right font-mono font-bold text-amber-700 bg-amber-50/20">
-                                        {Math.max(0, reqQty - row.deliveredQty)}
-                                      </TableCell>
-                                      <TableCell className="text-center w-[120px]">
-                                        <div className="space-y-1">
-                                          <Progress value={pctDelivered} className="h-2" />
-                                          <span className="text-[9px] font-bold text-muted-foreground">{pctDelivered}%</span>
-                                        </div>
-                                      </TableCell>
-                                      <TableCell className="text-center">
-                                        {isComplete ? (
-                                          <Badge className="bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold">
-                                            ✓ CUMPLIDO
-                                          </Badge>
-                                        ) : isStocked ? (
-                                          <Badge className="bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-bold" title="Comprado en bodega, pendiente de remisión">
-                                            EN BODEGA
-                                          </Badge>
-                                        ) : hasNoPurchases ? (
-                                          <Badge variant="destructive" className="text-[9px] font-bold">
-                                            SIN COMPRAS
-                                          </Badge>
-                                        ) : (
-                                          <Badge className="bg-amber-500 hover:bg-amber-600 text-white text-[9px] font-bold">
-                                            EN PROCESO
-                                          </Badge>
-                                        )}
-                                      </TableCell>
-                                    </TableRow>
+                                        </TableCell>
+                                        <TableCell className="text-right font-mono font-bold text-blue-700 bg-blue-50/20">
+                                          {row.deliveredQty}
+                                        </TableCell>
+                                        <TableCell className="text-right font-mono font-bold text-green-700 bg-green-50/20">
+                                          {row.saleQty}
+                                        </TableCell>
+                                        <TableCell className="text-right font-mono font-bold text-amber-700 bg-amber-50/20">
+                                          {Math.max(0, reqQty - row.deliveredQty)}
+                                        </TableCell>
+                                        <TableCell className="text-center w-[120px]">
+                                          <div className="space-y-1">
+                                            <Progress value={pctDelivered} className="h-2" />
+                                            <span className="text-[9px] font-bold text-muted-foreground">{pctDelivered}%</span>
+                                          </div>
+                                        </TableCell>
+                                        <TableCell className="text-center">
+                                          {statusBadge}
+                                        </TableCell>
+                                      </TableRow>
+
+                                      {/* Desglose de Insumos Anidado */}
+                                      {row.isKit && isExpanded && (
+                                        <TableRow className="bg-muted/15 border-y-2 border-indigo-500/20">
+                                          <TableCell colSpan={9} className="p-3">
+                                            <div className="bg-card rounded-xl border p-3.5 space-y-2.5 shadow-sm">
+                                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b">
+                                                <div className="flex items-center gap-2">
+                                                  <Badge className="bg-indigo-600 text-white text-[10px] gap-1">
+                                                    <Layers className="h-3 w-3" /> Insumos y Componentes de Bodega
+                                                  </Badge>
+                                                  <span className="text-xs font-bold text-foreground">
+                                                    Desglose de compras para: {row.ep.description}
+                                                  </span>
+                                                </div>
+                                                <div className="flex items-center gap-3 text-xs">
+                                                  <span className="text-muted-foreground font-mono text-[11px]">
+                                                    Inversión en insumos: <strong className="text-foreground">${row.childComponents.reduce((acc, c) => acc + c.costTotal, 0).toFixed(2)}</strong>
+                                                  </span>
+                                                  <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="h-6 text-[10px] px-2 font-semibold gap-1 text-primary border-primary/30"
+                                                    onClick={() => setIsKitConfigOpen(true)}
+                                                  >
+                                                    <Plus className="h-3 w-3" /> Gestionar Insumos
+                                                  </Button>
+                                                </div>
+                                              </div>
+
+                                              <div className="overflow-x-auto rounded-lg border">
+                                                <Table className="text-xs">
+                                                  <TableHeader className="bg-muted/40">
+                                                    <TableRow>
+                                                      <TableHead className="font-bold">Insumo de Bodega</TableHead>
+                                                      <TableHead className="text-center">Cód. Bodega</TableHead>
+                                                      <TableHead className="text-right">Por Kit</TableHead>
+                                                      <TableHead className="text-right font-bold">Total Requerido</TableHead>
+                                                      <TableHead className="text-right font-bold text-rose-700 bg-rose-50/40">Comprado en Bodega</TableHead>
+                                                      <TableHead className="text-right">Costo Unit. Prom.</TableHead>
+                                                      <TableHead className="text-right font-bold">Inversión Total</TableHead>
+                                                      <TableHead className="text-center">Estado Stock</TableHead>
+                                                      <TableHead className="text-center">Acción</TableHead>
+                                                    </TableRow>
+                                                  </TableHeader>
+                                                  <TableBody>
+                                                    {row.childComponents.map((cd, cIdx) => {
+                                                      const isItemStocked = cd.costQty >= cd.requiredTotal;
+                                                      return (
+                                                        <TableRow key={cIdx} className="hover:bg-muted/30">
+                                                          <TableCell className="font-medium">
+                                                            <div className="flex flex-col">
+                                                              <span className="font-semibold text-foreground">{cd.comp.description}</span>
+                                                              {cd.costItemsCount > 0 && (
+                                                                <span className="text-[9px] text-muted-foreground">
+                                                                  {cd.unifiedDescriptions.slice(0, 2).join(' • ')}
+                                                                </span>
+                                                              )}
+                                                            </div>
+                                                          </TableCell>
+                                                          <TableCell className="text-center font-mono text-primary text-[10px] font-bold">
+                                                            {cd.comp.code || 'S/C'}
+                                                          </TableCell>
+                                                          <TableCell className="text-right font-mono">{cd.qtyPerParent}</TableCell>
+                                                          <TableCell className="text-right font-mono font-bold">{cd.requiredTotal}</TableCell>
+                                                          <TableCell className="text-right font-mono font-bold text-rose-700 bg-rose-50/20">
+                                                            {cd.costQty}
+                                                          </TableCell>
+                                                          <TableCell className="text-right font-mono text-muted-foreground">
+                                                            ${cd.avgCost.toFixed(2)}
+                                                          </TableCell>
+                                                          <TableCell className="text-right font-mono font-bold text-foreground">
+                                                            ${cd.costTotal.toFixed(2)}
+                                                          </TableCell>
+                                                          <TableCell className="text-center">
+                                                            {isItemStocked ? (
+                                                              <Badge className="bg-emerald-600 text-white text-[9px] py-0 font-bold">
+                                                                ✓ 100% en Bodega
+                                                              </Badge>
+                                                            ) : cd.costQty > 0 ? (
+                                                              <Badge className="bg-amber-500 text-white text-[9px] py-0 font-bold">
+                                                                {cd.costQty} de {cd.requiredTotal} (Faltan {cd.missingQty})
+                                                              </Badge>
+                                                            ) : (
+                                                              <Badge variant="destructive" className="text-[9px] py-0 font-bold">
+                                                                Sin Compras
+                                                              </Badge>
+                                                            )}
+                          </TableCell>
+                                                          <TableCell className="text-center">
+                                                            <Button
+                                                              variant="ghost"
+                                                              size="sm"
+                                                              className="h-6 text-[10px] text-muted-foreground hover:text-destructive px-2"
+                                                              onClick={() => handleUnlinkItem(cd.comp.code)}
+                                                              title="Desvincular como componente y volver a Renglón Oficial"
+                                                            >
+                                                              Desvincular
+                                                            </Button>
+                                                          </TableCell>
+                                                        </TableRow>
+                                                      );
+                                                    })}
+                                                  </TableBody>
+                                                </Table>
+                                              </div>
+                                            </div>
+                                          </TableCell>
+                                        </TableRow>
+                                      )}
+                                    </React.Fragment>
                                   );
                                 })}
                                 {productRows.length === 0 && (
@@ -3613,7 +4165,14 @@ export default function InstitutionalModule() {
                                   productRows.map((r, idx) => (
                                     <TableRow key={idx} className="hover:bg-muted/30">
                                       <TableCell className="font-medium max-w-[200px] truncate" title={r.ep.description}>
-                                        <span className="font-bold text-foreground">{r.ep.code || 'S/C'}</span>
+                                        <div className="flex items-center gap-1.5">
+                                          <span className="font-bold text-foreground">{r.ep.code || 'S/C'}</span>
+                                          {r.isKit && (
+                                            <Badge variant="outline" className="text-[8px] py-0 px-1 border-indigo-500/40 text-indigo-600 bg-indigo-500/10 font-bold">
+                                              Kit ({r.childComponents.length})
+                                            </Badge>
+                                          )}
+                                        </div>
                                         <span className="block text-[10px] text-muted-foreground truncate">{r.ep.description}</span>
                                       </TableCell>
 
@@ -4234,7 +4793,9 @@ export default function InstitutionalModule() {
                             <option value="__UNMATCHED__">📦 Sin vincular (Excedente)</option>
                             {(currentProject?.expectedProducts || []).map((ep) => (
                               <option key={ep.code} value={ep.code}>
-                                🔗 [{ep.code}] {ep.description.slice(0, 28)}
+                                {ep.parentCode 
+                                  ? `  ↳ [Insumo: ${ep.code}] ${ep.description.slice(0, 26)}`
+                                  : `🌟 [Oficial: ${ep.code}] ${ep.description.slice(0, 26)}`}
                               </option>
                             ))}
                           </select>
