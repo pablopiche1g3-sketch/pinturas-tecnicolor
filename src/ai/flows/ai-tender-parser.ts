@@ -3,16 +3,17 @@
 import { ai } from '@/ai/genkit';
 import { z } from 'genkit';
 import * as mammothModule from 'mammoth';
+import JSZip from 'jszip';
 
 const mammoth: typeof mammothModule = (mammothModule as any).default || mammothModule;
 
 const TenderProductSchema = z.object({
-  code: z.string().nullable().optional().describe('Código, número de renglón o ítem (ej. "Renglón 1", "01", "PINT-01").'),
-  description: z.string().describe('Descripción detallada y especificación del producto o pintura solicitada en la orden de compra / licitación.'),
-  unit: z.string().nullable().optional().describe('Unidad de medida (ej. Cubeta 5 Gal, Galón, Caneca, Litro, Kit, Unidad).'),
-  quantity: z.number().nullable().optional().describe('Cantidad requerida o adjudicada en la orden de compra.'),
-  unitPrice: z.number().nullable().optional().describe('Precio unitario contratado o adjudicado según la orden de compra.'),
-  lineTotal: z.number().nullable().optional().describe('Monto total de este renglón.'),
+  code: z.string().nullable().optional().describe('Código, número de renglón o ítem tal como aparece en la tabla (ej. "1", "Renglón 1", "01", "PINT-01").'),
+  description: z.string().describe('Descripción completa y especificación técnica del producto o pintura solicitada en ese renglón.'),
+  unit: z.string().nullable().optional().describe('Unidad de medida o presentación (ej. Cubeta 5 Gal, Galón, Caneca, Cuarto, Litro, Kit, Unidad).'),
+  quantity: z.number().nullable().optional().describe('Cantidad numérica exacta solicitada en ese renglón.'),
+  unitPrice: z.number().nullable().optional().describe('Precio unitario ($) de 1 unidad de ese renglón. No confundir con el total de la línea.'),
+  lineTotal: z.number().nullable().optional().describe('Monto total ($) de este renglón (cantidad * precio unitario).'),
 });
 
 const AiTenderParserInputSchema = z.object({
@@ -23,17 +24,20 @@ const AiTenderParserInputSchema = z.object({
 export type AiTenderParserInput = z.infer<typeof AiTenderParserInputSchema>;
 
 const AiTenderParserRawOutputSchema = z.object({
-  projectName: z.string().nullable().optional().describe('Nombre del proyecto, objeto contractual, licitación o suministro según la orden de compra.'),
-  purchaseOrder: z.string().nullable().optional().describe('Número de Orden de Compra (OC), contrato o código de proceso (ej. OC-01/2026, LP-01/2026).'),
-  customerName: z.string().nullable().optional().describe('Nombre de la institución gubernamental, alcaldía, ministerio o empresa compradora.'),
-  totalBudget: z.number().nullable().optional().describe('Monto total de la Orden de Compra o presupuesto adjudicado.'),
+  projectName: z.string().nullable().optional().describe('Nombre del proyecto, proceso de compra, licitación o suministro según la orden de compra.'),
+  purchaseOrder: z.string().nullable().optional().describe('Número de Orden de Compra (OC), contrato o código de proceso (ej. OC-01/2026, LG-12/2026, LP-01/2026).'),
+  customerName: z.string().nullable().optional().describe('Nombre de la institución gubernamental, alcaldía, ministerio, hospital o empresa compradora.'),
+  subtotalAmount: z.number().nullable().optional().describe('Subtotal de los productos antes de IVA si está desglosado en el documento.'),
+  taxAmount: z.number().nullable().optional().describe('Monto de IVA (13%) si está desglosado por separado al final de la orden de compra.'),
+  totalBudget: z.number().nullable().optional().describe('Monto TOTAL FINAL de la Orden de Compra ($). Debe coincidir con el total general de la orden de compra.'),
+  pricesIncludeTax: z.boolean().nullable().optional().describe('true si los precios unitarios de la tabla ya incluyen IVA (o si el total de la orden es igual a la suma directa de los renglones); false si al final se suma el 13% de IVA aparte.'),
   deliveryDeadline: z.string().nullable().optional().describe('Plazo o fecha límite de entrega requerido en la Orden de Compra (ej. "15 días hábiles", "30 de noviembre 2026").'),
   deliveryAddress: z.string().nullable().optional().describe('Lugar, bodega o dirección exacta de entrega estipulada en la Orden de Compra.'),
   paymentTerms: z.string().nullable().optional().describe('Forma o condición de pago (ej. "Crédito 30 días", "Quedan", "Contra entrega").'),
   warrantyMonths: z.number().nullable().optional().describe('Meses de garantía de cumplimiento o buena calidad solicitados (si se indica, ej. 12).'),
   orderRequirements: z.string().nullable().optional().describe('Requisitos especiales de la Orden de Compra: documentos para facturación, horarios de recepción, contacto de bodega, administrador de contrato o condiciones técnicas.'),
-  items: z.array(TenderProductSchema).nullable().optional().describe('Lista clasificada de todos los renglones/productos requeridos en la Orden de Compra.'),
-  summary: z.string().nullable().optional().describe('Breve resumen explicativo de los requisitos de la orden de compra extraídos del documento.'),
+  items: z.array(TenderProductSchema).nullable().optional().describe('Lista completa y exhaustiva de TODOS los renglones/productos requeridos en la Orden de Compra, sin omitir ninguno.'),
+  summary: z.string().nullable().optional().describe('Breve resumen explicativo de los requisitos y total de renglones extraídos de la orden de compra.'),
 });
 
 export type TenderProductItem = {
@@ -49,7 +53,10 @@ export type AiTenderParserOutput = {
   projectName?: string;
   purchaseOrder?: string;
   customerName?: string;
+  subtotalAmount?: number;
+  taxAmount?: number;
   totalBudget?: number;
+  pricesIncludeTax?: boolean;
   deliveryDeadline?: string;
   deliveryAddress?: string;
   paymentTerms?: string;
@@ -66,33 +73,207 @@ export type AiTenderResponse = {
 };
 
 /**
+ * Decodifica entidades XML básicas en texto de Word OpenXML.
+ */
+function decodeXmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)));
+}
+
+/**
+ * Extrae las líneas de texto (párrafos <w:p>) dentro de un bloque XML de Word.
+ */
+function extractParagraphsFromXml(xmlFragment: string): string[] {
+  // Eliminar texto borrado por control de cambios (<w:del>...</w:del>)
+  const cleaned = xmlFragment.replace(/<w:del\b[^>]*>[\s\S]*?<\/w:del>/g, '');
+  const paragraphs: string[] = [];
+  const pRegex = /<w:p\b[^>]*>([\s\S]*?)<\/w:p>/g;
+  let pMatch: RegExpExecArray | null;
+
+  while ((pMatch = pRegex.exec(cleaned)) !== null) {
+    const pContent = pMatch[1]
+      .replace(/<w:tab\b[^>]*\/>/g, '\t')
+      .replace(/<w:(?:br|cr)\b[^>]*\/>/g, '\n');
+
+    const textParts: string[] = [];
+    const tRegex = /<w:t(?:\s+[^>]*)?>([\s\S]*?)<\/w:t>/g;
+    let tMatch: RegExpExecArray | null;
+    while ((tMatch = tRegex.exec(pContent)) !== null) {
+      textParts.push(decodeXmlEntities(tMatch[1]));
+    }
+
+    const line = textParts.join('').replace(/\s+/g, ' ').trim();
+    if (line) {
+      paragraphs.push(line);
+    }
+  }
+  return paragraphs;
+}
+
+/**
+ * Convierte un archivo XML de Word (document.xml, header*.xml, footer*.xml)
+ * en una representación estructurada que conserva TODAS las tablas fila por fila
+ * y celda por celda, además de todo el texto y cuadros de texto (<w:txbxContent>).
+ */
+function parseWordOpenXmlPart(xml: string, partTitle: string): string {
+  const output: string[] = [];
+  const cleanedXml = xml.replace(/<w:del\b[^>]*>[\s\S]*?<\/w:del>/g, '');
+
+  // 1. Extraer todas las tablas (<w:tbl>) con sus filas (<w:tr>) y celdas (<w:tc>)
+  const tblRegex = /<w:tbl\b[^>]*>([\s\S]*?)<\/w:tbl>/g;
+  let tblMatch: RegExpExecArray | null;
+  let tableIndex = 0;
+
+  while ((tblMatch = tblRegex.exec(cleanedXml)) !== null) {
+    tableIndex++;
+    const tblXml = tblMatch[1];
+    const trRegex = /<w:tr\b[^>]*>([\s\S]*?)<\/w:tr>/g;
+    let trMatch: RegExpExecArray | null;
+    let rowIndex = 0;
+    const tableLines: string[] = [];
+
+    while ((trMatch = trRegex.exec(tblXml)) !== null) {
+      const trXml = trMatch[1];
+      const tcRegex = /<w:tc\b[^>]*>([\s\S]*?)<\/w:tc>/g;
+      let tcMatch: RegExpExecArray | null;
+      const cellParagraphLists: string[][] = [];
+
+      while ((tcMatch = tcRegex.exec(trXml)) !== null) {
+        const paras = extractParagraphsFromXml(tcMatch[1]);
+        cellParagraphLists.push(paras);
+      }
+
+      if (cellParagraphLists.every((c) => c.length === 0)) continue;
+
+      // Verificar si esta fila contiene múltiples ítems apilados con saltos de párrafo dentro de una sola fila
+      const nonEmptyCells = cellParagraphLists.filter((c) => c.length > 0);
+      const maxParas = Math.max(...cellParagraphLists.map((c) => c.length), 0);
+      const multiLineCellsCount = nonEmptyCells.filter((c) => c.length > 1).length;
+
+      if (maxParas > 1 && multiLineCellsCount >= 3) {
+        // Si todas las celdas con múltiples líneas tienen la misma cantidad de párrafos, expandirlas como sub-filas alineadas
+        const counts = nonEmptyCells.filter((c) => c.length > 1).map((c) => c.length);
+        const allSameCount = counts.every((c) => c === counts[0]);
+
+        if (allSameCount && counts[0] > 1) {
+          const numSubRows = counts[0];
+          for (let s = 0; s < numSubRows; s++) {
+            rowIndex++;
+            const subRowCells = cellParagraphLists.map((c) => {
+              if (c.length === numSubRows) return c[s];
+              if (c.length === 1 && s === 0) return c[0];
+              return c[s] || '';
+            });
+            tableLines.push(`[Fila ${rowIndex}] | ${subRowCells.join(' | ')} |`);
+          }
+          continue;
+        } else {
+          // Numerar cada línea interna (L1, L2...) dentro de cada celda para que la IA no pierda ningún sub-ítem
+          rowIndex++;
+          const formattedCells = cellParagraphLists.map((paras) => {
+            if (paras.length <= 1) return paras[0] || '';
+            return paras.map((p, idx) => `(L${idx + 1}: ${p})`).join(' ; ');
+          });
+          tableLines.push(`[Fila ${rowIndex}] | ${formattedCells.join(' | ')} |`);
+          continue;
+        }
+      }
+
+      rowIndex++;
+      const joinedCells = cellParagraphLists.map((paras) => paras.join(' / '));
+      tableLines.push(`[Fila ${rowIndex}] | ${joinedCells.join(' | ')} |`);
+    }
+
+    if (tableLines.length > 0) {
+      output.push(`=== ${partTitle} - TABLA #${tableIndex} (${tableLines.length} filas) ===\n${tableLines.join('\n')}`);
+    }
+  }
+
+  // 2. Extraer todos los párrafos generales del documento (incluyendo cuadros de texto y encabezados)
+  const allParagraphs = extractParagraphsFromXml(cleanedXml);
+  if (allParagraphs.length > 0) {
+    output.push(`=== ${partTitle} - TEXTO COMPLETO EN ORDEN ===\n${allParagraphs.join('\n')}`);
+  }
+
+  return output.join('\n\n');
+}
+
+/**
+ * Extrae el contenido completo de un archivo .docx leyendo directamente el ZIP OpenXML:
+ * - word/header*.xml (encabezados con nombre de institución, número de OC, fechas)
+ * - word/document.xml (todas las tablas fila por fila, cuadros de texto y cláusulas)
+ * - word/footer*.xml (pies de página con totales, firmas o notas)
+ */
+async function extractCompleteDocxContent(buffer: Buffer): Promise<string> {
+  const zip = await JSZip.loadAsync(buffer);
+  const sections: string[] = [];
+
+  const fileNames = Object.keys(zip.files).sort();
+  const headerFiles = fileNames.filter((f) => /^word\/header\d*\.xml$/i.test(f));
+  const footerFiles = fileNames.filter((f) => /^word\/footer\d*\.xml$/i.test(f));
+
+  for (const hf of headerFiles) {
+    const xml = await zip.files[hf].async('string');
+    const parsed = parseWordOpenXmlPart(xml, `ENCABEZADO (${hf})`);
+    if (parsed.trim()) sections.push(parsed);
+  }
+
+  if (zip.files['word/document.xml']) {
+    const docXml = await zip.files['word/document.xml'].async('string');
+    const parsedDoc = parseWordOpenXmlPart(docXml, 'DOCUMENTO PRINCIPAL');
+    if (parsedDoc.trim()) sections.push(parsedDoc);
+  }
+
+  for (const ff of footerFiles) {
+    const xml = await zip.files[ff].async('string');
+    const parsed = parseWordOpenXmlPart(xml, `PIE DE PÁGINA (${ff})`);
+    if (parsed.trim()) sections.push(parsed);
+  }
+
+  return sections.join('\n\n');
+}
+
+/**
  * Extrae texto legible de un archivo binario .doc antiguo (Word 97-2003)
  * combinando secuencias ASCII/Latin1 y UTF-16LE.
  */
 function extractLegacyDocText(buffer: Buffer): string {
   const chunks: string[] = [];
 
-  // 1. Extraer secuencias UTF-16LE (muy común en archivos .doc en español)
   const utf16 = buffer.toString('utf16le');
   const utf16Matches = utf16.match(/[\x20-\x7E\xA0-\xFF\n\r\t]{6,}/g) || [];
   const validUtf16 = utf16Matches
     .map((s) => s.trim())
-    .filter((s) => /[a-zA-ZáéíóúÁÉÍÓÚñÑ]{3,}/.test(s));
+    .filter((s) => /[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9]{2,}/.test(s));
   if (validUtf16.length > 0) {
     chunks.push(validUtf16.join('\n'));
   }
 
-  // 2. Extraer secuencias Latin1/UTF-8
   const latin1 = buffer.toString('latin1');
   const latinMatches = latin1.match(/[\x20-\x7E\xA0-\xFF]{6,}/g) || [];
   const validLatin = latinMatches
     .map((s) => s.trim())
-    .filter((s) => /[a-zA-ZáéíóúÁÉÍÓÚñÑ]{3,}/.test(s) && !/^(Root Entry|WordDocument|SummaryInformation|CompObj|Microsoft)/.test(s));
+    .filter((s) => /[a-zA-ZáéíóúÁÉÍÓÚñÑ0-9]{2,}/.test(s) && !/^(Root Entry|WordDocument|SummaryInformation|CompObj|Microsoft)/.test(s));
   if (validLatin.length > 0) {
     chunks.push(validLatin.join(' '));
   }
 
-  return chunks.join('\n\n').slice(0, 60000);
+  return chunks.join('\n\n').slice(0, 120000);
+}
+
+/**
+ * Limpia y convierte valores numéricos por si vienen redondeados o necesita reconciliar
+ * cantidad, precio unitario y total de línea.
+ */
+function roundCurrency(val: number, decimals = 2): number {
+  const factor = Math.pow(10, decimals);
+  return Math.round((val + Number.EPSILON) * factor) / factor;
 }
 
 /**
@@ -123,29 +304,43 @@ export async function aiTenderParser(input: AiTenderParserInput): Promise<AiTend
       };
     }
 
-    const systemPrompt = `Eres un experto en compras públicas, órdenes de compra (OC), licitaciones institucionales y contratos de suministros de pinturas en El Salvador y Centroamérica.
+    const systemPrompt = `Eres un auditor experto en Órdenes de Compra (OC), Licitaciones y Contratos de Suministro de Pinturas en El Salvador y Centroamérica.
 
-Tu objetivo es leer minuciosamente la Orden de Compra, Bases de Licitación, Solicitud de Cotización o Contrato adjunto y extraer de forma estructurada todos los requisitos para crear el proyecto o cotización automáticamente:
-1. "projectName": Nombre o título del proyecto / suministro según la Orden de Compra (si no tiene nombre explícito, constrúyelo con el suministro principal y la institución, ej. "Suministro de Pintura - Alcaldía / Ministerio").
-2. "purchaseOrder": Número exacto de la Orden de Compra (OC), Contrato, Libre Gestión o Licitación (ej. "OC-2026-01", "LG-15/2026"). Si no aparece, genera uno descriptivo corto.
-3. "customerName": Nombre oficial de la institución, alcaldía, ministerio, hospital o empresa cliente que emite la Orden de Compra.
-4. "totalBudget": Monto total en dólares ($) de la Orden de Compra. Si no está explícito el total general, suma los totales de los renglones.
-5. Requisitos operativos de la Orden de Compra (si están presentes en el texto):
-   - "deliveryDeadline": Plazo o tiempo de entrega requerido (ej. "15 días hábiles después de recibir la OC").
-   - "deliveryAddress": Lugar o bodega de recepción donde se debe entregar el producto.
-   - "paymentTerms": Condiciones de pago o trámite de Quedan (ej. "Crédito 30 días").
-   - "warrantyMonths": Meses de garantía requeridos (en número, ej. 12).
-   - "orderRequirements": Requisitos clave de la Orden de Compra (administrador de la orden de compra, teléfono/correo de contacto, requisitos de facturación, muestras, certificados de calidad, etc.).
-6. "items": Lista completa de TODOS los renglones / productos solicitados en la Orden de Compra:
-   - "code": Código oficial, número de renglón o ítem (ej. "Renglón 1", "001", "Ítem 3"). Si no trae código específico, usa "Renglón 1", "Renglón 2", etc.
-   - "description": Nombre y especificación técnica clara (incluye color, acabado, tipo de pintura como látex, esmalte, anticorrosivo, tráfico, epóxica, marca o norma si se especifica).
-   - "unit": Unidad de medida (ej. "Cubeta 5 Gal", "Galón", "Kit", "Litro", "Unidad").
-   - "quantity": Cantidad exacta solicitada en la OC (número mayor a 0).
-   - "unitPrice": Precio unitario adjudicado en la OC (número, o 0 si es solicitud sin precio).
-   - "lineTotal": Monto total del renglón (quantity * unitPrice).
-7. "summary": Breve resumen ejecutivo de la Orden de Compra y sus requisitos principales.
+Tu objetivo es extraer CON PRECISIÓN MATEMÁTICA Y SIN OMITIR NINGÚN ÍTEM toda la información de la Orden de Compra o Licitación adjunta:
 
-Revisa todas las tablas, párrafos y cláusulas del documento para no omitir ningún renglón ni requisito de la Orden de Compra.`;
+REGLAS ESTRICTAS E INQUEBRANTABLES PARA LOS ÍTEMS ("items"):
+1. EXTRAE ABSOLUTAMENTE TODOS LOS ÍTEMS / RENGLONES:
+   - Revisa cada fila ("[Fila 1]", "[Fila 2]", etc.) de todas las tablas del documento de principio a fin.
+   - ESTÁ ESTRICTAMENTE PROHIBIDO resumir, agrupar o saltarse renglones. Si el documento tiene 15, 30 o 60 productos, el arreglo "items" DEBE tener exactamente esos 15, 30 o 60 productos.
+   - Si dentro de una misma fila o celda hay varios productos o sub-ítems listados (por ejemplo "(L1: ...)", "(L2: ...)" o varios colores/presentaciones con sus propias cantidades y precios), extráelos como ítems individuales.
+   - Si una fila es únicamente la continuación de la descripción técnica del renglón inmediatamente anterior (sin nueva cantidad ni nuevo precio), concatena esa descripción al ítem anterior.
+   - NO incluyas como ítem las filas de pie de tabla que dicen "SUB-TOTAL", "SUMAS", "IVA 13%", "RETENCIÓN 1%", "TOTAL" o "SON: ... DÓLARES".
+2. EXACTITUD EN CANTIDAD, PRECIO UNITARIO Y TOTAL DE LÍNEA DE CADA ÍTEM:
+   - "code": El número de ítem, renglón o código exacto de la tabla (ej. "1", "2", "Renglón 1", "PT-01").
+   - "description": Descripción completa del producto (tipo de pintura, color, acabado, código o marca solicitada).
+   - "unit": Unidad de medida o presentación (ej. "Cubeta", "Galón", "Kit", "Cuarto", "Unidad", "Litro").
+   - "quantity": Cantidad numérica exacta de ese ítem.
+   - "unitPrice": Precio unitario ($) de UNA sola unidad. ¡CUIDADO! Nunca pongas el total del renglón en "unitPrice". Verifica siempre que (quantity * unitPrice) sea igual a "lineTotal". Si la tabla solo muestra Cantidad y Precio Total del renglón, calcula unitPrice = lineTotal / quantity.
+   - "lineTotal": Monto total ($) de ese renglón en la tabla (quantity * unitPrice).
+
+REGLAS ESTRICTAS PARA EL MONTO TOTAL DE LA ORDEN DE COMPRA ("totalBudget"):
+1. "subtotalAmount": La suma de los renglones antes de impuestos (si aparece un subtotal antes de IVA).
+2. "taxAmount": El monto del 13% de IVA (si aparece desglosado al final de la tabla).
+3. "totalBudget": El MONTO TOTAL FINAL DE LA ORDEN DE COMPRA en dólares ($).
+   - Busca al final de la tabla de productos la fila "TOTAL", "MONTO TOTAL", "TOTAL ORDEN DE COMPRA", "TOTAL A PAGAR" o el texto en letras ("SON: ... DÓLARES").
+   - Verifica matemáticamente: "totalBudget" debe coincidir con la suma de todos los "lineTotal" de los renglones (o con subtotalAmount + taxAmount si los precios de los renglones están sin IVA).
+   - ¡NUNCA pongas en "totalBudget" el porcentaje de garantía (10%), ni la retención del 1%, ni el subtotal de una sola página parcial!
+4. "pricesIncludeTax": true si la suma directa de los "lineTotal" de cada renglón es igual al "totalBudget" final de la orden; false si los renglones están sin IVA y al final de la orden se les suma el 13% de IVA para llegar al "totalBudget".
+
+DATOS GENERALES Y REQUISITOS DE LA ORDEN DE COMPRA:
+- "projectName": Nombre del proyecto o proceso de compra (ej. "Suministro de Pintura para ...").
+- "purchaseOrder": Número exacto de la Orden de Compra (OC), Libre Gestión o Contrato.
+- "customerName": Nombre de la institución, alcaldía, ministerio, hospital o cliente.
+- "deliveryDeadline": Plazo o fecha de entrega.
+- "deliveryAddress": Lugar o bodega de entrega.
+- "paymentTerms": Condición de pago.
+- "warrantyMonths": Meses de garantía.
+- "orderRequirements": Administrador de la orden de compra, contacto y requisitos especiales.`;
 
     let promptPayload: any[] = [];
 
@@ -157,8 +352,17 @@ Revisa todas las tablas, párrafos y cláusulas del documento para no omitir nin
         const base64Data = input.pdfDataUri.split('base64,')[1];
         const buffer = Buffer.from(base64Data, 'base64');
 
+        // 1. Extracción profunda directa del XML OpenXML (.docx) con JSZip (captura encabezados, pies, cuadros de texto y todas las filas de tablas numeradas)
+        let openXmlContent = '';
         try {
-          // IMPORTANTE: convertImage evita que mammoth incruste imágenes en Base64 gigantes dentro del HTML
+          openXmlContent = await extractCompleteDocxContent(buffer);
+        } catch (zipErr: any) {
+          console.warn('No se pudo abrir como ZIP OpenXML (.docx):', zipErr?.message);
+        }
+
+        // 2. Extracción complementaria HTML con Mammoth (ignorando imágenes Base64 en el texto pero guardando imágenes escaneadas si las hay)
+        let mammothHtml = '';
+        try {
           const htmlResult = await mammoth.convertToHtml(
             { buffer },
             {
@@ -166,52 +370,47 @@ Revisa todas las tablas, párrafos y cláusulas del documento para no omitir nin
                 try {
                   const contentType = image.contentType || 'image/png';
                   const imgBase64 = await image.read('base64');
-                  // Guardamos hasta 4 imágenes relevantes por si el Word contiene una imagen escaneada de la OC
-                  if (embeddedImages.length < 4 && imgBase64 && imgBase64.length > 2000 && imgBase64.length < 5_000_000) {
+                  if (embeddedImages.length < 4 && imgBase64 && imgBase64.length > 2500 && imgBase64.length < 5_000_000) {
                     embeddedImages.push({
                       dataUri: `data:${contentType};base64,${imgBase64}`,
                       contentType,
                     });
                   }
                 } catch {
-                  // Ignorar imagen si no es legible
+                  // Ignorar error de imagen individual
                 }
                 return { src: '' };
               }),
             }
           );
+          mammothHtml = (htmlResult.value || '').replace(/<img[^>]*>/gi, '').slice(0, 120000);
+        } catch (mammothErr: any) {
+          console.warn('Mammoth fallback para .doc clásico:', mammothErr?.message);
+        }
 
-          const rawTextResult = await mammoth.extractRawText({ buffer });
-          // Limpiar etiquetas <img src=""> vacías y limitar longitud máxima de texto
-          const cleanHtml = (htmlResult.value || '')
-            .replace(/<img[^>]*>/gi, '')
-            .slice(0, 65000);
-          const cleanRaw = (rawTextResult.value || '').trim().slice(0, 45000);
-
-          if (cleanRaw.length > 0 || cleanHtml.length > 0) {
-            extractedContent = `--- CONTENIDO ESTRUCTURADO (TABLAS Y TEXTO DEL WORD) ---\n${cleanHtml}\n\n--- TEXTO PLANO DEL DOCUMENTO WORD ---\n${cleanRaw}`;
-          }
-        } catch (wordErr: any) {
-          console.warn('Mammoth no pudo abrir el archivo como .docx, aplicando extractor de .doc clásico:', wordErr?.message);
-          extractedContent = `--- TEXTO EXTRAÍDO DEL DOCUMENTO WORD (${input.documentName || 'OC.doc'}) ---\n${extractLegacyDocText(buffer)}`;
+        if (openXmlContent.trim()) {
+          extractedContent = `--- EXTRACCIÓN EXACTA OPENXML DE TABLAS, ENCABEZADOS Y TEXTO DEL WORD ---\n${openXmlContent.slice(0, 180000)}\n\n--- VISTA HTML COMPLEMENTARIA ---\n${mammothHtml}`;
+        } else if (mammothHtml.trim()) {
+          extractedContent = `--- CONTENIDO HTML DEL DOCUMENTO WORD ---\n${mammothHtml}`;
+        } else {
+          // Archivo .doc antiguo (Word 97-2003 binario)
+          extractedContent = `--- TEXTO EXTRAÍDO DEL DOCUMENTO WORD (.DOC) ---\n${extractLegacyDocText(buffer)}`;
         }
       }
 
-      // Si el texto extraído viene del cliente pero pudiera traer <img src="data:...">, lo limpiamos por seguridad
       extractedContent = extractedContent.replace(/<img[^>]*src=["']data:[^"']*["'][^>]*>/gi, '');
 
       if (!extractedContent.trim() && embeddedImages.length === 0) {
         return {
           success: false,
-          error: 'El archivo Word parece estar vacío o protegido. Por favor verifique que sea un documento .docx válido.',
+          error: 'El archivo Word parece estar vacío o protegido. Verifique que el documento contenga la Orden de Compra.',
         };
       }
 
       promptPayload.push({
-        text: `${systemPrompt}\n\nA continuación se presenta el contenido extraído del archivo Word (${input.documentName || 'Orden_de_Compra.docx'}):\n\n${extractedContent}`,
+        text: `${systemPrompt}\n\nA continuación se presenta el contenido completo extraído del archivo Word (${input.documentName || 'Orden_de_Compra.docx'}):\n\n${extractedContent}`,
       });
 
-      // Si el documento Word tiene poco texto o incluye imágenes escaneadas de la orden de compra, las adjuntamos a Gemini multimodal
       for (const img of embeddedImages) {
         promptPayload.push({
           media: { url: img.dataUri, contentType: img.contentType },
@@ -239,6 +438,9 @@ Revisa todas las tablas, párrafos y cláusulas del documento para no omitir nin
     const result = await ai.generate({
       model: 'googleai/gemini-2.5-flash',
       prompt: promptPayload,
+      config: {
+        temperature: 0,
+      },
       output: { schema: AiTenderParserRawOutputSchema },
     });
 
@@ -246,34 +448,84 @@ Revisa todas las tablas, párrafos y cláusulas del documento para no omitir nin
     if (!raw) {
       return {
         success: false,
-        error: 'La IA no pudo estructurar los datos del documento. Verifique que el archivo Word o PDF contenga la Orden de Compra o Licitación legible.',
+        error: 'La IA no pudo estructurar los datos del documento. Verifique que el archivo Word o PDF contenga la Orden de Compra legible.',
       };
     }
 
-    const normalizedItems: TenderProductItem[] = (raw.items || []).map((it, idx) => {
+    const rawItems = raw.items || [];
+    const docTotalRaw = Number(raw.totalBudget) > 0 ? Number(raw.totalBudget) : 0;
+    const docSubtotalRaw = Number(raw.subtotalAmount) > 0 ? Number(raw.subtotalAmount) : 0;
+
+    // 1. Primera pasada: normalizar cantidades, precios unitarios y totales de línea
+    const normalizedItems: TenderProductItem[] = rawItems.map((it, idx) => {
       const qty = Number(it.quantity) > 0 ? Number(it.quantity) : 1;
-      const up = Number(it.unitPrice) >= 0 ? Number(it.unitPrice) : 0;
-      const lt = Number(it.lineTotal) > 0 ? Number(it.lineTotal) : qty * up;
+      let up = Number(it.unitPrice) >= 0 ? Number(it.unitPrice) : 0;
+      let lt = Number(it.lineTotal) >= 0 ? Number(it.lineTotal) : 0;
+
+      if (up === 0 && lt > 0) {
+        up = roundCurrency(lt / qty, 4);
+      } else if (lt === 0 && up > 0) {
+        lt = roundCurrency(qty * up, 2);
+      } else if (qty > 1 && up > 0 && lt > 0) {
+        // Caso común de error: el documento o la IA colocó el Total de la Línea en "unitPrice" (up === lt con qty > 1)
+        if (Math.abs(up - lt) < 0.01) {
+          up = roundCurrency(lt / qty, 4);
+        } else if (Math.abs(qty * up - lt) > 0.5) {
+          // Si qty * up no coincide con lt, verificamos cuál tiene sentido con respecto a lt
+          // En tablas de OC, lineTotal es el valor impreso en la última columna y suele ser exacto
+          up = roundCurrency(lt / qty, 4);
+        }
+      }
+
       return {
         code: (it.code || `Renglón ${idx + 1}`).trim(),
         description: (it.description || `Producto Renglón ${idx + 1}`).trim(),
         unit: (it.unit || 'Unidad').trim(),
         quantity: qty,
         unitPrice: up,
-        lineTotal: lt,
+        lineTotal: roundCurrency(lt || qty * up, 2),
       };
     });
 
-    const computedTotal =
-      raw.totalBudget && Number(raw.totalBudget) > 0
-        ? Number(raw.totalBudget)
-        : normalizedItems.reduce((sum, item) => sum + (item.lineTotal || item.quantity * (item.unitPrice || 0)), 0);
+    // 2. Segunda pasada: verificar consistencia entre la suma de los renglones y el Monto Total de la Orden de Compra
+    const sumLineTotals = roundCurrency(
+      normalizedItems.reduce((sum, item) => sum + (item.lineTotal || item.quantity * (item.unitPrice || 0)), 0),
+      2
+    );
+
+    let finalTotalBudget = sumLineTotals;
+
+    if (docTotalRaw > 0 && sumLineTotals > 0) {
+      const diffDirect = Math.abs(docTotalRaw - sumLineTotals);
+      const sumPlusIva = roundCurrency(sumLineTotals * 1.13, 2);
+      const diffWithIva = Math.abs(docTotalRaw - sumPlusIva);
+
+      if (diffDirect <= 2.0) {
+        // El total del documento coincide exactamente con la suma de los renglones
+        finalTotalBudget = docTotalRaw;
+      } else if (diffWithIva <= 2.5 || (raw.pricesIncludeTax === false && Math.abs(docSubtotalRaw - sumLineTotals) <= 2.0)) {
+        // Los precios unitarios en la tabla estaban SIN IVA y el total de la OC incluye el 13% de IVA:
+        // Ajustamos el monto total de la orden al total con IVA del documento
+        finalTotalBudget = docTotalRaw;
+      } else if (docTotalRaw >= sumLineTotals * 0.85 && docTotalRaw <= sumLineTotals * 1.20) {
+        // Si el total explícito del documento está en un rango razonable respecto a los ítems, respetamos el total oficial impreso en la OC
+        finalTotalBudget = docTotalRaw;
+      } else {
+        // Si docTotalRaw era un valor erróneo (ej. garantía 10% o un número suelto), usamos la suma exacta de los renglones
+        finalTotalBudget = sumLineTotals;
+      }
+    } else if (docTotalRaw > 0) {
+      finalTotalBudget = docTotalRaw;
+    }
 
     const cleanOutput: AiTenderParserOutput = {
       projectName: raw.projectName || undefined,
       purchaseOrder: raw.purchaseOrder || undefined,
       customerName: raw.customerName || undefined,
-      totalBudget: computedTotal,
+      subtotalAmount: docSubtotalRaw || sumLineTotals,
+      taxAmount: Number(raw.taxAmount) > 0 ? Number(raw.taxAmount) : undefined,
+      totalBudget: finalTotalBudget,
+      pricesIncludeTax: raw.pricesIncludeTax ?? true,
       deliveryDeadline: raw.deliveryDeadline || undefined,
       deliveryAddress: raw.deliveryAddress || undefined,
       paymentTerms: raw.paymentTerms || undefined,

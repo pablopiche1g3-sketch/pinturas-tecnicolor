@@ -760,15 +760,23 @@ export default function InstitutionalModule() {
 
   // Licitación / Orden de Compra (Word o PDF) con IA - Handlers
   const populateFormFromTenderData = async (data: AiTenderParserOutput) => {
-    const tenderItems: ProjectProduct[] = (data.items || []).map((it, idx) => ({
-      code: cleanString(it.code) || `Renglón ${idx + 1}`,
-      description: cleanString(it.description) || `Producto Renglón ${idx + 1}`,
-      quantity: Number(it.quantity) || 1,
-      unitPrice: Number(it.unitPrice) || 0,
-      unit: it.unit || 'Unidad',
-    }))
+    const tenderItems: ProjectProduct[] = (data.items || []).map((it, idx) => {
+      const qty = Number(it.quantity) || 1
+      let up = Number(it.unitPrice) || 0
+      if (up === 0 && Number(it.lineTotal) > 0) {
+        up = Number((Number(it.lineTotal) / qty).toFixed(4))
+      }
+      return {
+        code: cleanString(it.code) || `Renglón ${idx + 1}`,
+        description: cleanString(it.description) || `Producto Renglón ${idx + 1}`,
+        quantity: qty,
+        unitPrice: up,
+        unit: it.unit || 'Unidad',
+      }
+    })
 
-    const calculatedBudget = Number(data.totalBudget) || tenderItems.reduce((acc, it) => acc + (it.quantity * it.unitPrice), 0)
+    const itemsSum = Number(tenderItems.reduce((acc, it) => acc + (it.quantity * it.unitPrice), 0).toFixed(2))
+    const calculatedBudget = Number(data.totalBudget) > 0 ? Number(data.totalBudget) : itemsSum
 
     let matchedCustId = newProject.customerId || ''
     if (data.customerName) {
@@ -924,15 +932,23 @@ export default function InstitutionalModule() {
   const handleApplyTenderToProject = async (mode: 'direct' | 'form' = 'direct') => {
     if (!tenderParsedData) return
 
-    const tenderItems: ProjectProduct[] = (tenderParsedData.items || []).map((it, idx) => ({
-      code: cleanString(it.code) || `Renglón ${idx + 1}`,
-      description: cleanString(it.description) || `Producto Renglón ${idx + 1}`,
-      quantity: Number(it.quantity) || 1,
-      unitPrice: Number(it.unitPrice) || 0,
-      unit: it.unit || 'Unidad',
-    }))
+    const tenderItems: ProjectProduct[] = (tenderParsedData.items || []).map((it, idx) => {
+      const qty = Number(it.quantity) || 1
+      let up = Number(it.unitPrice) || 0
+      if (up === 0 && Number(it.lineTotal) > 0) {
+        up = Number((Number(it.lineTotal) / qty).toFixed(4))
+      }
+      return {
+        code: cleanString(it.code) || `Renglón ${idx + 1}`,
+        description: cleanString(it.description) || `Producto Renglón ${idx + 1}`,
+        quantity: qty,
+        unitPrice: up,
+        unit: it.unit || 'Unidad',
+      }
+    })
 
-    const calculatedBudget = Number(tenderParsedData.totalBudget) || tenderItems.reduce((acc, it) => acc + (it.quantity * it.unitPrice), 0)
+    const itemsSum = Number(tenderItems.reduce((acc, it) => acc + (it.quantity * it.unitPrice), 0).toFixed(2))
+    const calculatedBudget = Number(tenderParsedData.totalBudget) > 0 ? Number(tenderParsedData.totalBudget) : itemsSum
 
     if (mode === 'form') {
       setIsSavingTenderProject(true)
@@ -4161,12 +4177,34 @@ export default function InstitutionalModule() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-bold">Monto Total OC ($)</Label>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-[11px] font-bold">Monto Total OC ($)</Label>
+                      {(() => {
+                        const sumItems = (tenderParsedData.items || []).reduce(
+                          (acc, it) => acc + (Number(it.lineTotal) || (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0)),
+                          0
+                        );
+                        if (sumItems > 0 && Math.abs((tenderParsedData.totalBudget || 0) - sumItems) > 0.05) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setTenderParsedData({ ...tenderParsedData, totalBudget: Number(sumItems.toFixed(2)) })}
+                              className="text-[9px] text-emerald-500 hover:underline font-bold"
+                              title="Igualar al total exacto de la suma de renglones"
+                            >
+                              Usar suma (${sumItems.toFixed(2)})
+                            </button>
+                          );
+                        }
+                        return null;
+                      })()}
+                    </div>
                     <Input
                       type="number"
-                      value={tenderParsedData.totalBudget || ''}
+                      step="0.01"
+                      value={tenderParsedData.totalBudget ?? ''}
                       onChange={(e) => setTenderParsedData({ ...tenderParsedData, totalBudget: Number(e.target.value) })}
-                      className="h-8 text-xs font-bold"
+                      className="h-8 text-xs font-bold text-emerald-500 font-mono"
                       placeholder="0.00"
                     />
                   </div>
@@ -4320,13 +4358,16 @@ export default function InstitutionalModule() {
                             <TableCell className="p-1.5 text-right">
                               <Input
                                 type="number"
+                                step="any"
                                 value={it.quantity}
                                 onChange={(e) => {
                                   const qty = Number(e.target.value);
                                   const updated = [...(tenderParsedData.items || [])];
-                                  const up = updated[idx].unitPrice || 0;
-                                  updated[idx] = { ...updated[idx], quantity: qty, lineTotal: qty * up };
-                                  setTenderParsedData({ ...tenderParsedData, items: updated });
+                                  const up = Number(updated[idx].unitPrice) || 0;
+                                  const newLt = Number((qty * up).toFixed(2));
+                                  updated[idx] = { ...updated[idx], quantity: qty, lineTotal: newLt };
+                                  const newSum = Number(updated.reduce((acc, r) => acc + (Number(r.lineTotal) || (Number(r.quantity) || 0) * (Number(r.unitPrice) || 0)), 0).toFixed(2));
+                                  setTenderParsedData({ ...tenderParsedData, items: updated, totalBudget: newSum });
                                 }}
                                 className="h-7 text-[10px] text-right font-bold"
                               />
@@ -4334,19 +4375,36 @@ export default function InstitutionalModule() {
                             <TableCell className="p-1.5 text-right">
                               <Input
                                 type="number"
-                                value={it.unitPrice || 0}
+                                step="0.01"
+                                value={it.unitPrice ?? 0}
                                 onChange={(e) => {
                                   const pr = Number(e.target.value);
                                   const updated = [...(tenderParsedData.items || [])];
-                                  const q = updated[idx].quantity || 0;
-                                  updated[idx] = { ...updated[idx], unitPrice: pr, lineTotal: q * pr };
-                                  setTenderParsedData({ ...tenderParsedData, items: updated });
+                                  const q = Number(updated[idx].quantity) || 0;
+                                  const newLt = Number((q * pr).toFixed(2));
+                                  updated[idx] = { ...updated[idx], unitPrice: pr, lineTotal: newLt };
+                                  const newSum = Number(updated.reduce((acc, r) => acc + (Number(r.lineTotal) || (Number(r.quantity) || 0) * (Number(r.unitPrice) || 0)), 0).toFixed(2));
+                                  setTenderParsedData({ ...tenderParsedData, items: updated, totalBudget: newSum });
                                 }}
-                                className="h-7 text-[10px] text-right"
+                                className="h-7 text-[10px] text-right font-mono"
                               />
                             </TableCell>
-                            <TableCell className="p-1.5 text-right font-mono font-bold">
-                              ${((it.quantity || 0) * (it.unitPrice || 0)).toFixed(2)}
+                            <TableCell className="p-1.5 text-right">
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={it.lineTotal ?? Number(((it.quantity || 0) * (it.unitPrice || 0)).toFixed(2))}
+                                onChange={(e) => {
+                                  const lt = Number(e.target.value);
+                                  const updated = [...(tenderParsedData.items || [])];
+                                  const q = Number(updated[idx].quantity) || 1;
+                                  const calcUp = q > 0 ? Number((lt / q).toFixed(4)) : 0;
+                                  updated[idx] = { ...updated[idx], lineTotal: lt, unitPrice: calcUp };
+                                  const newSum = Number(updated.reduce((acc, r) => acc + (Number(r.lineTotal) || (Number(r.quantity) || 0) * (Number(r.unitPrice) || 0)), 0).toFixed(2));
+                                  setTenderParsedData({ ...tenderParsedData, items: updated, totalBudget: newSum });
+                                }}
+                                className="h-7 text-[10px] text-right font-mono font-bold text-emerald-500"
+                              />
                             </TableCell>
                             <TableCell className="p-1.5 text-center">
                               <Button
@@ -4355,7 +4413,8 @@ export default function InstitutionalModule() {
                                 className="h-6 w-6 text-destructive hover:bg-destructive/10"
                                 onClick={() => {
                                   const updated = (tenderParsedData.items || []).filter((_, i) => i !== idx);
-                                  setTenderParsedData({ ...tenderParsedData, items: updated });
+                                  const newSum = Number(updated.reduce((acc, r) => acc + (Number(r.lineTotal) || (Number(r.quantity) || 0) * (Number(r.unitPrice) || 0)), 0).toFixed(2));
+                                  setTenderParsedData({ ...tenderParsedData, items: updated, totalBudget: newSum });
                                 }}
                               >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -4366,6 +4425,58 @@ export default function InstitutionalModule() {
                       </TableBody>
                     </Table>
                   </ScrollArea>
+
+                  {/* Barra de Verificación Matemática de Renglones vs Monto de la Orden */}
+                  {(() => {
+                    const sumRows = Number(
+                      (tenderParsedData.items || [])
+                        .reduce((acc, r) => acc + (Number(r.lineTotal) || (Number(r.quantity) || 0) * (Number(r.unitPrice) || 0)), 0)
+                        .toFixed(2)
+                    );
+                    const sumRowsPlusIva = Number((sumRows * 1.13).toFixed(2));
+                    return (
+                      <div className="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-lg bg-muted/40 border text-xs">
+                        <div className="flex items-center gap-3 font-mono">
+                          <span className="text-muted-foreground">
+                            Suma de Renglones: <strong className="text-foreground">${sumRows.toFixed(2)}</strong>
+                          </span>
+                          <span className="text-muted-foreground">
+                            Monto Total OC: <strong className="text-emerald-500">${Number(tenderParsedData.totalBudget || 0).toFixed(2)}</strong>
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-[10px] font-mono"
+                            onClick={() => setTenderParsedData({ ...tenderParsedData, totalBudget: sumRows })}
+                          >
+                            = Igualar OC a Suma (${sumRows.toFixed(2)})
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-[10px] font-mono text-blue-500 border-blue-500/30"
+                            onClick={() => {
+                              const itemsWithIva = (tenderParsedData.items || []).map(r => {
+                                const q = Number(r.quantity) || 1;
+                                const upIva = Number(((Number(r.unitPrice) || 0) * 1.13).toFixed(4));
+                                const ltIva = Number((q * upIva).toFixed(2));
+                                return { ...r, unitPrice: upIva, lineTotal: ltIva };
+                              });
+                              const totalIva = Number(itemsWithIva.reduce((acc, r) => acc + (r.lineTotal || 0), 0).toFixed(2));
+                              setTenderParsedData({ ...tenderParsedData, items: itemsWithIva, totalBudget: totalIva });
+                            }}
+                            title="Si los precios de la tabla están sin IVA, multiplica cada precio por 1.13 y actualiza el total"
+                          >
+                            + Sumar 13% IVA a Precios (${sumRowsPlusIva.toFixed(2)})
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
