@@ -94,11 +94,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   )
 
   return (
-    <div className="flex min-h-screen bg-background font-body text-foreground no-print-layout">
+    <div className="flex min-h-screen bg-background font-body text-foreground no-print-layout print:bg-white print:text-black">
       {!isMobile && (
         <aside 
           className={cn(
-            "relative z-40 flex flex-col border-r bg-card transition-all duration-300 ease-in-out shadow-sm h-screen sticky top-0",
+            "relative z-40 flex flex-col border-r bg-card transition-all duration-300 ease-in-out shadow-sm h-screen sticky top-0 print:hidden",
             isCollapsed ? "w-20" : "w-64"
           )}
         >
@@ -149,7 +149,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       )}
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b bg-background/80 px-4 md:px-8 backdrop-blur-md">
+        <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b bg-background/80 px-4 md:px-8 backdrop-blur-md print:hidden">
           <div className="flex items-center gap-4">
             {isMobile && (
               <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
@@ -178,7 +178,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full">
+        <main className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full print:p-0 print:max-w-none">
           {children}
         </main>
       </div>

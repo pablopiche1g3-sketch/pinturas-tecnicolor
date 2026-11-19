@@ -11,8 +11,19 @@ import {
   where,
   Timestamp,
   Firestore,
-  addDoc
+  addDoc,
+  arrayUnion
 } from 'firebase/firestore';
+
+function sanitizeForFirestore<T>(data: T): T {
+  return JSON.parse(
+    JSON.stringify(data, (_key, value) => {
+      if (value === undefined) return null;
+      if (typeof value === 'number' && Number.isNaN(value)) return 0;
+      return value;
+    })
+  );
+}
 
 export interface Entity {
   id: string;
@@ -218,16 +229,17 @@ export const useLedgerStore = create<LedgerState & LedgerActions>((set, get) => 
   },
 
   addProject: async (db, project) => {
-    const docRef = await addDoc(collection(db, 'projects'), {
+    const cleanProject = sanitizeForFirestore({
       ...project,
       documents: [],
       createdAt: new Date().toISOString()
     });
+    const docRef = await addDoc(collection(db, 'projects'), cleanProject);
     return docRef.id;
   },
 
   updateProject: (db, id, updates) => {
-    updateDoc(doc(db, 'projects', id), updates);
+    updateDoc(doc(db, 'projects', id), sanitizeForFirestore(updates));
   },
 
   deleteProject: (db, id) => {
@@ -330,18 +342,22 @@ export const useLedgerStore = create<LedgerState & LedgerActions>((set, get) => 
   },
 
   addDocumentToProject: (db, projectId, document) => {
-    const project = get().projects.find(p => p.id === projectId);
-    if (!project) return;
-
-    const newDoc = {
+    const newDoc = sanitizeForFirestore({
       ...document,
       id: Math.random().toString(36).substring(2, 9),
       createdAt: new Date().toISOString()
-    };
-
-    updateDoc(doc(db, 'projects', projectId), {
-      documents: [...project.documents, newDoc]
     });
+
+    const project = get().projects.find(p => p.id === projectId);
+    if (project) {
+      updateDoc(doc(db, 'projects', projectId), {
+        documents: [...(project.documents || []), newDoc]
+      });
+    } else {
+      updateDoc(doc(db, 'projects', projectId), {
+        documents: arrayUnion(newDoc)
+      });
+    }
   },
 
   deleteDocumentFromProject: (db, projectId, documentId) => {

@@ -135,9 +135,11 @@ export default function InstitutionalModule() {
   // Mapeo interactivo de productos entre Facturas/DTEs y Licitación/Proyecto
   const [itemMappings, setItemMappings] = React.useState<Record<number, string>>({})
 
-  // Licitación PDF con IA
+  // Licitación / Orden de Compra (Word o PDF) con IA
   const [isTenderModalOpen, setIsTenderModalOpen] = React.useState(false)
   const [isAnalyzingTender, setIsAnalyzingTender] = React.useState(false)
+  const [isSavingTenderProject, setIsSavingTenderProject] = React.useState(false)
+  const [isDraggingTender, setIsDraggingTender] = React.useState(false)
   const [tenderFile, setTenderFile] = React.useState<{ name: string; dataUri: string; size: number } | null>(null)
   const [tenderParsedData, setTenderParsedData] = React.useState<AiTenderParserOutput | null>(null)
   const [tenderTargetProjectId, setTenderTargetProjectId] = React.useState<string>('new')
@@ -254,20 +256,23 @@ export default function InstitutionalModule() {
     setTempProduct({ code: '', description: '', quantity: 1, unitPrice: 0 })
   }
 
-  const handleCreateOrUpdateProject = () => {
-    if (!newProject.name || !newProject.customerId || !newProject.purchaseOrder) {
-      toast({ title: "Datos incompletos", description: "Rellene todos los campos del proyecto.", variant: "destructive" })
+  const handleCreateOrUpdateProject = async () => {
+    if (!newProject.name.trim()) {
+      toast({ title: "Falta Nombre del Proyecto", description: "Por favor ingrese el nombre del proyecto.", variant: "destructive" })
       return
     }
-    const customer = customers.find(c => c.id === newProject.customerId)
+    const finalPO = newProject.purchaseOrder.trim() || `OC-${new Date().getFullYear()}`
+    const customer = customers.find(c => c.id === newProject.customerId) || customers[0]
+    const finalCustomerId = customer?.id || newProject.customerId || 'institucional'
+    const finalCustomerName = customer?.name || 'Cliente Institucional'
     
     if (editingProject) {
       updateProject(db, editingProject.id, {
-        name: newProject.name,
-        purchaseOrder: newProject.purchaseOrder,
-        targetSaleAmount: newProject.targetSaleAmount,
-        customerId: newProject.customerId,
-        customerName: customer?.name || 'Cliente Desconocido',
+        name: newProject.name.trim(),
+        purchaseOrder: finalPO,
+        targetSaleAmount: Number(newProject.targetSaleAmount) || 0,
+        customerId: finalCustomerId,
+        customerName: finalCustomerName,
         expectedProducts: newProjectProducts,
         warrantyStartDate: newProject.warrantyStartDate || null,
         warrantyMonths: newProject.warrantyMonths || null,
@@ -278,12 +283,12 @@ export default function InstitutionalModule() {
       })
       toast({ title: "Proyecto Actualizado", description: "Cambios guardados exitosamente." })
     } else {
-      addProject(db, {
-        name: newProject.name,
-        purchaseOrder: newProject.purchaseOrder,
-        targetSaleAmount: newProject.targetSaleAmount,
-        customerId: newProject.customerId,
-        customerName: customer?.name || 'Cliente Desconocido',
+      const createdId = await addProject(db, {
+        name: newProject.name.trim(),
+        purchaseOrder: finalPO,
+        targetSaleAmount: Number(newProject.targetSaleAmount) || newProjectProducts.reduce((acc, p) => acc + (p.quantity * p.unitPrice), 0),
+        customerId: finalCustomerId,
+        customerName: finalCustomerName,
         expectedProducts: newProjectProducts,
         status: 'active',
         warrantyStartDate: newProject.warrantyStartDate || null,
@@ -293,6 +298,10 @@ export default function InstitutionalModule() {
         paymentTerms: newProject.paymentTerms || null,
         orderRequirements: newProject.orderRequirements || null,
       })
+      if (createdId) {
+        setSelectedProjectId(createdId)
+        setProjectFilterTab('active')
+      }
       toast({ title: "Proyecto Creado", description: "El proyecto se ha registrado exitosamente." })
     }
 
@@ -553,6 +562,13 @@ export default function InstitutionalModule() {
   const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    const lowerName = file.name.toLowerCase();
+    if (lowerName.endsWith('.docx') || lowerName.endsWith('.doc') || lowerName.endsWith('.pdf')) {
+      e.target.value = '';
+      await processTenderFile(file, true);
+      return;
+    }
     
     try {
       const XLSX = await import('xlsx');
@@ -743,10 +759,61 @@ export default function InstitutionalModule() {
   };
 
   // Licitación / Orden de Compra (Word o PDF) con IA - Handlers
-  const handleTenderPdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
+  const populateFormFromTenderData = async (data: AiTenderParserOutput) => {
+    const tenderItems: ProjectProduct[] = (data.items || []).map((it, idx) => ({
+      code: cleanString(it.code) || `Renglón ${idx + 1}`,
+      description: cleanString(it.description) || `Producto Renglón ${idx + 1}`,
+      quantity: Number(it.quantity) || 1,
+      unitPrice: Number(it.unitPrice) || 0,
+      unit: it.unit || 'Unidad',
+    }))
 
+    const calculatedBudget = Number(data.totalBudget) || tenderItems.reduce((acc, it) => acc + (it.quantity * it.unitPrice), 0)
+
+    let matchedCustId = newProject.customerId || ''
+    if (data.customerName) {
+      const cust = entities.find(e => e.type === 'customer' && 
+        (cleanStringLower(e.name).includes(cleanStringLower(data.customerName)) ||
+         cleanStringLower(data.customerName).includes(cleanStringLower(e.name)))
+      )
+      if (cust) {
+        matchedCustId = cust.id
+      } else {
+        try {
+          matchedCustId = await addEntity(db, {
+            name: data.customerName.trim(),
+            type: 'customer',
+            isGranContribuyente: true,
+          })
+        } catch (err) {
+          console.warn('No se pudo crear cliente automáticamente:', err)
+        }
+      }
+    }
+    if (!matchedCustId) {
+      const fallbackCust = entities.find(e => e.type === 'customer')
+      if (fallbackCust) matchedCustId = fallbackCust.id
+    }
+
+    setNewProject(prev => ({
+      ...prev,
+      name: data.projectName || prev.name || `Orden de Compra ${data.purchaseOrder || ''}`.trim() || 'Nuevo Proyecto OC',
+      purchaseOrder: data.purchaseOrder || prev.purchaseOrder || `OC-${new Date().getFullYear()}`,
+      targetSaleAmount: calculatedBudget || prev.targetSaleAmount || 0,
+      customerId: matchedCustId,
+      warrantyStartDate: prev.warrantyStartDate || new Date().toISOString().split('T')[0],
+      warrantyMonths: Number(data.warrantyMonths) || prev.warrantyMonths || 12,
+      deliveryDeadline: data.deliveryDeadline || prev.deliveryDeadline || '',
+      deliveryAddress: data.deliveryAddress || prev.deliveryAddress || '',
+      paymentTerms: data.paymentTerms || prev.paymentTerms || '',
+      orderRequirements: data.orderRequirements || data.summary || prev.orderRequirements || '',
+    }))
+    if (tenderItems.length > 0) {
+      setNewProjectProducts(tenderItems)
+    }
+  }
+
+  const processTenderFile = async (file: File, autoFillForm = false) => {
     const fileNameLower = file.name.toLowerCase()
     const isWord = fileNameLower.endsWith('.docx') || fileNameLower.endsWith('.doc') ||
       file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
@@ -756,7 +823,7 @@ export default function InstitutionalModule() {
     if (!isWord && !isPdf) {
       toast({
         title: 'Formato no válido',
-        description: 'Por favor suba un archivo en formato Word (.docx / .doc) [Recomendado] o PDF.',
+        description: 'Por favor suba un archivo en formato Word (.docx / .doc) [Prioridad] o PDF.',
         variant: 'destructive',
       })
       return
@@ -764,12 +831,24 @@ export default function InstitutionalModule() {
 
     try {
       setIsAnalyzingTender(true)
-      const dataUri = await new Promise<string>((resolve, reject) => {
+      let dataUri = await new Promise<string>((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = (ev) => resolve(ev.target?.result as string)
         reader.onerror = reject
         reader.readAsDataURL(file)
       })
+
+      // Normalizar el encabezado MIME si Windows devuelve application/octet-stream o vacío para .docx/.doc
+      if (isWord && dataUri.includes('base64,')) {
+        const base64Part = dataUri.split('base64,')[1]
+        const mime = fileNameLower.endsWith('.doc')
+          ? 'application/msword'
+          : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        dataUri = `data:${mime};base64,${base64Part}`
+      } else if (isPdf && dataUri.includes('base64,')) {
+        const base64Part = dataUri.split('base64,')[1]
+        dataUri = `data:application/pdf;base64,${base64Part}`
+      }
 
       setTenderFile({ name: file.name, dataUri, size: file.size })
 
@@ -783,171 +862,212 @@ export default function InstitutionalModule() {
       }
 
       setTenderParsedData(resp.data)
+
+      // Si el modal de Nuevo Proyecto está abierto o se pidió autoFillForm, sincronizar el formulario de inmediato
+      if (isProjectDialogOpen || autoFillForm) {
+        await populateFormFromTenderData(resp.data)
+      }
+
       toast({
-        title: isWord ? 'Orden de Compra (Word) Clasificada por IA' : 'Orden de Compra (PDF) Clasificada por IA',
-        description: `Se detectaron ${resp.data.items?.length || 0} renglones y los requisitos de la orden de compra.`,
+        title: isWord ? 'Orden de Compra (Word) Analizada con Éxito' : 'Orden de Compra (PDF) Analizada con Éxito',
+        description: `Se extrajeron ${resp.data.items?.length || 0} renglones y los requisitos de "${resp.data.projectName || file.name}".`,
       })
     } catch (err: any) {
       console.error('Error analizando licitación/OC:', err)
       toast({
-        title: 'Error de Análisis con IA',
+        title: 'Error al Procesar el Archivo Word / PDF',
         description: err.message || 'No se pudo leer el archivo Word o PDF de la Orden de Compra.',
         variant: 'destructive',
       })
     } finally {
       setIsAnalyzingTender(false)
-      if (e.target) e.target.value = ''
     }
   }
 
-  const handleApplyTenderToProject = async () => {
+  const handleTenderPdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    await processTenderFile(file)
+    if (e.target) e.target.value = ''
+  }
+
+  const handleTenderDrop = async (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDraggingTender(false)
+    const file = e.dataTransfer.files?.[0]
+    if (!file) return
+    await processTenderFile(file)
+  }
+
+  const uploadTenderDocInBackground = (projectId: string, fileObj: { name: string; dataUri: string; size: number }) => {
+    if (!storage || !projectId || !fileObj) return
+    ;(async () => {
+      try {
+        const finalName = fileObj.name || `Orden_Compra_${Date.now()}.docx`
+        const isWordFile = finalName.toLowerCase().endsWith('.docx') || finalName.toLowerCase().endsWith('.doc')
+        const storageRef = ref(storage, `projects/${projectId}/documents/${Date.now()}_${finalName}`)
+        await uploadString(storageRef, fileObj.dataUri, 'data_url')
+        const downloadURL = await getDownloadURL(storageRef)
+        addDocumentToProject(db, projectId, {
+          name: finalName,
+          type: isWordFile ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf',
+          size: fileObj.size,
+          data: downloadURL,
+        })
+      } catch (stErr) {
+        console.warn('No se pudo subir documento adjunto en segundo plano:', stErr)
+      }
+    })()
+  }
+
+  const handleApplyTenderToProject = async (mode: 'direct' | 'form' = 'direct') => {
     if (!tenderParsedData) return
 
     const tenderItems: ProjectProduct[] = (tenderParsedData.items || []).map((it, idx) => ({
       code: cleanString(it.code) || `Renglón ${idx + 1}`,
-      description: cleanString(it.description),
+      description: cleanString(it.description) || `Producto Renglón ${idx + 1}`,
       quantity: Number(it.quantity) || 1,
       unitPrice: Number(it.unitPrice) || 0,
       unit: it.unit || 'Unidad',
     }))
 
-    const calculatedBudget = tenderParsedData.totalBudget || tenderItems.reduce((acc, it) => acc + (it.quantity * it.unitPrice), 0)
+    const calculatedBudget = Number(tenderParsedData.totalBudget) || tenderItems.reduce((acc, it) => acc + (it.quantity * it.unitPrice), 0)
 
-    if (tenderTargetProjectId === 'new' || !tenderTargetProjectId) {
-      let matchedCustId = ''
-      let matchedCustName = tenderParsedData.customerName?.trim() || 'Institución / Cliente OC'
+    if (mode === 'form') {
+      setIsSavingTenderProject(true)
+      try {
+        await populateFormFromTenderData(tenderParsedData)
+        setEditingProject(null)
+        setIsTenderModalOpen(false)
+        setIsProjectDialogOpen(true)
+        toast({
+          title: 'Requisitos cargados en el formulario',
+          description: 'Revise los datos extraídos del Word/PDF y presione "Crear Proyecto".',
+        })
+      } finally {
+        setIsSavingTenderProject(false)
+      }
+      return
+    }
 
-      if (tenderParsedData.customerName) {
-        const cust = entities.find(e => e.type === 'customer' && 
-          (cleanStringLower(e.name).includes(cleanStringLower(tenderParsedData.customerName)) ||
-           cleanStringLower(tenderParsedData.customerName).includes(cleanStringLower(e.name)))
-        )
-        if (cust) {
-          matchedCustId = cust.id
-          matchedCustName = cust.name
-        } else {
-          // Crear automáticamente el cliente si no existe en el directorio
-          try {
-            matchedCustId = await addEntity(db, {
-              name: matchedCustName,
-              type: 'customer',
-              isGranContribuyente: true,
-            })
-          } catch (e) {
-            console.warn('No se pudo crear entidad cliente automáticamente:', e)
+    setIsSavingTenderProject(true)
+    try {
+      if (tenderTargetProjectId === 'new' || !tenderTargetProjectId) {
+        let matchedCustId = ''
+        let matchedCustName = tenderParsedData.customerName?.trim() || 'Institución / Cliente OC'
+
+        if (tenderParsedData.customerName) {
+          const cust = entities.find(e => e.type === 'customer' && 
+            (cleanStringLower(e.name).includes(cleanStringLower(tenderParsedData.customerName)) ||
+             cleanStringLower(tenderParsedData.customerName).includes(cleanStringLower(e.name)))
+          )
+          if (cust) {
+            matchedCustId = cust.id
+            matchedCustName = cust.name
+          } else {
+            try {
+              matchedCustId = await addEntity(db, {
+                name: matchedCustName,
+                type: 'customer',
+                isGranContribuyente: true,
+              })
+            } catch (e) {
+              console.warn('No se pudo crear entidad cliente automáticamente:', e)
+            }
           }
         }
-      }
 
-      if (!matchedCustId) {
-        const fallbackCust = entities.find(e => e.type === 'customer')
-        if (fallbackCust) {
-          matchedCustId = fallbackCust.id
-          matchedCustName = fallbackCust.name
+        if (!matchedCustId) {
+          const fallbackCust = entities.find(e => e.type === 'customer')
+          if (fallbackCust) {
+            matchedCustId = fallbackCust.id
+            matchedCustName = fallbackCust.name
+          }
         }
-      }
 
-      const projectTitle = tenderParsedData.projectName || `Orden de Compra ${tenderParsedData.purchaseOrder || ''}`.trim() || 'Nuevo Proyecto OC'
-      const poNumber = tenderParsedData.purchaseOrder || `OC-${new Date().getFullYear()}`
+        const projectTitle = (tenderParsedData.projectName || `Orden de Compra ${tenderParsedData.purchaseOrder || ''}`).trim() || 'Nuevo Proyecto OC'
+        const poNumber = (tenderParsedData.purchaseOrder || `OC-${new Date().getFullYear()}`).trim()
 
-      try {
         const createdProjectId = await addProject(db, {
           name: projectTitle,
           purchaseOrder: poNumber,
-          targetSaleAmount: calculatedBudget,
+          targetSaleAmount: Number(calculatedBudget) || 0,
           customerId: matchedCustId || 'institucional',
           customerName: matchedCustName,
           expectedProducts: tenderItems,
           status: 'active',
           warrantyStartDate: new Date().toISOString().split('T')[0],
-          warrantyMonths: tenderParsedData.warrantyMonths || 12,
+          warrantyMonths: Number(tenderParsedData.warrantyMonths) || 12,
           deliveryDeadline: tenderParsedData.deliveryDeadline || null,
           deliveryAddress: tenderParsedData.deliveryAddress || null,
           paymentTerms: tenderParsedData.paymentTerms || null,
           orderRequirements: tenderParsedData.orderRequirements || tenderParsedData.summary || null,
         })
 
-        if (tenderFile && storage && createdProjectId) {
-          try {
-            const finalName = tenderFile.name || `Orden_Compra_${Date.now()}.docx`
-            const isWordFile = finalName.toLowerCase().endsWith('.docx') || finalName.toLowerCase().endsWith('.doc')
-            const storageRef = ref(storage, `projects/${createdProjectId}/documents/${Date.now()}_${finalName}`)
-            await uploadString(storageRef, tenderFile.dataUri, 'data_url')
-            const downloadURL = await getDownloadURL(storageRef)
-            addDocumentToProject(db, createdProjectId, {
-              name: finalName,
-              type: isWordFile ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf',
-              size: tenderFile.size,
-              data: downloadURL,
-            })
-          } catch (stErr) {
-            console.warn('No se pudo subir documento al proyecto recién creado:', stErr)
+        // Cerrar ambos modales de inmediato y seleccionar el proyecto recién creado (sin bloquear por Storage)
+        if (createdProjectId) {
+          setSelectedProjectId(createdProjectId)
+          setProjectFilterTab('active')
+          if (tenderFile) {
+            uploadTenderDocInBackground(createdProjectId, tenderFile)
           }
         }
 
-        if (createdProjectId) {
-          setSelectedProjectId(createdProjectId)
-        }
+        setNewProject({ name: '', purchaseOrder: '', targetSaleAmount: 0, customerId: '', warrantyStartDate: '', warrantyMonths: 0, deliveryDeadline: '', deliveryAddress: '', paymentTerms: '', orderRequirements: '' })
+        setNewProjectProducts([])
+        setEditingProject(null)
         setIsTenderModalOpen(false)
+        setIsProjectDialogOpen(false)
+
         toast({
-          title: 'Proyecto Creado desde Orden de Compra',
-          description: `Se creó "${projectTitle}" (${poNumber}) con ${tenderItems.length} renglones y sus requisitos.`,
+          title: '✅ Proyecto Creado Exitosamente',
+          description: `Se creó "${projectTitle}" (${poNumber}) con ${tenderItems.length} renglones y sus requisitos de la OC.`,
         })
-      } catch (err: any) {
-        console.error('Error creando proyecto desde OC:', err)
+      } else {
+        const targetProj = projects.find(p => p.id === tenderTargetProjectId)
+        if (!targetProj) return
+
+        const updatedProducts = [...(targetProj.expectedProducts || [])]
+        tenderItems.forEach(newItem => {
+          const existingIdx = updatedProducts.findIndex(ep => cleanStringLower(ep.code) === cleanStringLower(newItem.code))
+          if (existingIdx >= 0) {
+            updatedProducts[existingIdx] = newItem
+          } else {
+            updatedProducts.push(newItem)
+          }
+        })
+
+        updateProject(db, targetProj.id, {
+          expectedProducts: updatedProducts,
+          targetSaleAmount: Number(tenderParsedData.totalBudget) || targetProj.targetSaleAmount,
+          deliveryDeadline: tenderParsedData.deliveryDeadline || targetProj.deliveryDeadline || null,
+          deliveryAddress: tenderParsedData.deliveryAddress || targetProj.deliveryAddress || null,
+          paymentTerms: tenderParsedData.paymentTerms || targetProj.paymentTerms || null,
+          orderRequirements: tenderParsedData.orderRequirements || targetProj.orderRequirements || null,
+        })
+
+        if (tenderFile) {
+          uploadTenderDocInBackground(targetProj.id, tenderFile)
+        }
+
+        setSelectedProjectId(targetProj.id)
+        setIsTenderModalOpen(false)
+        setIsProjectDialogOpen(false)
         toast({
-          title: 'Error al crear proyecto',
-          description: err.message || 'No se pudo guardar el proyecto.',
-          variant: 'destructive',
+          title: 'Orden de Compra vinculada al proyecto',
+          description: `Se actualizaron ${updatedProducts.length} renglones y requisitos en ${targetProj.name}.`,
         })
       }
-    } else {
-      const targetProj = projects.find(p => p.id === tenderTargetProjectId)
-      if (!targetProj) return
-
-      const updatedProducts = [...targetProj.expectedProducts]
-      tenderItems.forEach(newItem => {
-        const existingIdx = updatedProducts.findIndex(ep => cleanStringLower(ep.code) === cleanStringLower(newItem.code))
-        if (existingIdx >= 0) {
-          updatedProducts[existingIdx] = newItem
-        } else {
-          updatedProducts.push(newItem)
-        }
-      })
-
-      updateProject(db, targetProj.id, {
-        expectedProducts: updatedProducts,
-        targetSaleAmount: tenderParsedData.totalBudget || targetProj.targetSaleAmount,
-        deliveryDeadline: tenderParsedData.deliveryDeadline || targetProj.deliveryDeadline || null,
-        deliveryAddress: tenderParsedData.deliveryAddress || targetProj.deliveryAddress || null,
-        paymentTerms: tenderParsedData.paymentTerms || targetProj.paymentTerms || null,
-        orderRequirements: tenderParsedData.orderRequirements || targetProj.orderRequirements || null,
-      })
-
-      if (tenderFile && storage) {
-        try {
-          const finalName = tenderFile.name || `Orden_Compra_${Date.now()}.docx`
-          const isWordFile = finalName.toLowerCase().endsWith('.docx') || finalName.toLowerCase().endsWith('.doc')
-          const storageRef = ref(storage, `projects/${targetProj.id}/documents/${Date.now()}_${finalName}`)
-          await uploadString(storageRef, tenderFile.dataUri, 'data_url')
-          const downloadURL = await getDownloadURL(storageRef)
-          addDocumentToProject(db, targetProj.id, {
-            name: finalName,
-            type: isWordFile ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf',
-            size: tenderFile.size,
-            data: downloadURL,
-          })
-        } catch (stErr) {
-          console.warn('No se pudo subir documento a Storage:', stErr)
-        }
-      }
-
-      setSelectedProjectId(targetProj.id)
-      setIsTenderModalOpen(false)
+    } catch (err: any) {
+      console.error('Error aplicando Orden de Compra al proyecto:', err)
       toast({
-        title: 'Orden de Compra vinculada al proyecto',
-        description: `Se actualizaron ${updatedProducts.length} renglones y requisitos en ${targetProj.name}.`,
+        title: 'Error al crear o actualizar proyecto',
+        description: err.message || 'No se pudo guardar el proyecto en la base de datos.',
+        variant: 'destructive',
       })
+    } finally {
+      setIsSavingTenderProject(false)
     }
   }
 
@@ -1643,6 +1763,35 @@ export default function InstitutionalModule() {
                     </TabsList>
 
                     <TabsContent value="general" className="space-y-6">
+                      <div className="p-3 rounded-xl border border-blue-500/30 bg-blue-500/5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-8 w-8 rounded-lg bg-blue-500/15 text-blue-500 flex items-center justify-center shrink-0">
+                            {isAnalyzingTender ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-foreground">
+                              {isAnalyzingTender ? 'Analizando archivo Word / PDF con IA...' : 'Autocompletar Proyecto desde Orden de Compra (Word .docx o PDF)'}
+                            </p>
+                            <p className="text-[10px] text-muted-foreground">
+                              Sube tu archivo Word o PDF para rellenar automáticamente el nombre, OC, cliente, requisitos y productos.
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          disabled={isAnalyzingTender}
+                          className="h-8 text-xs font-bold gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shrink-0"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            fileInputExcelRef.current?.click();
+                          }}
+                        >
+                          {isAnalyzingTender ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                          Subir Word / PDF
+                        </Button>
+                      </div>
+
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <div className="space-y-4 md:border-r md:pr-6">
                           <div className="space-y-2">
@@ -1735,11 +1884,11 @@ export default function InstitutionalModule() {
                                 type="button"
                                 className="h-7 text-[10px] px-2 gap-1 text-green-600 border-green-600/20 hover:bg-green-600/10 shrink-0" 
                                 onClick={(e) => { e.preventDefault(); fileInputExcelRef.current?.click(); }}
-                                title="Cargar desde Excel"
+                                title="Cargar desde Word (.docx/.doc), PDF o Excel (.xlsx)"
                               >
                                 <Upload className="h-3 w-3" /> Cargar
                               </Button>
-                              <input type="file" ref={fileInputExcelRef} className="hidden" accept=".xlsx, .xls" onChange={handleImportExcel} />
+                              <input type="file" ref={fileInputExcelRef} className="hidden" accept=".docx,.doc,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/msword,.pdf,application/pdf,.xlsx,.xls" onChange={handleImportExcel} />
                               <Button 
                                 variant="outline" 
                                 size="sm" 
@@ -3894,9 +4043,12 @@ export default function InstitutionalModule() {
             <div
               className={cn(
                 "border-2 border-dashed rounded-xl p-6 flex flex-col items-center justify-center gap-3 cursor-pointer transition-all",
-                tenderFile ? "bg-blue-50/20 border-blue-500/40" : "hover:border-blue-500/50 bg-muted/20"
+                isDraggingTender ? "border-blue-500 bg-blue-500/15 scale-[0.99]" : tenderFile ? "bg-blue-50/20 border-blue-500/40" : "hover:border-blue-500/50 bg-muted/20"
               )}
               onClick={() => tenderFileInputRef.current?.click()}
+              onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingTender(true); }}
+              onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setIsDraggingTender(false); }}
+              onDrop={handleTenderDrop}
             >
               <input
                 type="file"
@@ -4219,21 +4371,34 @@ export default function InstitutionalModule() {
             )}
           </div>
 
-          <DialogFooter className="mt-4 gap-2 pt-3 border-t">
+          <DialogFooter className="mt-4 gap-2 pt-3 border-t flex-wrap">
             <Button
               variant="outline"
               size="sm"
+              disabled={isSavingTenderProject}
               onClick={() => setIsTenderModalOpen(false)}
             >
               Cancelar
             </Button>
+            {(tenderTargetProjectId === 'new' || !tenderTargetProjectId) && tenderParsedData && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 text-xs border-blue-500/40 text-blue-500 hover:bg-blue-500/10 font-bold"
+                disabled={!tenderParsedData || isSavingTenderProject}
+                onClick={() => handleApplyTenderToProject('form')}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Pasar al Formulario (Revisar)
+              </Button>
+            )}
             <Button
               size="sm"
               className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 font-bold"
-              disabled={!tenderParsedData || !tenderParsedData.items || tenderParsedData.items.length === 0}
-              onClick={handleApplyTenderToProject}
+              disabled={!tenderParsedData || isSavingTenderProject}
+              onClick={() => handleApplyTenderToProject('direct')}
             >
-              <Check className="h-4 w-4" />
+              {isSavingTenderProject ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               {tenderTargetProjectId === 'new' || !tenderTargetProjectId
                 ? 'Crear Proyecto con Requisitos de la OC'
                 : 'Actualizar Requisitos en el Proyecto'}
