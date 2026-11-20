@@ -66,6 +66,7 @@ export default function InstitutionalModule() {
   const [isKitConfigOpen, setIsKitConfigOpen] = React.useState(false)
   const [kitTargetParentCode, setKitTargetParentCode] = React.useState<string>('')
   const [kitSelectedChildCodes, setKitSelectedChildCodes] = React.useState<string[]>([])
+  const [selectedCreditNoteTargetTxId, setSelectedCreditNoteTargetTxId] = React.useState<string>('')
 
   const handleUpdateProductProperty = (idx: number, key: keyof ProjectProduct, value: any) => {
     setNewProjectProducts(prev => prev.map((p, i) => i === idx ? { ...p, [key]: value } : p))
@@ -1509,16 +1510,30 @@ export default function InstitutionalModule() {
         setItemMappings({})
       }
       
-      if (activeTab === 'voided') {
-        const targetId = result.relatedDocumentNumber || result.invoiceNumber
-        const found = transactions.find(t => t.invoiceNumber === targetId || t.id === targetId)
+      const isNC = result.documentType === '05' || (result as any).isCreditNote
+      const targetRelDoc = result.relatedDocumentNumber?.trim().toLowerCase() || result.invoiceNumber?.trim().toLowerCase()
+
+      if (activeTab === 'voided' || isNC) {
+        const found = transactions.find(t => 
+          !t.isVoided && (
+            (targetRelDoc && t.invoiceNumber && t.invoiceNumber.trim().toLowerCase() === targetRelDoc) ||
+            (targetRelDoc && t.numeroControl && t.numeroControl.trim().toLowerCase() === targetRelDoc) ||
+            t.id === targetRelDoc
+          )
+        )
         if (found) {
           setTransactionToVoid(found.id)
-          setVoidReason(result.documentType === '07' ? 'Anulación por Nota de Crédito' : 'Ajuste fiscal detectado')
+          setSelectedCreditNoteTargetTxId(found.id)
+          setVoidReason(`Anulación por Nota de Crédito ${result.invoiceNumber || ''}`)
         }
       }
 
-      toast({ title: "Documento Analizado", description: `Tipo de DTE: ${result.documentType || 'Detectado'}` })
+      toast({ 
+        title: isNC ? "Nota de Crédito Detectada (Tipo 05)" : "Documento Analizado", 
+        description: isNC 
+          ? `Nota de Crédito por $${result.totalAmount?.toFixed(2) || '0.00'}${result.relatedDocumentNumber ? `. Modifica al DTE: ${result.relatedDocumentNumber}` : ''}`
+          : `Tipo de DTE: ${result.documentType === '03' ? 'Crédito Fiscal (CCF)' : result.documentType === '01' ? 'Factura' : result.documentType || 'Detectado'}` 
+      })
     } catch (error: any) {
       console.error("Client Process Error:", error)
       toast({ 
@@ -1663,6 +1678,91 @@ export default function InstitutionalModule() {
     }
     setMappedData(null)
     setJsonInput('')
+  }
+
+  const handleCreditNoteVoid = (targetTxId?: string) => {
+    if (!mappedData) return
+    const idToVoid = targetTxId || selectedCreditNoteTargetTxId || transactionToVoid
+    if (!idToVoid) {
+      toast({
+        title: "Seleccione transacción",
+        description: "Por favor seleccione cuál factura o Crédito Fiscal anula esta Nota de Crédito.",
+        variant: "destructive"
+      })
+      return
+    }
+
+    const targetTx = transactions.find(t => t.id === idToVoid)
+    const reason = `Anulado mediante Nota de Crédito ${mappedData.invoiceNumber || 'S/N'}${mappedData.creditNoteReason ? ` (${mappedData.creditNoteReason})` : ''}`
+    
+    voidTransaction(db, idToVoid, reason, mappedData.invoiceNumber)
+
+    toast({
+      title: "✅ Transacción Anulada con Nota de Crédito",
+      description: `El documento ${targetTx?.invoiceNumber || idToVoid} fue anulado correctamente.`
+    })
+
+    setMappedData(null)
+    setJsonInput('')
+    setSelectedCreditNoteTargetTxId('')
+  }
+
+  const handleApplyCreditNoteDiscount = () => {
+    if (!mappedData || !selectedProjectId || !currentProject) return
+    const supplier = suppliers.find(s => s.id === selectedSupplierId) || { name: mappedData.supplierName || 'Proveedor', id: selectedSupplierId || '' }
+    const rawItems = mappedData.items || []
+
+    const negSubtotal = -Math.abs(mappedData.subtotal || 0)
+    const negTax = -Math.abs(mappedData.taxAmount || 0)
+    const negTotal = -Math.abs(mappedData.totalAmount || 0)
+
+    const negativeItems: TransactionItem[] = rawItems.map((item, idx) => {
+      const explicitCode = itemMappings[idx]
+      let ep = explicitCode ? currentProject.expectedProducts.find(p => cleanStringLower(p.code) === cleanStringLower(explicitCode)) : null
+      if (!ep) ep = getMatchingExpectedProduct(item, currentProject.expectedProducts)
+      
+      const qty = -Math.abs(item.quantity || 1)
+      const unitPrice = item.unitPrice || (ep?.unitPrice || 0)
+      const lineTotal = -Math.abs(item.lineTotal || (Math.abs(qty) * unitPrice))
+
+      return {
+        code: item.code ? cleanString(item.code) : (ep?.code || 'S/C'),
+        description: `(NC) ${item.description ? cleanString(item.description) : (ep?.description || 'Ajuste de Compra')}`,
+        quantity: qty,
+        unitPrice: unitPrice,
+        lineTotal: lineTotal,
+        matchedProductCode: ep?.code
+      }
+    })
+
+    addTransaction(db, {
+      invoiceNumber: mappedData.invoiceNumber || `NC-${Date.now()}`,
+      numeroControl: (mappedData as any).numeroControl || '',
+      issueDate: mappedData.issueDate || new Date().toISOString(),
+      entityId: selectedSupplierId || supplier?.id || '',
+      entityName: supplier?.name || mappedData.supplierName || 'Proveedor',
+      projectId: selectedProjectId,
+      type: 'purchase',
+      documentType: '05',
+      items: negativeItems,
+      subtotal: negSubtotal,
+      taxAmount: negTax,
+      retentionAmount: 0,
+      perceptionAmount: 0,
+      totalAmount: negTotal,
+      costBasis: negTotal,
+      gain: 0,
+      relatedDocumentNumber: mappedData.relatedDocumentNumber || ''
+    })
+
+    toast({
+      title: "📉 Nota de Crédito Aplicada",
+      description: `Se descontaron $${Math.abs(negTotal).toFixed(2)} de las compras del proyecto.`
+    })
+
+    setMappedData(null)
+    setJsonInput('')
+    setSelectedCreditNoteTargetTxId('')
   }
 
   const handleDeleteUploadedItem = (idx: number) => {
@@ -2293,7 +2393,7 @@ export default function InstitutionalModule() {
                                           <div className="flex items-center gap-2">
                                             <ReceiptText className={cn("h-4 w-4", tx.type === 'purchase' ? "text-blue-500" : "text-green-500")} />
                                             <span className="text-xs font-bold font-mono">{tx.invoiceNumber}</span>
-                                            <Badge variant="outline" className="text-[9px]">{tx.documentType === '03' ? 'CCF' : tx.documentType === '01' ? 'FAC' : 'DTE'}</Badge>
+                                            <Badge variant="outline" className={cn("text-[9px] font-bold", tx.documentType === '05' && "border-amber-500/40 text-amber-600 bg-amber-500/10")}>{tx.documentType === '05' ? 'NC' : tx.documentType === '03' ? 'CCF' : tx.documentType === '01' ? 'FAC' : 'DTE'}</Badge>
                                             {isDup && (
                                               <Badge variant="destructive" className="text-[8px] px-1.5 py-0 font-bold uppercase">
                                                 Repetida
@@ -3049,10 +3149,24 @@ export default function InstitutionalModule() {
                       {mappedData ? (
                         <div className="space-y-3">
                           <div className="flex flex-wrap items-center justify-between gap-2">
-                            <Badge variant="secondary" className="bg-primary/10 text-primary uppercase text-[10px]">
-                              DTE: {mappedData.documentType === '03' ? 'CRÉDITO FISCAL' : 'FACTURA'} • {mappedData.items?.length || 0} productos
+                            <Badge 
+                              variant="secondary" 
+                              className={cn(
+                                "uppercase text-[10px] font-bold gap-1",
+                                (mappedData.documentType === '05' || (mappedData as any).isCreditNote)
+                                  ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30"
+                                  : mappedData.documentType === '03'
+                                  ? "bg-primary/10 text-primary"
+                                  : "bg-blue-500/10 text-blue-600"
+                              )}
+                            >
+                              DTE: {(mappedData.documentType === '05' || (mappedData as any).isCreditNote) 
+                                ? 'NOTA DE CRÉDITO (Tipo 05)' 
+                                : mappedData.documentType === '03' 
+                                ? 'CRÉDITO FISCAL' 
+                                : 'FACTURA'} • {mappedData.items?.length || 0} productos
                             </Badge>
-                            {currentProject?.expectedProducts && currentProject.expectedProducts.length > 0 && (
+                            {!(mappedData.documentType === '05' || (mappedData as any).isCreditNote) && currentProject?.expectedProducts && currentProject.expectedProducts.length > 0 && (
                               <div className="flex items-center gap-1.5">
                                 <span className="text-[10px] font-bold text-muted-foreground">Unificar toda la factura en:</span>
                                 <select
@@ -3082,6 +3196,104 @@ export default function InstitutionalModule() {
                               </div>
                             )}
                           </div>
+
+                          {/* Panel Inteligente de Nota de Crédito (Tipo 05) */}
+                          {(mappedData.documentType === '05' || (mappedData as any).isCreditNote) && (() => {
+                            const targetRelDoc = mappedData.relatedDocumentNumber?.trim().toLowerCase();
+                            const foundTx = transactions.find(t =>
+                              !t.isVoided && (
+                                (targetRelDoc && t.invoiceNumber && t.invoiceNumber.trim().toLowerCase() === targetRelDoc) ||
+                                (targetRelDoc && t.numeroControl && t.numeroControl.trim().toLowerCase() === targetRelDoc) ||
+                                (targetRelDoc && t.relatedDocumentNumber && t.relatedDocumentNumber.trim().toLowerCase() === targetRelDoc)
+                              )
+                            );
+
+                            return (
+                              <div className="p-3.5 bg-amber-500/10 border-2 border-amber-500/30 rounded-xl space-y-3">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                  <div className="flex items-center gap-2">
+                                    <div className="p-2 bg-amber-500/20 text-amber-700 dark:text-amber-400 rounded-lg">
+                                      <FileSearch className="h-5 w-5" />
+                                    </div>
+                                    <div>
+                                      <h4 className="font-bold text-sm text-foreground flex items-center gap-1.5">
+                                        <span>Interpretación IA: Nota de Crédito (Tipo 05)</span>
+                                        <Badge variant="outline" className="text-[9px] border-amber-500/40 text-amber-600 bg-amber-500/10 font-bold">
+                                          Ajuste / Anulación
+                                        </Badge>
+                                      </h4>
+                                      <p className="text-[11px] text-muted-foreground">
+                                        La IA detectó una Nota de Crédito por valor de <strong className="text-foreground">-${mappedData.totalAmount?.toFixed(2)}</strong>.
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="p-2.5 bg-card rounded-lg border text-xs space-y-1.5">
+                                  <div className="flex justify-between items-center">
+                                    <span className="text-muted-foreground">Documento Original que modifica:</span>
+                                    <span className="font-mono font-bold text-primary">
+                                      {mappedData.relatedDocumentNumber || 'No especificado en JSON'}
+                                      {mappedData.relatedDocumentType === '03' ? ' (Crédito Fiscal)' : ''}
+                                    </span>
+                                  </div>
+                                  {foundTx ? (
+                                    <div className="flex justify-between items-center pt-1 border-t text-emerald-600 dark:text-emerald-400">
+                                      <span className="font-semibold flex items-center gap-1">
+                                        <CheckCircle2 className="h-3.5 w-3.5" /> Transacción Encontrada en Proyecto:
+                                      </span>
+                                      <span className="font-mono font-bold">
+                                        {foundTx.invoiceNumber} (${foundTx.totalAmount.toFixed(2)}) • {foundTx.entityName}
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-1.5 pt-1 border-t">
+                                      <div className="flex justify-between items-center text-amber-600 font-semibold text-[11px]">
+                                        <span>No se encontró automáticamente por código.</span>
+                                        <span className="text-[10px] italic">Seleccione manualmente:</span>
+                                      </div>
+                                      <select
+                                        className="w-full h-7 text-[11px] rounded border bg-background px-2 text-foreground"
+                                        value={selectedCreditNoteTargetTxId}
+                                        onChange={(e) => setSelectedCreditNoteTargetTxId(e.target.value)}
+                                      >
+                                        <option value="">-- Seleccionar Crédito Fiscal / Factura a afectar --</option>
+                                        {transactions
+                                          .filter(t => t.projectId === selectedProjectId && !t.isVoided && t.type === 'purchase')
+                                          .map(t => (
+                                            <option key={t.id} value={t.id}>
+                                              [{t.documentType === '03' ? 'CCF' : 'FAC'}] #{t.invoiceNumber} - ${t.totalAmount.toFixed(2)} ({t.entityName})
+                                            </option>
+                                          ))}
+                                      </select>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Botones de Acción para Nota de Crédito */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                                  <Button
+                                    type="button"
+                                    variant="destructive"
+                                    className="font-bold text-xs gap-1.5 h-10 w-full"
+                                    onClick={() => handleCreditNoteVoid(foundTx?.id || selectedCreditNoteTargetTxId)}
+                                    disabled={!foundTx && !selectedCreditNoteTargetTxId}
+                                  >
+                                    <XCircle className="h-4 w-4" />
+                                    Anular Factura Original #{foundTx?.invoiceNumber || (selectedCreditNoteTargetTxId ? 'Seleccionada' : '')}
+                                  </Button>
+                                  <Button
+                                    type="button"
+                                    className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs gap-1.5 h-10 w-full"
+                                    onClick={handleApplyCreditNoteDiscount}
+                                  >
+                                    <TrendingUp className="h-4 w-4 rotate-180" />
+                                    Descontar de Compras (-${mappedData.totalAmount?.toFixed(2)})
+                                  </Button>
+                                </div>
+                              </div>
+                            );
+                          })()}
 
                           {/* Banner de Interpretación Semántica de la IA */}
                           {(isMatchingInvoiceAI || aiUnificationSummary) && (
@@ -3283,7 +3495,13 @@ export default function InstitutionalModule() {
                             <div className="flex justify-between"><span>IVA (13%):</span><span className="font-bold">${mappedData.taxAmount?.toFixed(2)}</span></div>
                             <div className="flex justify-between text-base font-black border-t mt-2 pt-2"><span>TOTAL:</span><span>${mappedData.totalAmount?.toFixed(2)}</span></div>
                           </div>
-                          <Button className="w-full bg-primary font-bold" onClick={handleSavePurchase}>Confirmar Ingreso Unificado al Proyecto</Button>
+                          {!(mappedData.documentType === '05' || (mappedData as any).isCreditNote) ? (
+                            <Button className="w-full bg-primary font-bold" onClick={handleSavePurchase}>Confirmar Ingreso Unificado al Proyecto</Button>
+                          ) : (
+                            <div className="p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-center text-xs text-amber-700 dark:text-amber-300 font-medium">
+                              👆 Utilice los botones del panel superior de Nota de Crédito para <strong>Anular la Factura Original</strong> o <strong>Descontar de Compras</strong>.
+                            </div>
+                          )}
                         </div>
                       ) : <div className="py-20 text-center text-muted-foreground italic text-xs">Cargue el JSON para interpretar y unificar suministros con la OC.</div>}
                     </CardContent>
@@ -3309,6 +3527,7 @@ export default function InstitutionalModule() {
                             <SelectContent>
                               <SelectItem value="03">Crédito Fiscal (CCF)</SelectItem>
                               <SelectItem value="01">Factura Consumidor (FAC)</SelectItem>
+                              <SelectItem value="05">Nota de Crédito (NC)</SelectItem>
                             </SelectContent>
                           </Select>
                        </div>
@@ -3506,7 +3725,7 @@ export default function InstitutionalModule() {
                   >
                     <input type="file" ref={fileInputVoidRef} className="hidden" accept=".json" onChange={handleFileUpload} />
                     <FileText className="h-8 w-8 text-destructive opacity-50" />
-                    <p className="text-xs font-bold">Cargar Nota de Crédito (Tipo 07)</p>
+                    <p className="text-xs font-bold">Cargar Nota de Crédito (Tipo 05)</p>
                   </div>
                   <Select value={transactionToVoid} onValueChange={setTransactionToVoid}>
                     <SelectTrigger><SelectValue placeholder="Seleccionar transacción" /></SelectTrigger>
@@ -4618,7 +4837,7 @@ export default function InstitutionalModule() {
                     <div>
                       <span className="font-bold uppercase text-[9px] text-muted-foreground block">Tipo Documento</span>
                       <span className="font-bold text-foreground text-[11px] sm:text-xs">
-                        {viewingInvoice.documentType === '03' ? 'Comprobante de Crédito Fiscal (CCF)' : viewingInvoice.documentType === '01' ? 'Factura de Consumidor Final (FAC)' : 'Documento DTE'}
+                        {viewingInvoice.documentType === '05' ? 'Nota de Crédito (NC)' : viewingInvoice.documentType === '03' ? 'Comprobante de Crédito Fiscal (CCF)' : viewingInvoice.documentType === '01' ? 'Factura de Consumidor Final (FAC)' : 'Documento DTE'}
                       </span>
                     </div>
                     <div className="mt-2 grid grid-cols-2 gap-2">
