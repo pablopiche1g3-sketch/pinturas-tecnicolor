@@ -65,6 +65,14 @@ export interface InventoryItem {
   dateAdded: string;
 }
 
+export interface ProjectChatMessage {
+  id: string;
+  sender: 'user' | 'assistant';
+  text: string;
+  timestamp: string;
+  isInstruction?: boolean;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -82,6 +90,8 @@ export interface Project {
   deliveryAddress?: string | null;
   paymentTerms?: string | null;
   orderRequirements?: string | null;
+  aiInstructions?: string;
+  aiChatHistory?: ProjectChatMessage[];
 }
 
 export interface Reminder {

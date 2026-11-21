@@ -18,11 +18,12 @@ import {
   DialogTrigger,
   DialogFooter
 } from "@/components/ui/dialog"
-import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project, type ProjectDocument, type Transaction } from "@/lib/store"
+import { useLedgerStore, type ProjectProduct, type TransactionItem, type Project, type ProjectDocument, type Transaction, type ProjectChatMessage } from "@/lib/store"
 import { aiJsonKeyMapper, type AiJsonKeyMapperOutput, type AiActionResponse } from "@/ai/flows/ai-json-key-mapper"
 import { aiTenderParser, aiTenderAuditor, aiInvoiceProjectMatcher, type AiTenderParserOutput, type TenderAuditorOutput } from "@/ai/flows/ai-tender-parser"
+import { aiProjectChat } from "@/ai/flows/ai-project-chat"
 import { calculateProductMatches } from "@/lib/tender-utils"
-import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders, Edit2, GitMerge, Layers, TrendingUp, Info, PlayCircle, Archive, Search, Sparkles, Link2, Bot, FileSearch, Check, AlertCircle, HelpCircle, ChevronDown, ChevronUp, ChevronRight, Boxes } from "lucide-react"
+import { Loader2, Plus, Briefcase, Calculator, ReceiptText, Trash2, Upload, XCircle, Package, Pencil, CheckCircle, FileText, CheckCircle2, FileDown, Eye, Download, Maximize2, Sliders, Edit2, GitMerge, Layers, TrendingUp, Info, PlayCircle, Archive, Search, Sparkles, Link2, Bot, FileSearch, Check, AlertCircle, HelpCircle, ChevronDown, ChevronUp, ChevronRight, Boxes, MessageSquare, Send, X, CornerDownLeft, RefreshCw, BookmarkCheck, MessageCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
@@ -67,6 +68,14 @@ export default function InstitutionalModule() {
   const [kitTargetParentCode, setKitTargetParentCode] = React.useState<string>('')
   const [kitSelectedChildCodes, setKitSelectedChildCodes] = React.useState<string[]>([])
   const [selectedCreditNoteTargetTxId, setSelectedCreditNoteTargetTxId] = React.useState<string>('')
+
+  // Mini-Chat IA del Proyecto
+  const [isProjectChatOpen, setIsProjectChatOpen] = React.useState(false)
+  const [chatMessageInput, setChatMessageInput] = React.useState('')
+  const [isSendingChatMessage, setIsSendingChatMessage] = React.useState(false)
+  const [isEditingInstructions, setIsEditingInstructions] = React.useState(false)
+  const [customInstructionsDraft, setCustomInstructionsDraft] = React.useState('')
+  const chatMessagesEndRef = React.useRef<HTMLDivElement>(null)
 
   const handleUpdateProductProperty = (idx: number, key: keyof ProjectProduct, value: any) => {
     setNewProjectProducts(prev => prev.map((p, i) => i === idx ? { ...p, [key]: value } : p))
@@ -1249,6 +1258,7 @@ export default function InstitutionalModule() {
       const resp = await aiInvoiceProjectMatcher({
         projectName: proj.name,
         purchaseOrder: proj.purchaseOrder,
+        customInstructions: proj.aiInstructions || undefined,
         expectedProducts: proj.expectedProducts.map(ep => ({
           code: ep.code,
           description: ep.description,
@@ -1409,6 +1419,7 @@ export default function InstitutionalModule() {
         const resp = await aiInvoiceProjectMatcher({
           projectName: currentProject.name,
           purchaseOrder: currentProject.purchaseOrder,
+          customInstructions: currentProject.aiInstructions || undefined,
           expectedProducts: currentProject.expectedProducts,
           invoiceItems: flatItems.map((fi, idx) => ({
             index: idx,
@@ -1454,6 +1465,136 @@ export default function InstitutionalModule() {
     } finally {
       setIsBatchUnifyingProject(false)
     }
+  }
+
+  // Auto-scroll chat to bottom
+  React.useEffect(() => {
+    if (isProjectChatOpen) {
+      setTimeout(() => {
+        chatMessagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+      }, 100)
+    }
+  }, [isProjectChatOpen, currentProject?.aiChatHistory, isSendingChatMessage])
+
+  const handleSendProjectChatMessage = async (textToSend?: string) => {
+    const text = (textToSend || chatMessageInput).trim()
+    if (!text || !currentProject || isSendingChatMessage) return
+
+    const userMsg: ProjectChatMessage = {
+      id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      sender: 'user',
+      text,
+      timestamp: new Date().toISOString(),
+    }
+
+    const currentHistory = currentProject.aiChatHistory || []
+    const updatedHistoryWithUser = [...currentHistory, userMsg]
+
+    // Actualizar optimísticamente en Firestore
+    await updateProject(db, currentProject.id, {
+      aiChatHistory: updatedHistoryWithUser,
+    })
+
+    setChatMessageInput('')
+    setIsSendingChatMessage(true)
+
+    try {
+      // Resumen de renglones contratados
+      const trackingSummary = (currentProject.expectedProducts || []).map(ep => {
+        return `Renglón [${ep.code}]: "${ep.description}" (Cant: ${ep.quantity} ${ep.unit || 'U'}${ep.unitPrice ? `, $${ep.unitPrice} c/u` : ''}${ep.parentCode ? `, Insumo de ${ep.parentCode}` : ''})`
+      }).join('\n')
+
+      const res = await aiProjectChat({
+        projectName: currentProject.name,
+        purchaseOrder: currentProject.purchaseOrder,
+        customerName: currentProject.customerName,
+        targetSaleAmount: currentProject.targetSaleAmount,
+        existingInstructions: currentProject.aiInstructions || '',
+        expectedProducts: (currentProject.expectedProducts || []).map(ep => ({
+          code: ep.code,
+          description: ep.description,
+          quantity: ep.quantity,
+          unitPrice: ep.unitPrice,
+          unit: ep.unit,
+        })),
+        trackingSummary,
+        chatHistory: currentHistory.map(m => ({
+          sender: m.sender,
+          text: m.text,
+        })),
+        userMessage: text,
+      })
+
+      if (res.success && res.data) {
+        const assistantMsg: ProjectChatMessage = {
+          id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          sender: 'assistant',
+          text: res.data.reply,
+          timestamp: new Date().toISOString(),
+          isInstruction: res.data.isInstruction,
+        }
+
+        const finalHistory = [...updatedHistoryWithUser, assistantMsg]
+        const updates: Partial<Project> = {
+          aiChatHistory: finalHistory,
+        }
+
+        if (res.data.isInstruction && res.data.updatedInstructions) {
+          updates.aiInstructions = res.data.updatedInstructions
+          setCustomInstructionsDraft(res.data.updatedInstructions)
+          toast({
+            title: "✨ Indicación aprendida y guardada",
+            description: res.data.detectedRuleSummary || "La IA usará esta indicación al procesar las facturas del proyecto.",
+          })
+        }
+
+        await updateProject(db, currentProject.id, updates)
+      } else {
+        toast({
+          title: "Error al consultar con la IA",
+          description: res.error || "No se pudo obtener respuesta del copiloto.",
+          variant: "destructive",
+        })
+      }
+    } catch (err: any) {
+      console.error("Error al enviar mensaje al chat del proyecto:", err)
+      toast({
+        title: "Error en el chat",
+        description: err.message || "Ocurrió un error inesperado al consultar la IA.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSendingChatMessage(false)
+    }
+  }
+
+  const handleSaveCustomInstructions = async () => {
+    if (!currentProject) return
+    try {
+      await updateProject(db, currentProject.id, {
+        aiInstructions: customInstructionsDraft.trim() || undefined,
+      })
+      setIsEditingInstructions(false)
+      toast({
+        title: "Reglas actualizadas",
+        description: "Se guardaron las indicaciones personalizadas para este proyecto.",
+      })
+    } catch (e: any) {
+      toast({
+        title: "Error al guardar reglas",
+        description: e.message,
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleClearProjectChat = async () => {
+    if (!currentProject) return
+    if (!confirm("¿Deseas vaciar el historial de este chat? Las reglas e indicaciones aprendidas se conservarán.")) return
+    await updateProject(db, currentProject.id, {
+      aiChatHistory: [],
+    })
+    toast({ title: "Historial de chat vaciado" })
   }
 
   // AI & Manual Processing Logic...
@@ -2970,6 +3111,11 @@ export default function InstitutionalModule() {
                                 <div className="flex flex-col items-end gap-1">
                                   <Badge variant="outline" className="text-[9px] uppercase font-mono shrink-0">{p.purchaseOrder}</Badge>
                                   {p.status === 'completed' && <Badge className="text-[8px] bg-green-600 border-none text-white font-bold">ENTREGADO / ARCHIVADO</Badge>}
+                                  {p.aiInstructions && (
+                                    <Badge variant="outline" className="text-[8px] bg-purple-500/10 text-purple-600 dark:text-purple-300 border-purple-500/30 font-bold flex items-center gap-1">
+                                      <Sparkles className="h-2.5 w-2.5" /> Reglas IA
+                                    </Badge>
+                                  )}
                                   {warranty && <Badge className={cn("text-[8px] border", warranty.color)}>{warranty.text}</Badge>}
                                 </div>
                               </div>
@@ -3781,6 +3927,22 @@ export default function InstitutionalModule() {
                  </div>
                  <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
                    <Button
+                      size="sm"
+                      className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs w-full sm:w-auto h-9 shadow-sm"
+                      onClick={() => {
+                        setCustomInstructionsDraft(currentProject.aiInstructions || '')
+                        setIsProjectChatOpen(true)
+                      }}
+                    >
+                      <MessageSquare className="h-3.5 w-3.5" />
+                      Copiloto IA del Proyecto
+                      {currentProject.aiInstructions && (
+                        <Badge variant="secondary" className="bg-emerald-400 text-black text-[9px] px-1.5 py-0 h-4 font-mono font-bold">
+                          Reglas Activas
+                        </Badge>
+                      )}
+                    </Button>
+                    <Button
                      variant="outline"
                      size="sm"
                      className="gap-2 border-blue-600/40 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/20 font-bold text-xs w-full sm:w-auto h-9"
@@ -5855,6 +6017,289 @@ export default function InstitutionalModule() {
               Entendido
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Botón Flotante Permanente del Copiloto IA si hay un proyecto seleccionado */}
+      {currentProject && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-4">
+          <Button
+            onClick={() => {
+              setCustomInstructionsDraft(currentProject.aiInstructions || '')
+              setIsProjectChatOpen(true)
+            }}
+            className="shadow-2xl bg-gradient-to-r from-purple-600 via-indigo-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white font-bold rounded-full px-4 py-3 h-auto gap-2.5 border-2 border-white/20 hover:scale-105 transition-all group"
+          >
+            <div className="relative">
+              <Bot className="h-5 w-5 text-white" />
+              {currentProject.aiInstructions && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-emerald-400 rounded-full border border-card" />
+              )}
+            </div>
+            <div className="text-left hidden sm:block">
+              <p className="text-xs font-bold leading-none">Copiloto IA</p>
+              <p className="text-[10px] text-purple-200/90 leading-tight font-normal truncate max-w-[140px]">
+                {currentProject.purchaseOrder || currentProject.name}
+              </p>
+            </div>
+            <Sparkles className="h-3.5 w-3.5 text-amber-300" />
+          </Button>
+        </div>
+      )}
+
+      {/* Mini-Chat IA por Proyecto: Asistente e Indicaciones Extras */}
+      <Dialog open={isProjectChatOpen} onOpenChange={setIsProjectChatOpen}>
+        <DialogContent className="sm:max-w-[750px] w-[95vw] h-[88vh] max-h-[88vh] flex flex-col p-0 overflow-hidden border-purple-500/30">
+          {/* Header con gradiente elegante */}
+          <div className="bg-gradient-to-r from-purple-950 via-indigo-950 to-slate-900 text-white p-4 border-b border-purple-500/20 shrink-0">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-purple-600/30 border border-purple-400/40 rounded-xl text-purple-300">
+                  <Bot className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-base text-white">Copiloto IA del Proyecto</h3>
+                    <Badge className="bg-purple-600/50 text-purple-200 border-purple-400/30 text-[10px] font-mono">
+                      {currentProject?.purchaseOrder || 'Licitación'}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-purple-200/80 truncate max-w-md">
+                    {currentProject?.name} • Cliente: {currentProject?.customerName}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsEditingInstructions(!isEditingInstructions)}
+                  className="text-xs text-purple-200 hover:text-white hover:bg-purple-800/40 gap-1.5 h-8"
+                >
+                  <BookmarkCheck className="h-3.5 w-3.5 text-emerald-400" />
+                  <span className="hidden sm:inline">Reglas Guardadas</span>
+                  {currentProject?.aiInstructions && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleClearProjectChat}
+                  className="text-xs text-purple-300/70 hover:text-rose-300 hover:bg-rose-950/30 h-8 px-2"
+                  title="Vaciar mensajes"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Panel Desplegable de Reglas e Indicaciones Activas */}
+            {isEditingInstructions ? (
+              <div className="mt-3 p-3 bg-black/40 border border-purple-500/40 rounded-xl space-y-2 animate-in fade-in">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-purple-200 flex items-center gap-1.5">
+                    <BookmarkCheck className="h-3.5 w-3.5 text-emerald-400" />
+                    Editar Reglas e Indicaciones Manualmente:
+                  </Label>
+                  <span className="text-[10px] text-muted-foreground">La IA usa estas reglas para interpretar facturas</span>
+                </div>
+                <Textarea
+                  value={customInstructionsDraft}
+                  onChange={(e) => setCustomInstructionsDraft(e.target.value)}
+                  placeholder="Ej: Los productos Wadfow y las llaves se unifican en el ítem de Lavamanos Mediano..."
+                  className="text-xs bg-slate-900 border-purple-500/30 text-white min-h-[90px] focus-visible:ring-purple-500"
+                />
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setCustomInstructionsDraft(currentProject?.aiInstructions || '')
+                      setIsEditingInstructions(false)
+                    }}
+                    className="h-7 text-xs"
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleSaveCustomInstructions}
+                    className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold"
+                  >
+                    Guardar Reglas
+                  </Button>
+                </div>
+              </div>
+            ) : currentProject?.aiInstructions ? (
+              <div className="mt-3 p-2.5 bg-black/30 border border-emerald-500/30 rounded-xl text-xs flex items-start justify-between gap-2">
+                <div className="space-y-1 overflow-hidden">
+                  <span className="text-[11px] font-bold text-emerald-400 flex items-center gap-1">
+                    <Check className="h-3 w-3" /> Reglas Activas Memorizadas para este Proyecto:
+                  </span>
+                  <p className="text-[11px] text-purple-100 whitespace-pre-line line-clamp-3">
+                    {currentProject.aiInstructions}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => {
+                    setCustomInstructionsDraft(currentProject.aiInstructions || '')
+                    setIsEditingInstructions(true)
+                  }}
+                  className="h-6 text-[10px] text-purple-300 hover:text-white px-2 shrink-0"
+                >
+                  <Pencil className="h-3 w-3 mr-1" /> Editar
+                </Button>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Cuerpo de Mensajes */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-muted/20">
+            {(!currentProject?.aiChatHistory || currentProject.aiChatHistory.length === 0) ? (
+              <div className="h-full flex flex-col items-center justify-center text-center p-6 space-y-3">
+                <div className="p-3 bg-purple-500/10 rounded-full border border-purple-500/20 text-purple-500">
+                  <Sparkles className="h-8 w-8" />
+                </div>
+                <div className="max-w-md space-y-1">
+                  <h4 className="font-bold text-sm text-foreground">
+                    ¡Hola! Soy el Copiloto IA de este proyecto
+                  </h4>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Puedes darme <strong>indicaciones sobre cómo unificar productos</strong> de las facturas (ej. qué productos de bodega o ferretería pertenecen a cada ítem de la orden) o hacerme cualquier pregunta sobre compras, costos y avance.
+                  </p>
+                </div>
+                
+                <div className="w-full max-w-md pt-3 space-y-2">
+                  <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wider block">
+                    Sugerencias rápidas para comenzar:
+                  </span>
+                  <div className="flex flex-col gap-1.5 text-left">
+                    <button
+                      type="button"
+                      onClick={() => handleSendProjectChatMessage("Los productos marca Wadfow, las llaves y desagües son accesorios que se unifican en el ítem de Lavamanos Mediano.")}
+                      className="p-2.5 rounded-lg border border-purple-500/20 bg-purple-50/50 dark:bg-purple-950/20 text-xs text-foreground hover:border-purple-500/50 hover:bg-purple-100/50 transition-all flex items-center justify-between group"
+                    >
+                      <span>🚿 &ldquo;Los productos Wadfow y llaves van en el ítem de Lavamanos&rdquo;</span>
+                      <Send className="h-3 w-3 text-purple-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSendProjectChatMessage("¿Qué productos o renglones faltan todavía por comprar según la licitación?")}
+                      className="p-2.5 rounded-lg border border-border bg-card text-xs text-foreground hover:border-primary/50 transition-all flex items-center justify-between group"
+                    >
+                      <span>📦 &ldquo;¿Qué productos faltan por comprar para cumplir la orden?&rdquo;</span>
+                      <Send className="h-3 w-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSendProjectChatMessage("¿Cuál es el margen y monto total de compras acumulado hasta hoy en este proyecto?")}
+                      className="p-2.5 rounded-lg border border-border bg-card text-xs text-foreground hover:border-primary/50 transition-all flex items-center justify-between group"
+                    >
+                      <span>💰 &ldquo;¿Cuál es el margen y costo de compras acumulado?&rdquo;</span>
+                      <Send className="h-3 w-3 text-primary opacity-0 group-hover:opacity-100 transition-opacity shrink-0 ml-2" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              currentProject.aiChatHistory.map((msg) => {
+                const isUser = msg.sender === 'user'
+                return (
+                  <div
+                    key={msg.id}
+                    className={cn(
+                      "flex flex-col max-w-[85%]",
+                      isUser ? "ml-auto items-end" : "mr-auto items-start"
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        "p-3.5 rounded-2xl text-xs leading-relaxed shadow-sm",
+                        isUser
+                          ? "bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-br-xs"
+                          : "bg-card border border-border/70 text-foreground rounded-bl-xs"
+                      )}
+                    >
+                      {msg.isInstruction && (
+                        <div className="flex items-center gap-1.5 mb-2 pb-1.5 border-b border-emerald-500/20 text-emerald-600 dark:text-emerald-400 font-bold text-[10px]">
+                          <BookmarkCheck className="h-3.5 w-3.5 shrink-0" />
+                          <span>Regla Memorizada para el Proyecto</span>
+                        </div>
+                      )}
+                      <div className="whitespace-pre-line">
+                        {msg.text}
+                      </div>
+                    </div>
+                    <span className="text-[10px] text-muted-foreground mt-1 px-1">
+                      {isUser ? 'Tú' : 'Copiloto IA'} • {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                )
+              })
+            )}
+
+            {isSendingChatMessage && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground p-3 bg-card border rounded-2xl w-fit mr-auto animate-pulse">
+                <Loader2 className="h-4 w-4 animate-spin text-purple-600" />
+                <span>El Copiloto IA está analizando los datos del proyecto...</span>
+              </div>
+            )}
+            <div ref={chatMessagesEndRef} />
+          </div>
+
+          {/* Footer Input */}
+          <div className="p-3 border-t bg-card shrink-0 space-y-2">
+            {currentProject?.aiInstructions && (
+              <div className="flex items-center justify-between text-[11px] px-1 text-muted-foreground">
+                <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium truncate">
+                  <Check className="h-3 w-3 shrink-0" /> Reglas activas aplicándose a las facturas
+                </span>
+                <Button
+                  variant="link"
+                  size="sm"
+                  onClick={() => {
+                    setIsProjectChatOpen(false)
+                    handleBatchUnifyProjectInvoicesWithAI()
+                  }}
+                  className="h-auto p-0 text-[11px] text-blue-600 font-bold"
+                >
+                  Re-unificar facturas con IA →
+                </Button>
+              </div>
+            )}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                handleSendProjectChatMessage()
+              }}
+              className="flex items-center gap-2"
+            >
+              <Input
+                value={chatMessageInput}
+                onChange={(e) => setChatMessageInput(e.target.value)}
+                placeholder="Escribe una regla o pregunta (ej. 'Los productos Wadfow van con el ítem 1')..."
+                disabled={isSendingChatMessage}
+                className="text-xs h-10 bg-muted/30 focus-visible:ring-purple-500"
+              />
+              <Button
+                type="submit"
+                disabled={!chatMessageInput.trim() || isSendingChatMessage}
+                className="h-10 px-4 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold shrink-0 gap-1.5"
+              >
+                {isSendingChatMessage ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <Send className="h-4 w-4" />
+                    <span className="hidden sm:inline">Enviar</span>
+                  </>
+                )}
+              </Button>
+            </form>
+          </div>
         </DialogContent>
       </Dialog>
 

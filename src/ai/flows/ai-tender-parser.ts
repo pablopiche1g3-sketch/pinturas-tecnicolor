@@ -638,6 +638,7 @@ Responde de manera ejecutiva, concisa y profesional.`;
 const InvoiceMatcherInputSchema = z.object({
   projectName: z.string(),
   purchaseOrder: z.string().optional(),
+  customInstructions: z.string().optional().describe('Indicaciones especiales y reglas personalizadas definidas por el usuario para este proyecto en el Mini-Chat IA.'),
   expectedProducts: z.array(z.object({
     code: z.string(),
     description: z.string(),
@@ -709,6 +710,12 @@ ${JSON.stringify(input.expectedProducts, null, 2)}
 
 PRODUCTOS EN LA FACTURA DEL PROVEEDOR A INTERPRETAR Y UNIFICAR:
 ${JSON.stringify(input.invoiceItems, null, 2)}
+
+${input.customInstructions ? `
+INDICACIONES ESPECIALES Y REGLAS DEFINIDAS POR EL USUARIO PARA ESTE PROYECTO (MÁXIMA PRIORIDAD):
+${input.customInstructions}
+IMPORTANTE: Debes obedecer de forma estricta las indicaciones anteriores para clasificar o unificar los productos en los renglones señalados por el usuario.
+` : ''}
 
 REGLAS DE INTERPRETACIÓN Y UNIFICACIÓN:
 1. Si la Orden de Compra tiene UN SOLO ÍTEM (${validCodes.length === 1 ? `código "${validCodes[0]}"` : 'o un ítem global/compuesto'}), TODOS los productos de pintura, solventes, catalizadores, bases o accesorios de la factura que formen parte del suministro deben unificarse en ese ítem ("matchedProjectCode": "${validCodes[0]}").
